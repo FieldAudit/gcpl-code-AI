@@ -1,0 +1,1587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>FieldAudit — GCPL Field Audits</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+:root{
+  --ink:#12172B; --ink-2:#1D2444;
+  --paper:#FAF8F1; --paper-2:#F1ECE0; --card:#FFFFFF;
+  --amber:#F5A623; --amber-dark:#C97F0E;
+  --green:#1B7A43; --green-bg:#E7F3EC;
+  --red:#C0392B; --red-bg:#FBEAE8;
+  --slate:#6B7280; --border:#E1DACA; --border-2:#D8D2C4;
+  --shadow: 0 8px 24px rgba(18,23,43,0.10);
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+body{margin:0;}
+html,body{background:var(--paper); color:var(--ink); font-family:'IBM Plex Sans',sans-serif; -webkit-font-smoothing:antialiased;}
+h1,h2,h3{font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:.03em; font-weight:600; margin:0;}
+button{font-family:inherit; cursor:pointer; -webkit-appearance:none;}
+input,select,textarea{font-family:inherit; font-size:16px;}
+a{color:inherit;}
+
+header.appbar{background:var(--ink); color:var(--paper); padding:16px 20px; display:flex; align-items:center; gap:10px; position:sticky; top:0; z-index:50; box-shadow:0 2px 10px rgba(0,0,0,.15);}
+.brand{display:flex; align-items:center; gap:10px;}
+.brand .mark{width:34px; height:34px; background:var(--amber); border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--ink); font-family:'Oswald'; font-weight:700; font-size:15px;}
+.brand .name{font-family:'Oswald'; text-transform:uppercase; font-size:16px; letter-spacing:.03em;}
+.brand .name span{color:var(--amber);}
+.brand .sub{color:#9BA1C4; font-size:11.5px; margin-top:1px;}
+
+main{max-width:720px; margin:0 auto; padding:16px 14px 110px;}
+.card{background:var(--card); border:1px solid var(--border); border-radius:6px; padding:18px; margin-bottom:14px;}
+.card h2{font-size:14.5px; color:var(--ink); display:flex; align-items:center; gap:9px;}
+.card h2 .n{background:var(--ink); color:var(--amber); width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-family:'IBM Plex Mono'; flex-shrink:0;}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
+@media(max-width:640px){.grid2,.grid3{grid-template-columns:1fr;}}
+
+.field{margin-bottom:13px;}
+.field:last-child{margin-bottom:0;}
+.field label{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--slate); margin-bottom:6px; font-weight:600;}
+.req-mark{color:var(--red);}
+.addr-note{font-size:12px; color:var(--slate); margin-top:6px;}
+.addr-note.warn{color:var(--red); font-weight:600;}
+.field input.invalid, .field select.invalid, .field textarea.invalid{border-color:var(--red); background:var(--red-bg);}
+.field input, .field select, .field textarea{width:100%; padding:12px; border:1.5px solid var(--border-2); border-radius:4px; background:var(--card); color:var(--ink); outline:none; transition:border-color .15s;}
+.yn.invalid, .stars.invalid{outline:2px solid var(--red); outline-offset:3px; border-radius:5px;}
+.photo-box.invalid{border-color:var(--red); border-style:solid; background:var(--red-bg);}
+.field input:focus, .field select:focus, .field textarea:focus{border-color:var(--ink);}
+
+.yn{display:flex; gap:8px;}
+.yn button{flex:1; padding:12px; border-radius:4px; border:1.5px solid var(--border-2); background:var(--card); font-weight:600; font-size:14px; color:var(--slate);}
+.yn button.sel-yes{background:var(--green-bg); border-color:var(--green); color:var(--green);}
+.yn button.sel-no{background:var(--red-bg); border-color:var(--red); color:var(--red);}
+
+.stars{display:flex; gap:6px;}
+.stars button{width:42px; height:42px; border-radius:4px; border:1.5px solid var(--border-2); background:var(--card); font-size:16px; color:var(--border-2);}
+.stars button.on{background:var(--amber); border-color:var(--amber-dark); color:var(--ink);}
+
+/* ---- Location: most important section, styled to stand out ---- */
+.geo-card{border:2px solid var(--red); background:var(--red-bg);}
+.geo-card.got{border-color:var(--green); background:var(--green-bg);}
+.geo-card h2{color:var(--red);}
+.geo-card.got h2{color:var(--green);}
+.geo-status{font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; margin-bottom:12px;}
+.geo-status.pending{color:var(--red);}
+.geo-status.got{color:var(--green);}
+.geo-btn-big{width:100%; padding:16px; font-size:16px; border-radius:5px;}
+.geo-readout{margin-top:12px; background:var(--card); border:1px solid var(--border-2); border-radius:4px; padding:12px;}
+.geo-readout .coords{font-family:'IBM Plex Mono'; font-size:15px; font-weight:600;}
+.geo-readout .meta{font-size:12px; color:var(--slate); margin-top:4px;}
+.geo-readout a{color:var(--ink); font-weight:600; text-decoration:underline;}
+
+.photo-box{border:1.5px dashed var(--border-2); border-radius:5px; padding:16px; text-align:center;}
+.photo-box img{max-width:100%; max-height:220px; border-radius:4px; margin-top:10px; display:none;}
+.photo-locked{opacity:.5;}
+.lock-note{font-size:12px; color:var(--red); margin-top:8px; font-weight:600;}
+
+.scan-result{margin-top:12px; padding:10px 12px; border-radius:4px; font-size:13px; display:none;}
+.scan-result.gst{background:var(--green-bg); color:var(--green); display:block;}
+.scan-result.nongst{background:var(--red-bg); color:var(--red); display:block;}
+.scan-override{display:flex; gap:8px; margin-top:10px;}
+.scan-override button{flex:1; padding:8px; border-radius:4px; border:1.5px solid var(--border-2); background:var(--card); font-size:12px; font-weight:600; color:var(--slate);}
+.scan-override button.sel{background:var(--ink); color:var(--paper); border-color:var(--ink);}
+
+.btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:13px 20px; border-radius:5px; border:none; font-weight:600; font-size:15px; letter-spacing:.02em; transition:transform .1s, background .15s;}
+.btn:active{transform:scale(.98);}
+.btn-primary{background:var(--amber); color:var(--ink);}
+.btn-primary:hover{background:var(--amber-dark);}
+.btn-primary:disabled{opacity:.5; cursor:not-allowed;}
+.btn-outline{background:transparent; border:1.5px solid var(--border-2); color:var(--ink);}
+.btn-outline:hover{border-color:var(--ink);}
+.btn-outline:disabled{opacity:.45; cursor:not-allowed;}
+.btn-block{width:100%;}
+
+.submit-bar{position:fixed; left:0; right:0; bottom:0; background:var(--paper); border-top:1px solid var(--border); padding:12px 14px; box-shadow:0 -6px 20px rgba(18,23,43,.08); z-index:60;}
+.submit-bar .btn{padding:16px; font-size:16px;}
+.submit-bar .req{font-size:11px; color:var(--red); text-align:center; margin-top:6px; display:none;}
+.submit-bar .req.show{display:block;}
+
+.stamp-wrap{position:fixed; inset:0; background:rgba(18,23,43,.72); display:none; align-items:center; justify-content:center; z-index:200;}
+.stamp{width:220px; height:220px; border-radius:50%; border:6px solid var(--amber); display:flex; align-items:center; justify-content:center; flex-direction:column; color:var(--amber); transform:rotate(-14deg) scale(0); font-family:'Oswald'; text-transform:uppercase; text-align:center; background:rgba(245,166,35,.06);}
+.stamp.show{animation:stampIn .5s cubic-bezier(.2,1.4,.4,1) forwards;}
+@keyframes stampIn{0%{transform:rotate(-14deg) scale(.3); opacity:0;} 60%{transform:rotate(-14deg) scale(1.12); opacity:1;} 100%{transform:rotate(-14deg) scale(1); opacity:1;}}
+.stamp b{font-size:26px; letter-spacing:.05em;}
+.stamp span{font-size:11px; margin-top:6px; letter-spacing:.1em; color:#FCE1AD;}
+.stamp-close{margin-top:18px; color:var(--paper); text-align:center; font-size:12px;}
+
+.toast{position:fixed; bottom:90px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--paper); padding:11px 20px; border-radius:4px; font-size:13px; box-shadow:var(--shadow); z-index:300; display:none; max-width:90vw; text-align:center;}
+.toast.err{background:var(--red);}
+.spin{width:16px;height:16px;border:2px solid rgba(0,0,0,.2);border-top-color:currentColor;border-radius:50%;animation:sp .7s linear infinite;display:inline-block;}
+@keyframes sp{to{transform:rotate(360deg);}}
+.badge-cfg{font-size:11px; background:var(--red-bg); color:var(--red); padding:8px 12px; border-radius:3px; margin-bottom:14px;}
+
+/* ---- Module selector ---- */
+.module-select{padding:10px 4px 4px;}
+.module-select h1{font-size:19px; margin-bottom:4px;}
+.module-select .hint{font-size:13px; color:var(--slate); margin-bottom:18px;}
+.module-card{display:block; width:100%; text-align:left; background:var(--card); border:1.5px solid var(--border-2); border-radius:8px; padding:20px; margin-bottom:14px; cursor:pointer; transition:border-color .15s, transform .1s;}
+.module-card:active{transform:scale(.99);}
+.module-card:hover{border-color:var(--ink);}
+.module-card .icon{font-size:26px; margin-bottom:8px;}
+.module-card .title{font-family:'Oswald'; text-transform:uppercase; font-size:16px; letter-spacing:.03em; margin-bottom:4px;}
+.module-card .desc{font-size:13px; color:var(--slate);}
+.module-back{background:none; border:none; color:var(--slate); font-size:13px; font-weight:600; padding:4px 0 14px; cursor:pointer; display:flex; align-items:center; gap:4px;}
+.module-back:hover{color:var(--ink);}
+.readonly-note{font-size:11px; color:var(--slate); margin-top:5px;}
+input[readonly]{background:var(--paper-2); cursor:not-allowed;}
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <div class="brand"><div class="mark">FA</div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v3.3.0</div></div>
+  </div>
+</header>
+
+<main>
+  <div id="cfgWarning" class="badge-cfg" style="display:none;">Backend not connected — set SCRIPT_URL at the top of the script to your deployed Google Apps Script Web App URL.</div>
+
+  <!-- ============ MODULE SELECTOR ============ -->
+  <div id="moduleSelect" class="module-select">
+    <h1>What are you auditing today?</h1>
+    <div class="hint">Pick one — you can always come back and switch.</div>
+    <button class="module-card" onclick="selectModule('retail')">
+      <div class="icon">🏪</div>
+      <div class="title">Retail Outlet Audit</div>
+      <div class="desc">Shelf visibility, POSM, invoice GST check, outlet photo — done per outlet visit.</div>
+    </button>
+    <button class="module-card" onclick="selectModule('db')">
+      <div class="icon">📦</div>
+      <div class="title">DB Stock Audit</div>
+      <div class="desc">Distributor warehouse stock count, discrepancy, expiry/FIFO check — done once a month per distributor.</div>
+    </button>
+  </div>
+
+  <!-- ============ RETAIL OUTLET AUDIT MODULE ============ -->
+  <div id="retailModule" style="display:none;">
+  <button class="module-back" onclick="backToModuleSelect()">← Change module</button>
+
+  <!-- ============ DAILY SELFIE CHECK-IN — required before any audit in either module ============ -->
+  <div class="card geo-card" id="r_checkinCard">
+    <h2>📸 Daily Selfie Check-in <span class="req-mark">*</span></h2>
+    <div id="r_checkinContent" style="margin-top:14px;">
+      <div class="field">
+        <label>Your Phone Number <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(10 digits)</span></label>
+        <input type="text" id="r_ckPhone" inputmode="numeric" maxlength="10" placeholder="e.g. 9830012345" oninput="onCheckinPhoneInput(this,'r')">
+        <div class="addr-note" id="r_ckPhoneStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">1</span>Visit &amp; Auditor Details</h2>
+    <div class="grid3" style="margin-top:14px;">
+      <div class="field"><label>Date of Visit</label><input type="date" id="f_date"></div>
+      <div class="field"><label>Auditor Name</label><input type="text" id="f_auditor" placeholder="Your name"></div>
+      <div class="field"><label>District</label><input type="text" id="f_district"></div>
+      <div class="field"><label>City</label><input type="text" id="f_city"></div>
+      <div class="field"><label>Distributor</label><input type="text" id="f_distributor"></div>
+      <div class="field"><label>Route Name / Code</label><input type="text" id="f_route"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">2</span>Outlet Details</h2>
+    <div class="grid2" style="margin-top:14px;">
+      <div class="field"><label>Outlet / Retailer Name</label><input type="text" id="f_outletName"></div>
+      <div class="field"><label>Outlet Type</label>
+        <select id="f_outletType"><option value="">Select</option><option>General Trade</option><option>Modern Trade</option><option>Wholesale</option><option>Kirana</option><option>Other</option></select>
+      </div>
+      <div class="field" style="grid-column:1/-1;">
+        <label>Address <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(street, landmark, city, pincode — auto-filled, edit if needed)</span></label>
+        <textarea id="f_address" rows="3" placeholder="Tap 'Get Address' below — it pulls your current location's address automatically"></textarea>
+        <button class="btn btn-outline btn-block" style="margin-top:8px;" onclick="captureLocation(this)" id="getAddrBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;display:inline-block;margin-right:5px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Get Address (current location)</button>
+        <div class="addr-note" id="addrNote"></div>
+      </div>
+      <div class="field"><label>Contact Name / No.</label><input type="text" id="f_contact"></div>
+    </div>
+  </div>
+
+  <!-- ============ LOCATION — most important, captured before any photo ============ -->
+  <div class="card geo-card" id="geoCard">
+    <h2><span class="n">3</span><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-3px;display:inline-block;margin-right:4px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Location (required)</h2>
+    <div class="geo-status pending" id="geoStatus" style="margin-top:10px;">Not captured yet — required before photos &amp; submit</div>
+    <button class="btn btn-primary geo-btn-big" onclick="captureLocation(this)" id="geoBtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;display:inline-block;margin-right:5px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Capture GPS location</button>
+    <div class="geo-readout" id="geoReadout" style="display:none;">
+      <div class="coords" id="geoCoords">—</div>
+      <div class="meta" id="geoMeta"></div>
+      <div class="meta" id="geoAddrDetail" style="margin-top:6px;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">4</span>Product Availability &amp; NPD</h2>
+    <div class="grid2" style="margin-top:14px;">
+      <div class="field">
+        <label>GCPL Availability — Distribution by distributor?</label>
+        <div class="yn" id="yn_q1"><button onclick="setYN('q1','Yes',this)">Yes</button><button onclick="setYN('q1','No',this)">No</button></div>
+      </div>
+      <div class="field"><label>How many DBs are supplying</label><input type="number" min="0" id="f_q2"></div>
+      <div class="field">
+        <label>NPD — Spice available or not?</label>
+        <div class="yn" id="yn_q3"><button onclick="setYN('q3','Yes',this)">Yes</button><button onclick="setYN('q3','No',this)">No</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">5</span>Satisfaction, Price &amp; DB Bills</h2>
+    <div class="grid2" style="margin-top:14px;">
+      <div class="field">
+        <label>Happy with DB or not?</label>
+        <div class="yn" id="yn_q4"><button onclick="setYN('q4','Yes',this)">Yes</button><button onclick="setYN('q4','No',this)">No</button></div>
+      </div>
+      <div class="field"><label>Price update source</label><input type="text" id="f_q5" placeholder="e.g. WhatsApp from DB, sales officer visit..."></div>
+      <div class="field"><label>DB bills seen (min. 5 mandatory)</label><input type="number" min="0" id="f_q6"></div>
+      <div class="field">
+        <label>Bill type</label>
+        <select id="f_q7"><option value="">Select (or scan invoice below)</option><option>GST</option><option>Non-GST</option><option>Mixed</option></select>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ INVOICE PHOTO + auto GST scan ============ -->
+  <div class="card">
+    <h2><span class="n">6</span>Invoice Photo — Scan for GST</h2>
+    <div class="photo-box" id="invoiceBox" style="margin-top:14px;">
+      <button class="btn btn-outline" onclick="tryOpenCamera('invoiceInput')" id="invoiceBtn">📷 Capture invoice photo</button>
+      <input type="file" id="invoiceInput" accept="image/*" capture="environment" style="display:none" onchange="onInvoicePhoto(event)">
+      <img id="invoicePreview">
+      <div id="scanBtnWrap" style="display:none; margin-top:10px;">
+        <button class="btn btn-outline btn-block" onclick="scanInvoice()" id="scanBtn">🔍 Scan invoice for GSTIN</button>
+      </div>
+      <div class="scan-result" id="scanResult"></div>
+      <div class="scan-override" id="scanOverride" style="display:none;">
+        <button onclick="setInvoiceType('GST',this)">Confirm GST</button>
+        <button onclick="setInvoiceType('Non-GST',this)">Confirm Non-GST</button>
+      </div>
+      <div class="lock-note" id="invoiceLock">Capture GPS location first — every photo is watermarked with it</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">7</span>Visibility</h2>
+    <div class="grid2" style="margin-top:14px;">
+      <div class="field">
+        <label>GCPL visibility on shelf (1–5)</label>
+        <div class="stars" id="star_q8">
+          <button onclick="setStar(1,this)">1</button><button onclick="setStar(2,this)">2</button><button onclick="setStar(3,this)">3</button><button onclick="setStar(4,this)">4</button><button onclick="setStar(5,this)">5</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>POSM available?</label>
+        <div class="yn" id="yn_q9"><button onclick="setYN('q9','Yes',this)">Yes</button><button onclick="setYN('q9','No',this)">No</button></div>
+      </div>
+      <div class="field"><label>Any NLB / GSB — which brand</label><input type="text" id="f_q10" placeholder="Brand name, if any"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">8</span>Outlet Photo</h2>
+    <div class="photo-box" id="photoBox" style="margin-top:14px;">
+      <button class="btn btn-outline" onclick="tryOpenCamera('photoInput')" id="photoBtn">📷 Capture outlet photo</button>
+      <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none" onchange="onPhoto(event)">
+      <img id="photoPreview">
+      <div class="lock-note" id="photoLock">Capture GPS location first — every photo is watermarked with it</div>
+    </div>
+  </div>
+  </div> <!-- /retailModule -->
+
+  <!-- ============ DB STOCK AUDIT MODULE ============ -->
+  <div id="dbModule" style="display:none;">
+  <button class="module-back" onclick="backToModuleSelect()">← Change module</button>
+
+  <!-- ============ DAILY SELFIE CHECK-IN — required before any audit in either module ============ -->
+  <div class="card geo-card" id="d_checkinCard">
+    <h2>📸 Daily Selfie Check-in <span class="req-mark">*</span></h2>
+    <div id="d_checkinContent" style="margin-top:14px;">
+      <div class="field">
+        <label>Your Phone Number <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(10 digits)</span></label>
+        <input type="text" id="d_ckPhone" inputmode="numeric" maxlength="10" placeholder="e.g. 9830012345" oninput="onCheckinPhoneInput(this,'d')">
+        <div class="addr-note" id="d_ckPhoneStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">1</span>Audit Details</h2>
+    <div class="grid2" style="margin-top:14px;">
+      <div class="field">
+        <label>Date of Audit</label>
+        <input type="text" id="db_date" readonly>
+        <div class="readonly-note">🔒 Always today's date — this monthly audit can't be backdated</div>
+      </div>
+      <div class="field">
+        <label>Conducted By <span class="req-mark">*</span></label>
+        <div class="yn" id="yn_auditType">
+          <button onclick="setAuditType('GCPL Sales Officer',this)">GCPL Sales Officer</button>
+          <button onclick="setAuditType('3PA',this)">3PA (Third Party Agency)</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>SO Phone Number <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(auto-filled from your check-in above)</span></label>
+        <input type="text" id="db_soPhone" inputmode="numeric" maxlength="10" placeholder="Check in above first" readonly>
+        <div class="addr-note" id="soPhoneStatus"></div>
+      </div>
+      <div class="field">
+        <label>SO Name <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(auto-filled from check-in)</span></label>
+        <input type="text" id="db_soName" placeholder="Check in above first" readonly>
+      </div>
+      <div class="field">
+        <label>DB Code <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(numeric, exactly 7 digits)</span></label>
+        <input type="text" id="db_dbCode" inputmode="numeric" maxlength="7" placeholder="e.g. 1002035" oninput="onDbCodeInput(this)">
+        <div class="addr-note" id="dbCodeError"></div>
+      </div>
+      <div class="field">
+        <label>DB Name <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(auto-filled from DB Code)</span></label>
+        <input type="text" id="db_dbName" placeholder="Enter DB Code first" readonly>
+      </div>
+      <div class="field">
+        <label>DB City / Town <span style="text-transform:none; font-weight:400;">(auto-filled from DB Code)</span></label>
+        <input type="text" id="db_dbCity" placeholder="Enter DB Code first" readonly>
+      </div>
+      <div class="field"><label>ASM / ASE Name</label><input type="text" id="db_asmName"></div>
+    </div>
+  </div>
+
+  <!-- ============ LOCATION — same GPS-mandatory + free address lookup as the retail module ============ -->
+  <div class="card geo-card" id="dbGeoCard">
+    <h2><span class="n">2</span><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-3px;display:inline-block;margin-right:4px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Location (required)</h2>
+    <div class="geo-status pending" id="dbGeoStatus" style="margin-top:10px;">Not captured yet — required before photo &amp; submit</div>
+    <button class="btn btn-primary geo-btn-big" onclick="dbCaptureLocation(this)" id="dbGeoBtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;display:inline-block;margin-right:5px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Capture GPS location</button>
+    <div class="geo-readout" id="dbGeoReadout" style="display:none;">
+      <div class="coords" id="dbGeoCoords">—</div>
+      <div class="meta" id="dbGeoMeta"></div>
+      <div class="meta" id="dbGeoAddrDetail" style="margin-top:6px;"></div>
+    </div>
+    <div class="field" style="margin-top:12px;">
+      <label>Address <span style="text-transform:none; font-weight:400;">(auto-filled from GPS, edit if needed)</span></label>
+      <textarea id="db_address" rows="2" placeholder="Captured automatically once you tap the button above"></textarea>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span>Stock Quantities — Bags</h2>
+    <div class="grid2" style="margin-top:14px;">
+      <div class="field"><label>ATTA (Bags)</label><input class="qty-input" type="number" min="0" id="db_atta" placeholder="0"></div>
+      <div class="field"><label>MAIDA (Bags)</label><input class="qty-input" type="number" min="0" id="db_maida" placeholder="0"></div>
+      <div class="field"><label>SOOJI (Bags)</label><input class="qty-input" type="number" min="0" id="db_sooji" placeholder="0"></div>
+      <div class="field"><label>SATTU (Bags)</label><input class="qty-input" type="number" min="0" id="db_sattu" placeholder="0"></div>
+      <div class="field"><label>BESAN (Bags)</label><input class="qty-input" type="number" min="0" id="db_besan" placeholder="0"></div>
+      <div class="field"><label>DALIA (Bags)</label><input class="qty-input" type="number" min="0" id="db_dalia" placeholder="0"></div>
+      <div class="field"><label>OTHERS (Bags)</label><input class="qty-input" type="number" min="0" id="db_others" placeholder="0"></div>
+      <div class="field"><label>Spices Total (Bags)</label><input class="qty-input" type="number" min="0" id="db_spicesTotal" placeholder="0"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">4</span>Spices — Kgs</h2>
+    <div class="grid2" style="margin-top:14px;">
+      <div class="field"><label>Haldi Powder (Kgs)</label><input class="qty-input" type="number" min="0" id="db_haldi" placeholder="0"></div>
+      <div class="field"><label>Chili Powder (Kgs)</label><input class="qty-input" type="number" min="0" id="db_chili" placeholder="0"></div>
+      <div class="field"><label>Dhania Powder (Kgs)</label><input class="qty-input" type="number" min="0" id="db_dhania" placeholder="0"></div>
+      <div class="field"><label>Jeera Powder (Kgs)</label><input class="qty-input" type="number" min="0" id="db_jeeraPowder" placeholder="0"></div>
+      <div class="field"><label>Jeera Whole (Kgs)</label><input class="qty-input" type="number" min="0" id="db_jeeraWhole" placeholder="0"></div>
+      <div class="field"><label>Panch Foron Whole (Kgs)</label><input class="qty-input" type="number" min="0" id="db_panchForon" placeholder="0"></div>
+      <div class="field"><label>Methi Whole (Kgs)</label><input class="qty-input" type="number" min="0" id="db_methi" placeholder="0"></div>
+      <div class="field"><label>Ajawan Whole (Kgs)</label><input class="qty-input" type="number" min="0" id="db_ajwain" placeholder="0"></div>
+      <div class="field"><label>Saunf Whole (Kgs)</label><input class="qty-input" type="number" min="0" id="db_saunf" placeholder="0"></div>
+      <div class="field"><label>Sarson Whole (Kgs)</label><input class="qty-input" type="number" min="0" id="db_sarson" placeholder="0"></div>
+      <div class="field"><label>Shahi Garam Masala (Kgs)</label><input class="qty-input" type="number" min="0" id="db_shahiGaramMasala" placeholder="0"></div>
+      <div class="field"><label>Chicken Masala (Kgs)</label><input class="qty-input" type="number" min="0" id="db_chickenMasala" placeholder="0"></div>
+      <div class="field"><label>Meat Masala (Kgs)</label><input class="qty-input" type="number" min="0" id="db_meatMasala" placeholder="0"></div>
+      <div class="field"><label>Kashmiri Mirch (Kgs)</label><input class="qty-input" type="number" min="0" id="db_kashmiriMirch" placeholder="0"></div>
+      <div class="field"><label>Kalajeera Whole (Kgs)</label><input class="qty-input" type="number" min="0" id="db_kalajeera" placeholder="0"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">5</span>Godown Photos — camera only, gallery not allowed</h2>
+    <div class="photo-box" id="dbPhotoBox" style="margin-top:14px;">
+      <label style="display:block; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--slate); font-weight:600; margin-bottom:8px;">Complete Godown (Wide View) <span class="req-mark">*</span></label>
+      <button class="btn btn-outline" onclick="dbTryOpenCamera('dbPhotoInput')" id="dbPhotoBtn">📷 Capture wide godown photo</button>
+      <input type="file" id="dbPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="onDBPhoto(event)">
+      <img id="dbPhotoPreview">
+      <div class="lock-note" id="dbPhotoLock">Capture GPS location first — every photo is watermarked with it</div>
+    </div>
+    <div class="photo-box" id="dbPhotoBox2" style="margin-top:14px;">
+      <label style="display:block; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--slate); font-weight:600; margin-bottom:8px;">Product Rack View <span style="text-transform:none; font-weight:400;">(optional)</span></label>
+      <button class="btn btn-outline" onclick="dbTryOpenCamera('dbPhotoInput2')" id="dbPhotoBtn2">📷 Capture product rack photo</button>
+      <input type="file" id="dbPhotoInput2" accept="image/*" capture="environment" style="display:none" onchange="onDBPhoto2(event)">
+      <img id="dbPhotoPreview2">
+      <div class="lock-note" id="dbPhotoLock2">Capture GPS location first — every photo is watermarked with it</div>
+    </div>
+  </div>
+  </div> <!-- /dbModule -->
+</main>
+
+<div class="submit-bar" id="submitBar" style="display:none;">
+  <button class="btn btn-primary btn-block" id="submitBtn" onclick="handleSubmitClick()">Submit audit</button>
+  <div class="req" id="submitReq">Capture GPS location before submitting</div>
+</div>
+
+<div class="stamp-wrap" id="stampWrap">
+  <div>
+    <div class="stamp" id="stampEl"><b>Audited</b><span id="stampId">—</span></div>
+    <div class="stamp-close">Tap anywhere to close</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ CONFIG ============
+   Paste your deployed Google Apps Script Web App URL below (see Code.gs / SETUP.md).
+   Example: https://script.google.com/macros/s/AKfycb.../exec
+   This page needs NO login — it posts straight to the sheet. Field team just
+   opens this link and fills the survey; the management dashboard (a separate
+   page, dashboard.html) is the one that's password-protected.
+*/
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHBfP9GR5QOC-AsVtYZqbcqyOVX1T4TiTo4ktHXcmbXF9S9_A6/exec";
+
+let FORM = {};
+let PHOTO_BASE64 = null;
+let INVOICE_BASE64 = null;
+let GEO = null;
+let DB_GEO = null;
+let DB_PHOTO_BASE64 = null;
+let DB_PHOTO_BASE64_2 = null;
+let DB_FORM = {};
+let CHECKIN_DONE = false;
+let CHECKIN_GEO = null;
+let CHECKIN_PHOTO_BASE64 = null;
+let CHECKIN_TIME = null;
+let CURRENT_MODULE = null; // 'retail' | 'db'
+
+// Google-Maps-style pin glyph (inherits the button's text colour via currentColor)
+// used everywhere a location action needs a real pin icon instead of an emoji.
+const PIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;display:inline-block;margin-right:5px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>';
+
+function toast(msg, isErr){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast' + (isErr?' err':''); t.style.display='block';
+  clearTimeout(t._h); t._h = setTimeout(()=>t.style.display='none', 3200);
+}
+function configured(){ return SCRIPT_URL && SCRIPT_URL.indexOf('PASTE_YOUR') === -1; }
+
+/* ---- Module selector ---- */
+function selectModule(mod){
+  CURRENT_MODULE = mod;
+  document.getElementById('moduleSelect').style.display = 'none';
+  document.getElementById('retailModule').style.display = mod==='retail' ? 'block' : 'none';
+  document.getElementById('dbModule').style.display = mod==='db' ? 'block' : 'none';
+  document.getElementById('submitBar').style.display = 'block';
+  document.getElementById('submitBtn').textContent = mod==='db' ? 'Submit stock audit' : 'Submit audit';
+  prefillSavedSOIdentity(mod==='db' ? 'd' : 'r');
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function backToModuleSelect(){
+  CURRENT_MODULE = null;
+  document.getElementById('moduleSelect').style.display = 'block';
+  document.getElementById('retailModule').style.display = 'none';
+  document.getElementById('dbModule').style.display = 'none';
+  document.getElementById('submitBar').style.display = 'none';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function handleSubmitClick(){
+  if(CURRENT_MODULE === 'db') submitDBStockAudit();
+  else submitAudit();
+}
+
+function setYN(key,val,btn){
+  FORM[key]=val;
+  const wrap = btn.parentElement;
+  wrap.classList.remove('invalid');
+  [...wrap.children].forEach(c=>c.classList.remove('sel-yes','sel-no'));
+  btn.classList.add(val==='Yes'?'sel-yes':'sel-no');
+}
+function setStar(n,btn){
+  FORM.q8 = n;
+  const wrap = btn.parentElement;
+  wrap.classList.remove('invalid');
+  [...wrap.children].forEach((c,i)=>c.classList.toggle('on', i<n));
+}
+
+/* Photos are camera-only (never gallery). The file input's capture="environment"
+   attribute is what tells mobile Chrome to open the camera directly instead of a
+   picker — it's a browser hint, not something a web page can force, so behaviour
+   can vary slightly across Android/iOS Chrome versions. We also gate both photo
+   buttons on GPS being captured first, since every photo gets stamped with it. */
+function tryOpenCamera(inputId){
+  if(!GEO){ toast('Please capture GPS location first', true); return; }
+  document.getElementById(inputId).click();
+}
+function dbTryOpenCamera(inputId){
+  if(!DB_GEO){ toast('Please capture GPS location first', true); return; }
+  document.getElementById(inputId).click();
+}
+
+function onPhoto(e){
+  const file = e.target.files[0]; if(!file) return;
+  document.getElementById('photoBox').classList.remove('invalid');
+  downscale(file, (dataUrl)=>{
+    PHOTO_BASE64 = dataUrl;
+    const prev = document.getElementById('photoPreview');
+    prev.src = dataUrl; prev.style.display='block';
+  });
+}
+function onInvoicePhoto(e){
+  const file = e.target.files[0]; if(!file) return;
+  document.getElementById('invoiceBox').classList.remove('invalid');
+  downscale(file, (dataUrl)=>{
+    INVOICE_BASE64 = dataUrl;
+    const prev = document.getElementById('invoicePreview');
+    prev.src = dataUrl; prev.style.display='block';
+    document.getElementById('scanBtnWrap').style.display='block';
+    document.getElementById('scanResult').className = 'scan-result';
+    document.getElementById('scanOverride').style.display='none';
+    FORM.invoiceGST = '';
+  });
+}
+function onDBPhoto(e){
+  const file = e.target.files[0]; if(!file) return;
+  document.getElementById('dbPhotoBox').classList.remove('invalid');
+  downscale(file, (dataUrl)=>{
+    DB_PHOTO_BASE64 = dataUrl;
+    const prev = document.getElementById('dbPhotoPreview');
+    prev.src = dataUrl; prev.style.display='block';
+  });
+}
+function onDBPhoto2(e){
+  const file = e.target.files[0]; if(!file) return;
+  downscale(file, (dataUrl)=>{
+    DB_PHOTO_BASE64_2 = dataUrl;
+    const prev = document.getElementById('dbPhotoPreview2');
+    prev.src = dataUrl; prev.style.display='block';
+  });
+}
+
+/* DB Code must be exactly 7 digits — validated live as the SO types, same rule
+   as the reference GCPL Stock Audit spec. */
+function isValidDbCode(code){
+  return /^[0-9]{7}$/.test(String(code||'').trim());
+}
+function dbCodeErrorMessage(code){
+  const len = String(code||'').trim().length;
+  if(len === 0) return '';
+  if(len < 7) return `DB Code must be exactly 7 digits (currently ${len}).`;
+  if(len > 7) return `DB Code must be exactly 7 digits (currently ${len}) — too long.`;
+  return 'DB Code must contain only numbers.';
+}
+function onDbCodeInput(el){
+  el.classList.remove('invalid');
+  const valid = !el.value || isValidDbCode(el.value);
+  const errEl = document.getElementById('dbCodeError');
+  errEl.className = valid ? 'addr-note' : 'addr-note warn';
+  errEl.textContent = valid ? '' : dbCodeErrorMessage(el.value);
+  const nameEl = document.getElementById('db_dbName');
+  const cityEl = document.getElementById('db_dbCity');
+  if(!valid || !el.value){
+    nameEl.readOnly = true; nameEl.value=''; nameEl.placeholder='Enter DB Code first';
+    cityEl.readOnly = true; cityEl.value=''; cityEl.placeholder='Enter DB Code first';
+    return;
+  }
+  lookupDBMaster(el.value);
+}
+let dbLookupTimer;
+function lookupDBMaster(dbCode){
+  clearTimeout(dbLookupTimer);
+  dbLookupTimer = setTimeout(async ()=>{
+    const nameEl = document.getElementById('db_dbName');
+    const cityEl = document.getElementById('db_dbCity');
+    nameEl.readOnly = true; nameEl.value=''; nameEl.placeholder='Looking up…';
+    cityEl.readOnly = true; cityEl.value=''; cityEl.placeholder='Looking up…';
+    try{
+      if(!configured()) throw new Error('__NOCFG__');
+      const r = await fetchWithTimeout(`${SCRIPT_URL}?action=lookupDB&dbCode=${encodeURIComponent(dbCode)}`, {}, 8000);
+      const j = await r.json();
+      if(j.success){
+        nameEl.value = j.dbName || ''; nameEl.readOnly = true;
+        cityEl.value = j.dbCity || ''; cityEl.readOnly = true;
+        document.getElementById('dbCodeError').className='addr-note';
+        document.getElementById('dbCodeError').textContent = j.dbName ? '✅ Found in master list' : '';
+      } else {
+        // Not in the master list — don't block the audit, let the SO type it manually.
+        nameEl.readOnly = false; nameEl.placeholder='Not in master — type DB name'; nameEl.value='';
+        cityEl.readOnly = false; cityEl.placeholder='Type DB city/town'; cityEl.value='';
+        document.getElementById('dbCodeError').className='addr-note warn';
+        document.getElementById('dbCodeError').textContent = '⚠️ DB Code not found in master list — enter DB Name/City manually.';
+      }
+    }catch(_e){
+      nameEl.readOnly = false; nameEl.placeholder='Type DB name'; 
+      cityEl.readOnly = false; cityEl.placeholder='Type DB city/town';
+    }
+  }, 400);
+}
+
+/* SO identity is looked up by phone number from a master list managed by
+   Admin (dashboard.html) — the Name field itself can never be typed into
+   directly, which is the point: it always reflects what's actually on file,
+   not whatever the SO happens to type. The last successful phone+name is
+   cached in localStorage so returning SOs don't have to re-enter it every
+   single audit — it's just pre-filled and re-verified against the master
+   list on load. */
+const SO_IDENTITY_KEY = 'fieldaudit_so_identity';
+let CHECKIN_PHONE = '';
+let CHECKIN_NAME = '';
+
+function ckIds(p){
+  return {
+    card: p+'_checkinCard', content: p+'_checkinContent',
+    phone: p+'_ckPhone', status: p+'_ckPhoneStatus',
+    geoBtn: p+'_ckGeoBtn', geoReadout: p+'_ckGeoReadout', geoCoords: p+'_ckGeoCoords',
+    photoBtn: p+'_ckPhotoBtn', photoInput: p+'_ckPhotoInput', photoPreview: p+'_ckPhotoPreview',
+    submitBtn: p+'_ckSubmitBtn'
+  };
+}
+
+let ckLookupTimer;
+function onCheckinPhoneInput(el, prefix){
+  el.classList.remove('invalid');
+  clearTimeout(ckLookupTimer);
+  const ids = ckIds(prefix);
+  const statusEl = document.getElementById(ids.status);
+  if(!/^\d{10}$/.test(el.value)){ statusEl.className='addr-note'; statusEl.textContent=''; return; }
+  ckLookupTimer = setTimeout(()=>lookupCheckinPhone(el.value, prefix), 400);
+}
+
+/* Every module's check-in card asks for its own phone number, but they all
+   drive the SAME daily check-in — whichever module the SO opens first, one
+   selfie satisfies both for the rest of the day. Status is re-checked
+   against the backend every time (not just trusted from a local cache), so
+   it can't be spoofed and a fresh device still correctly shows "not checked
+   in" for today. */
+async function lookupCheckinPhone(phone, prefix){
+  const ids = ckIds(prefix);
+  const statusEl = document.getElementById(ids.status);
+  statusEl.className='addr-note'; statusEl.textContent='Checking master list…';
+  try{
+    if(!configured()) throw new Error('__NOCFG__');
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=lookupSO&phone=${encodeURIComponent(phone)}`, {}, 8000);
+    const j = await r.json();
+    if(j.success && j.name){
+      CHECKIN_PHONE = phone; CHECKIN_NAME = j.name;
+      statusEl.className='addr-note'; statusEl.textContent = `✅ ${j.name}`;
+      try{ localStorage.setItem(SO_IDENTITY_KEY, JSON.stringify({phone, name:j.name})); }catch(_e){}
+      checkTodayCheckin(prefix);
+    } else {
+      statusEl.className='addr-note warn'; statusEl.textContent = '⚠️ Phone number not found in master list. Ask your Admin to add you (dashboard.html → Master Data).';
+    }
+  }catch(_e){
+    statusEl.className='addr-note warn'; statusEl.textContent = '⚠️ Could not check master list — check your connection and try again.';
+  }
+}
+
+function prefillSavedSOIdentity(prefix){
+  try{
+    const saved = JSON.parse(localStorage.getItem(SO_IDENTITY_KEY) || 'null');
+    if(saved && saved.phone && saved.name){
+      const ids = ckIds(prefix);
+      document.getElementById(ids.phone).value = saved.phone;
+      lookupCheckinPhone(saved.phone, prefix);
+    }
+  }catch(_e){}
+}
+
+async function checkTodayCheckin(prefix){
+  const ids = ckIds(prefix);
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById(ids.content).insertAdjacentHTML('beforeend', '');
+  try{
+    if(!configured()) throw new Error('__NOCFG__');
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=checkinStatus&phone=${encodeURIComponent(CHECKIN_PHONE)}&date=${today}`, {}, 8000);
+    const j = await r.json();
+    if(j.checkedIn){
+      CHECKIN_DONE = true; CHECKIN_TIME = j.time;
+      renderCheckinDoneAll();
+    } else {
+      CHECKIN_DONE = false;
+      renderCheckinCapture(prefix);
+    }
+  }catch(_e){
+    // If the status check itself fails, err on the side of still requiring
+    // check-in rather than silently letting the audit through unverified.
+    CHECKIN_DONE = false;
+    renderCheckinCapture(prefix);
+  }
+  onCheckinIdentityKnown();
+}
+
+/* Once we know who's checking in (or has already checked in), auto-fill the
+   module-specific identity fields that need it — DB module's own SO Phone/
+   Name (used on the audit record itself), and retail's Auditor Name — so the
+   SO isn't asked to type/re-enter the same identity a second time. */
+function onCheckinIdentityKnown(){
+  const soPhoneEl = document.getElementById('db_soPhone');
+  const soNameEl = document.getElementById('db_soName');
+  if(soPhoneEl && CHECKIN_PHONE){ soPhoneEl.value = CHECKIN_PHONE; soPhoneEl.placeholder=''; }
+  if(soNameEl && CHECKIN_NAME){ soNameEl.value = CHECKIN_NAME; soNameEl.placeholder=''; }
+  const auditorEl = document.getElementById('f_auditor');
+  if(auditorEl && CHECKIN_NAME && !auditorEl.value){ auditorEl.value = CHECKIN_NAME; }
+}
+
+function renderCheckinDoneAll(){
+  ['d','r'].forEach(p=>{
+    const ids = ckIds(p);
+    const cardEl = document.getElementById(ids.card);
+    const contentEl = document.getElementById(ids.content);
+    if(!cardEl || !contentEl) return;
+    cardEl.className = 'card geo-card got';
+    contentEl.innerHTML = `<div class="geo-status got">✅ Already checked in today${CHECKIN_TIME?' at '+CHECKIN_TIME:''} — no selfie needed again for the rest of today.</div>`;
+  });
+  onCheckinIdentityKnown();
+}
+
+function renderCheckinCapture(prefix){
+  const ids = ckIds(prefix);
+  const cardEl = document.getElementById(ids.card);
+  cardEl.className = 'card geo-card';
+  document.getElementById(ids.content).innerHTML = `
+    <div class="field">
+      <label>Your Phone Number <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(10 digits)</span></label>
+      <input type="text" id="${ids.phone}" inputmode="numeric" maxlength="10" value="${CHECKIN_PHONE}" placeholder="e.g. 9830012345" oninput="onCheckinPhoneInput(this,'${prefix}')">
+      <div class="addr-note" id="${ids.status}">✅ ${CHECKIN_NAME}</div>
+    </div>
+    <div class="geo-status pending" style="margin-top:6px;">Not checked in today yet — required once before you can submit any audit today</div>
+    <div class="grid2" style="margin-top:10px;">
+      <button class="btn btn-primary geo-btn-big" onclick="captureCheckinLocation('${prefix}')" id="${ids.geoBtn}">${PIN_SVG}Capture GPS location</button>
+      <button class="btn btn-outline" onclick="tryOpenCheckinCamera('${prefix}')" id="${ids.photoBtn}" disabled>🤳 Take selfie</button>
+    </div>
+    <input type="file" id="${ids.photoInput}" accept="image/*" capture="user" style="display:none" onchange="onCheckinPhoto(event,'${prefix}')">
+    <img id="${ids.photoPreview}" style="max-width:200px; border-radius:4px; margin-top:10px; display:none;">
+    <div class="geo-readout" id="${ids.geoReadout}" style="display:none; margin-top:10px;">
+      <div class="coords" id="${ids.geoCoords}">—</div>
+    </div>
+    <button class="btn btn-dark btn-block" style="margin-top:12px;" onclick="doSubmitCheckin('${prefix}')" id="${ids.submitBtn}" disabled>Submit check-in</button>
+  `;
+}
+function tryOpenCheckinCamera(prefix){
+  if(!CHECKIN_GEO){ toast('Capture GPS location first', true); return; }
+  document.getElementById(ckIds(prefix).photoInput).click();
+}
+function onCheckinPhoto(e, prefix){
+  const file = e.target.files[0]; if(!file) return;
+  downscale(file, (dataUrl)=>{
+    CHECKIN_PHOTO_BASE64 = dataUrl;
+    const ids = ckIds(prefix);
+    const prev = document.getElementById(ids.photoPreview);
+    prev.src = dataUrl; prev.style.display='block';
+    updateCheckinSubmitEnabled(prefix);
+  });
+}
+function updateCheckinSubmitEnabled(prefix){
+  const btn = document.getElementById(ckIds(prefix).submitBtn);
+  if(btn) btn.disabled = !(CHECKIN_GEO && CHECKIN_PHOTO_BASE64);
+}
+function captureCheckinLocation(prefix){
+  if(!navigator.geolocation){ toast('Geolocation not supported on this device', true); return; }
+  const ids = ckIds(prefix);
+  const btn = document.getElementById(ids.geoBtn);
+  setBtnBusy(btn, 'Locating…');
+  navigator.geolocation.getCurrentPosition((pos)=>{
+    CHECKIN_GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude};
+    CHECKIN_GEO.link = `https://www.google.com/maps?q=${CHECKIN_GEO.lat},${CHECKIN_GEO.lng}`;
+    document.getElementById(ids.geoReadout).style.display='block';
+    document.getElementById(ids.geoCoords).textContent = `${CHECKIN_GEO.lat.toFixed(6)}, ${CHECKIN_GEO.lng.toFixed(6)}`;
+    setBtnIdle(btn, PIN_SVG + 'Re-capture location');
+    document.getElementById(ids.photoBtn).disabled = false;
+    updateCheckinSubmitEnabled(prefix);
+  }, (err)=>{
+    toast('Could not get location: '+err.message, true);
+    setBtnIdle(btn, PIN_SVG + 'Capture GPS location');
+  }, {enableHighAccuracy:true, timeout:15000});
+}
+async function doSubmitCheckin(prefix){
+  if(!CHECKIN_GEO || !CHECKIN_PHOTO_BASE64){ toast('Capture GPS location and take a selfie first', true); return; }
+  const ids = ckIds(prefix);
+  const btn = document.getElementById(ids.submitBtn);
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Stamping selfie…';
+  const today = new Date().toISOString().slice(0,10);
+  const lines = [
+    `${today}  •  ${CHECKIN_GEO.lat.toFixed(6)}, ${CHECKIN_GEO.lng.toFixed(6)}`,
+    `SO: ${CHECKIN_NAME || CHECKIN_PHONE}   Daily Check-in`
+  ];
+  let stamped = CHECKIN_PHOTO_BASE64;
+  try{ stamped = await stampPhoto(CHECKIN_PHOTO_BASE64, lines); }catch(_e){}
+  btn.innerHTML = '<span class="spin"></span> Submitting…';
+  try{
+    if(!configured()) throw new Error('__NOCFG__');
+    const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify({
+      action:'submitCheckin', date: today, soPhone: CHECKIN_PHONE, soName: CHECKIN_NAME,
+      lat: CHECKIN_GEO.lat, lng: CHECKIN_GEO.lng, photo: stamped
+    })});
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message || 'Check-in failed');
+    CHECKIN_DONE = true;
+    CHECKIN_TIME = new Date().toTimeString().slice(0,5);
+    renderCheckinDoneAll();
+    toast('Checked in for today ✅');
+  }catch(e){
+    toast(e.message==='__NOCFG__' ? 'Backend not connected' : (e.message || 'Could not submit check-in'), true);
+    btn.disabled = false; btn.textContent = 'Submit check-in';
+  }
+}
+function setAuditType(val, btn){
+  DB_FORM.auditType = val;
+  const wrap = btn.parentElement;
+  wrap.classList.remove('invalid');
+  [...wrap.children].forEach(c=>c.classList.remove('sel-yes','sel-no'));
+  btn.classList.add('sel-yes');
+}
+function downscale(file, cb){
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    const img = new Image();
+    img.onload = function(){
+      const maxW = 1280;
+      const scale = Math.min(1, maxW/img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width*scale; canvas.height = img.height*scale;
+      canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+      cb(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ---- Free client-side OCR (Tesseract.js) to tell GST vs Non-GST invoices ---- */
+async function scanInvoice(){
+  if(!INVOICE_BASE64){ toast('Capture the invoice photo first', true); return; }
+  const btn = document.getElementById('scanBtn');
+  const orig = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Scanning invoice…';
+  try{
+    const { data:{ text } } = await Tesseract.recognize(INVOICE_BASE64, 'eng');
+    const gstinPattern = /\b\d{2}[A-Z]{5}\d{4}[A-Z]\d[Z][A-Z0-9]\b/i;
+    const hasGstin = gstinPattern.test(text) || /GSTIN/i.test(text) || /GST\s*NO/i.test(text);
+    const result = document.getElementById('scanResult');
+    if(hasGstin){
+      FORM.invoiceGST = 'GST';
+      document.getElementById('f_q7').value = 'GST';
+      result.className = 'scan-result gst';
+      result.textContent = '✅ GSTIN found — marked as GST invoice. Not correct? Use the buttons below to override.';
+    } else {
+      FORM.invoiceGST = 'Non-GST';
+      document.getElementById('f_q7').value = 'Non-GST';
+      result.className = 'scan-result nongst';
+      result.textContent = '⚠️ No GSTIN detected — marked as Non-GST invoice. Not correct? Use the buttons below to override.';
+    }
+    document.getElementById('scanOverride').style.display='flex';
+    highlightOverride();
+  }catch(err){
+    toast('Scan failed — you can set Bill type manually', true);
+  }finally{
+    btn.disabled = false; btn.innerHTML = orig;
+  }
+}
+function setInvoiceType(val, btn){
+  FORM.invoiceGST = val;
+  document.getElementById('f_q7').value = val;
+  highlightOverride();
+}
+function highlightOverride(){
+  document.querySelectorAll('#scanOverride button').forEach(b=>{
+    b.classList.toggle('sel', b.textContent.includes(FORM.invoiceGST));
+  });
+}
+
+/* ---- Address lookup: detailed reverse geocoding, free, no API key ----
+   Multi-layer safety net so the address is never silently wrong, thin, or blank:
+     1. Overpass (OpenStreetMap POIs) — tries a tight ~20m radius for a named
+        landmark first, then widens to ~50m if nothing is that close, using
+        two different Overpass mirrors in case one is slow/unreachable.
+     2. Nominatim structured reverse geocode — tried at building zoom (18) first,
+        then retried at street zoom (16) if the first attempt has no road and no
+        useful breadcrumb, since not every point has a building tagged in OSM.
+        Also mines Nominatim's full display_name for locality names that don't
+        show up in the structured address fields — this is what was missing
+        before (only "City, State, Pincode" showed up because road/landmark
+        came back empty and nothing else was used to fill the gap).
+     3. BigDataCloud reverse-geocode-client — fills in whatever's still missing,
+        mainly postcode/city, since those are the fields Nominatim is weakest on
+        in many Indian towns.
+   If everything comes back empty (no internet, or the area has no OSM data), the
+   field is never left blank — it's filled with the raw coordinates and a clear
+   warning telling the auditor to type the address manually before submitting. */
+const OVERPASS_MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+
+/* Every geocoding network call goes through this so a slow/unresponsive
+   server can never stall the whole address lookup for more than a few
+   seconds — the caller just gets an error to catch instead of hanging. */
+function fetchWithTimeout(url, opts, ms){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), ms || 6000);
+  return fetch(url, Object.assign({}, opts, {signal:controller.signal})).finally(()=>clearTimeout(timer));
+}
+
+async function overpassQuery(q){
+  // Race both mirrors instead of trying them one after another — whichever
+  // answers first wins, so a slow/overloaded public Overpass server (common)
+  // no longer makes the whole address lookup wait on it sequentially.
+  const attempt = (base) => fetchWithTimeout(base, {method:'POST', body:q}, 6000)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(j => j.elements ? j.elements : Promise.reject());
+  try{
+    return await Promise.any(OVERPASS_MIRRORS.map(attempt));
+  }catch(_e){
+    return [];
+  }
+}
+
+function haversineMeters(lat1,lon1,lat2,lon2){
+  const R = 6371000, toRad = d => d*Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+// Named, recognisable landmark categories a manager would actually find useful
+// (bank/hospital/hotel/mall/office ranked above cafes/restaurants, generic
+// named buildings last) — weight 1 is picked over weight 2+ even if slightly
+// further away, since "Near XYZ Bank" is more useful than "Near some building".
+const LANDMARK_WEIGHT = {bank:1, hospital:1, hotel:1, mall:1, office:1,
+  restaurant:2, cafe:2, place_of_worship:2, cinema:2, school:2, fuel:2, pharmacy:2, building:3};
+function landmarkCategory(tags){
+  if(tags.amenity==='bank') return 'bank';
+  if(tags.amenity==='hospital') return 'hospital';
+  if(tags.tourism==='hotel') return 'hotel';
+  if(tags.shop==='mall') return 'mall';
+  if(tags.office) return 'office';
+  if(tags.amenity==='restaurant') return 'restaurant';
+  if(tags.amenity==='cafe') return 'cafe';
+  if(tags.amenity==='place_of_worship') return 'place_of_worship';
+  if(tags.amenity==='cinema') return 'cinema';
+  if(tags.amenity==='college' || tags.amenity==='school') return 'school';
+  if(tags.amenity==='fuel') return 'fuel';
+  if(tags.amenity==='pharmacy') return 'pharmacy';
+  if(tags.building) return 'building';
+  return 'other';
+}
+/* Tries Google's own Places database first (via the backend, since the key
+   must stay server-side) — much better coverage of small/local commercial
+   buildings in India than OpenStreetMap. Falls back to the free Overpass
+   search below if Google isn't configured or returns nothing. */
+async function findNearbyLandmarkGoogle(lat, lng){
+  if(!configured()) return null;
+  try{
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=nearbyLandmark&lat=${lat}&lng=${lng}`, {}, 7000);
+    const j = await r.json();
+    if(j.success && j.name) return {name:j.name};
+  }catch(_e){}
+  return null;
+}
+
+/* Finds the nearest named, recognisable landmark within ~50m — bank, hospital,
+   hotel, mall, office, restaurant, cafe, etc, or failing those, a named
+   building — and returns it with its real distance and category so the
+   closest *useful* one wins, not just the closest thing of any kind. This is
+   the free OpenStreetMap-based fallback, used when Google's Places lookup
+   (above) isn't configured or finds nothing. */
+async function findNearbyLandmarkOSM(lat, lng){
+  const q = `[out:json][timeout:8];(node(around:50,${lat},${lng})[~"^(amenity|shop|tourism|office|leisure)$"~"."][name];way(around:50,${lat},${lng})[~"^(amenity|shop|tourism|office|leisure)$"~"."][name];node(around:50,${lat},${lng})[building][name];way(around:50,${lat},${lng})[building][name];);out center 30;`;
+  const elements = await overpassQuery(q);
+  if(!elements.length) return null;
+  const scored = elements.map(el=>{
+    const elLat = el.lat!=null ? el.lat : (el.center && el.center.lat);
+    const elLon = el.lon!=null ? el.lon : (el.center && el.center.lon);
+    if(elLat==null || elLon==null || !el.tags || !el.tags.name) return null;
+    const category = landmarkCategory(el.tags);
+    return {name: el.tags.name, category, distance: haversineMeters(lat,lng,elLat,elLon), weight: LANDMARK_WEIGHT[category] || 4};
+  }).filter(Boolean);
+  if(!scored.length) return null;
+  scored.sort((a,b)=> (a.weight-b.weight) || (a.distance-b.distance));
+  return scored[0];
+}
+
+async function findNearbyLandmark(lat, lng){
+  const g = await findNearbyLandmarkGoogle(lat, lng);
+  if(g && g.name) return g;
+  return await findNearbyLandmarkOSM(lat, lng);
+}
+
+async function nominatimReverse(lat, lng, zoom){
+  try{
+    const r = await fetchWithTimeout(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1&zoom=${zoom}`, {headers:{'Accept-Language':'en'}}, 6000);
+    const j = await r.json();
+    const a = j.address || {};
+    return {
+      building: a.building || a.house_name || '',
+      road: a.road || a.pedestrian || a.residential || a.street || a.living_street || a.footway || a.cycleway || a.path || '',
+      houseNo: a.house_number || '',
+      areaName: a.neighbourhood || a.suburb || a.quarter || a.hamlet || '',
+      district: a.state_district || a.county || a.city_district || '',
+      city: a.city || a.town || a.village || a.municipality || '',
+      state: a.state || '',
+      pincode: a.postcode || '',
+      country: a.country || '',
+      full: j.display_name || ''
+    };
+  }catch(_e){
+    return {building:'',road:'',houseNo:'',areaName:'',district:'',city:'',state:'',pincode:'',country:'',full:''};
+  }
+}
+
+/* When Nominatim has no road tagged for this exact point, mine its full
+   display_name breadcrumb (most-specific → least-specific) for locality
+   names that aren't already captured by city/state/pincode/country — this
+   is usually the actual area/lane/mohalla name, which is far more useful
+   than dropping straight to "City, State, Pincode". Broad administrative
+   labels (metropolitan area, district, division, etc.) are filtered out —
+   they're technically correct but not a usable "address", and were showing
+   up ahead of the actual locality for some points. */
+const ADMIN_NOISE_WORDS = ['metropolitan','district','division','region','zone','circle','taluk','tehsil','block','mandal','sub-district','subdivision','urban agglomeration','municipal corporation'];
+function extraFromFullName(full, city, state, pincode){
+  if(!full) return '';
+  const seen = new Set([city, state, pincode].filter(Boolean).map(s=>s.toLowerCase()));
+  const segs = full.split(',').map(s=>s.trim()).filter(Boolean);
+  const picked = [];
+  for(const s of segs){
+    const low = s.toLowerCase();
+    if(seen.has(low)) continue;
+    if(/^\d{5,6}$/.test(s)) continue;
+    if(low === 'india') continue;
+    if(ADMIN_NOISE_WORDS.some(w=>low.includes(w))) continue;
+    picked.push(s);
+    if(picked.length >= 2) break;
+  }
+  return picked.join(', ');
+}
+
+async function bigDataCloudReverse(lat, lng){
+  try{
+    const r = await fetchWithTimeout(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`, {}, 6000);
+    const j = await r.json();
+    return {
+      locality: j.locality || '',
+      city: j.city || j.locality || '',
+      state: j.principalSubdivision || '',
+      pincode: j.postcode || '',
+      full: [j.locality, j.city, j.principalSubdivision, j.postcode, j.countryName].filter(Boolean).join(', ')
+    };
+  }catch(_e){
+    return {locality:'', city:'', state:'', pincode:'', full:''};
+  }
+}
+
+/* Tries the backend's Google Maps Geocoding endpoint first (most accurate,
+   including pincode) — only works once GOOGLE_MAPS_API_KEY is configured in
+   Code.gs, since Google requires a billed API key and that key must never sit
+   in this public HTML file. Returns null (not an error) if the backend isn't
+   reachable, so the caller falls through to the always-available free
+   OSM-based chain below. This never includes a landmark — that's found
+   separately by findNearbyLandmark() and appended by getFullAddress() so
+   landmark quality is the same regardless of which base address won. */
+async function googleReverseGeocode(lat, lng){
+  if(!configured()) return null;
+  try{
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=reverseGeocode&lat=${lat}&lng=${lng}`, {}, 9000);
+    const j = await r.json();
+    if(j.success && j.formatted) return {formatted:j.formatted, source:'google'};
+  }catch(_e){}
+  return null;
+}
+
+async function detailedReverseGeocode(lat, lng){
+  // Run every source in parallel — BigDataCloud in particular is often better than
+  // Nominatim at exactly this: naming the specific known locality/suburb a point
+  // falls in (e.g. "Liluah" rather than just the parent city "Howrah"), so it's
+  // always queried, not only when Nominatim comes back thin.
+  const [g18, bdc] = await Promise.all([
+    nominatimReverse(lat, lng, 18),
+    bigDataCloudReverse(lat, lng)
+  ]);
+  let g = g18;
+  if(!g.road && !g.building){
+    const g16 = await nominatimReverse(lat, lng, 16);
+    g = {...g, ...Object.fromEntries(Object.entries(g16).filter(([_,v])=>v))};
+  }
+  if(!g.pincode) g.pincode = bdc.pincode;
+  if(!g.city) g.city = bdc.city || bdc.locality;
+  if(!g.state) g.state = bdc.state;
+  if(!g.full) g.full = bdc.full;
+
+  let streetLine = [g.building, [g.houseNo, g.road].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  if(!streetLine){
+    streetLine = extraFromFullName(g.full, g.city, g.state, g.pincode) || g.areaName;
+  }
+  // Order: Building, Road/Street, City, District, State, Pincode — landmark is
+  // NOT included here, it's appended once by getFullAddress() for both sources.
+  // Order: Building, Road/Street, City, District, State, Pincode — landmark is
+  // NOT included here, it's appended once by getFullAddress() for both sources.
+  // District is dropped when it's literally the same name as the city (common
+  // in India — e.g. Kolkata district vs Kolkata city), so it doesn't repeat.
+  const districtLine = g.district && g.district.toLowerCase() !== (g.city||'').toLowerCase() ? g.district : '';
+  const formatted = [streetLine, g.city, districtLine, g.state, g.pincode].filter(Boolean).join(', ') || g.full;
+  return {formatted, city:g.city, district:districtLine, state:g.state, pincode:g.pincode, country:g.country, raw:g.full};
+}
+
+/* Base address only — Google if configured and it answers, else the free OSM
+   chain. Callers show this the moment it's ready instead of waiting on the
+   landmark search too, which is what made address lookup feel slow — the
+   landmark (fetchLandmarkAndAppend below) is fetched afterwards, in the
+   background, and appended to the field once it's found. */
+async function getBaseAddress(lat, lng){
+  let base = null;
+  try{ base = await googleReverseGeocode(lat, lng); }catch(_e){ base = null; }
+  if(!base || !base.formatted){
+    try{ base = await detailedReverseGeocode(lat, lng); }catch(_e){ base = {formatted:''}; }
+  }
+  return {formatted: base.formatted || '', source: base.source || 'osm'};
+}
+
+/* Fetches the nearest named landmark in the background and appends it to the
+   given input field — but only if the field still holds exactly the address
+   this function was told to append to, so it never clobbers an edit the
+   auditor made while the (slower) landmark search was still running. */
+function fetchLandmarkAndAppend(lat, lng, fieldEl, baseAddress, onUpdate){
+  findNearbyLandmark(lat, lng).then(landmark => {
+    if(!landmark || !landmark.name) return;
+    if(fieldEl.value !== baseAddress) return; // auditor already edited it — leave it alone
+    const updated = baseAddress ? `${baseAddress}, Near ${landmark.name}` : `Near ${landmark.name}`;
+    fieldEl.value = updated;
+    if(onUpdate) onUpdate(updated);
+  }).catch(()=>{});
+}
+
+function setBtnBusy(btn, busyText){
+  if(!btn) return;
+  if(!btn.dataset.orig) btn.dataset.orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin"></span> ${busyText}`;
+}
+function setBtnIdle(btn, idleText){
+  if(!btn) return;
+  btn.disabled = false;
+  btn.innerHTML = idleText || btn.dataset.orig || btn.innerHTML;
+}
+
+/* ---- Location: captured before anything else can be photographed/submitted.
+   Callable from either the Address card's "Get Address" button or the Location
+   card's own button — both do the exact same full capture, so whichever one the
+   auditor taps, GPS + address + photo-unlock all happen together. ---- */
+function captureLocation(callerBtn){
+  if(!navigator.geolocation){ toast('Geolocation not supported on this device', true); return; }
+  const geoBtn = document.getElementById('geoBtn');
+  const addrBtn = document.getElementById('getAddrBtn');
+  setBtnBusy(geoBtn, 'Locating…');
+  setBtnBusy(addrBtn, 'Locating…');
+  navigator.geolocation.getCurrentPosition(async (pos)=>{
+    GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy};
+    const link = `https://www.google.com/maps?q=${GEO.lat},${GEO.lng}`;
+    GEO.link = link;
+    document.getElementById('geoCard').classList.add('got');
+    document.getElementById('geoStatus').className = 'geo-status got';
+    document.getElementById('geoStatus').textContent = '✅ Location captured';
+    document.getElementById('geoReadout').style.display='block';
+    document.getElementById('geoCoords').textContent = `${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)}`;
+    document.getElementById('geoMeta').innerHTML = `±${Math.round(GEO.accuracy)}m accuracy &middot; <a href="${link}" target="_blank">Open in Google Maps</a>`;
+    document.getElementById('geoAddrDetail').textContent = 'Looking up detailed address…';
+    setBtnIdle(geoBtn, PIN_SVG + 'Re-capture location');
+    setBtnIdle(addrBtn, PIN_SVG + 'Re-fetch address');
+    document.getElementById('photoLock').style.display='none';
+    document.getElementById('invoiceLock').style.display='none';
+
+    const addrNote = document.getElementById('addrNote');
+    addrNote.className = 'addr-note'; addrNote.textContent = 'Fetching address from GPS…';
+    let base;
+    try{
+      base = await getBaseAddress(GEO.lat, GEO.lng);
+    }catch(_e){ base = {formatted:''}; }
+    if(base.formatted){
+      GEO.address = base.formatted;
+      const addrField = document.getElementById('f_address');
+      addrField.value = base.formatted;
+      document.getElementById('geoAddrDetail').innerHTML = `${PIN_SVG}${base.formatted}`;
+      addrNote.className = 'addr-note';
+      addrNote.textContent = base.source === 'google'
+        ? 'Auto-filled from Google Maps — checking for a nearby landmark…'
+        : 'Auto-filled from your current location — free map data can be a house or two, or even a pincode, off. Please check it (especially the pincode) before submitting.';
+      // Landmark search runs in the background and gets appended once found —
+      // the address field is already usable, so this no longer holds up submit.
+      fetchLandmarkAndAppend(GEO.lat, GEO.lng, addrField, base.formatted, (updated)=>{
+        GEO.address = updated;
+        document.getElementById('geoAddrDetail').innerHTML = `${PIN_SVG}${updated}`;
+        if(base.source === 'google') addrNote.textContent = 'Auto-filled from Google Maps for your current location — please glance at it before submitting.';
+      });
+    } else {
+      // Safety net: never leave the address blank — fall back to raw coordinates
+      // and make it unmistakable that a manual address is needed.
+      const fallback = `Near ${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)} (auto-lookup failed)`;
+      GEO.address = fallback;
+      if(!document.getElementById('f_address').value) document.getElementById('f_address').value = fallback;
+      document.getElementById('geoAddrDetail').textContent = 'Could not auto-fill address (no network / no data for this area).';
+      addrNote.className = 'addr-note warn';
+      addrNote.textContent = '⚠️ Auto address lookup failed — please type the correct address manually.';
+      toast('Address auto-lookup failed — please type it manually', true);
+    }
+  }, (err)=>{
+    toast('Could not get location: '+err.message, true);
+    setBtnIdle(geoBtn, PIN_SVG + 'Capture GPS location');
+    setBtnIdle(addrBtn, PIN_SVG + 'Get Address (current location)');
+  }, {enableHighAccuracy:true, timeout:15000});
+}
+
+/* Same flow as captureLocation() above, targeting the DB Stock Audit module's own
+   elements and DB_GEO instead of GEO — reuses the same shared geocoding functions
+   (googleReverseGeocode / detailedReverseGeocode) so both modules get identical
+   address-lookup quality and the same safety net. */
+function dbCaptureLocation(callerBtn){
+  if(!navigator.geolocation){ toast('Geolocation not supported on this device', true); return; }
+  const geoBtn = document.getElementById('dbGeoBtn');
+  setBtnBusy(geoBtn, 'Locating…');
+  navigator.geolocation.getCurrentPosition(async (pos)=>{
+    DB_GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy};
+    const link = `https://www.google.com/maps?q=${DB_GEO.lat},${DB_GEO.lng}`;
+    DB_GEO.link = link;
+    document.getElementById('dbGeoCard').classList.add('got');
+    document.getElementById('dbGeoStatus').className = 'geo-status got';
+    document.getElementById('dbGeoStatus').textContent = '✅ Location captured';
+    document.getElementById('dbGeoReadout').style.display='block';
+    document.getElementById('dbGeoCoords').textContent = `${DB_GEO.lat.toFixed(6)}, ${DB_GEO.lng.toFixed(6)}`;
+    document.getElementById('dbGeoMeta').innerHTML = `±${Math.round(DB_GEO.accuracy)}m accuracy &middot; <a href="${link}" target="_blank">Open in Google Maps</a>`;
+    document.getElementById('dbGeoAddrDetail').textContent = 'Looking up detailed address…';
+    setBtnIdle(geoBtn, PIN_SVG + 'Re-capture location');
+    document.getElementById('dbPhotoLock').style.display='none';
+    document.getElementById('dbPhotoLock2').style.display='none';
+
+    let base;
+    try{
+      base = await getBaseAddress(DB_GEO.lat, DB_GEO.lng);
+    }catch(_e){ base = {formatted:''}; }
+    if(base.formatted){
+      DB_GEO.address = base.formatted;
+      const addrField = document.getElementById('db_address');
+      addrField.value = base.formatted;
+      document.getElementById('dbGeoAddrDetail').innerHTML = `${PIN_SVG}${base.formatted} <span style="color:var(--slate); font-weight:400;">— please glance at it before submitting</span>`;
+      fetchLandmarkAndAppend(DB_GEO.lat, DB_GEO.lng, addrField, base.formatted, (updated)=>{
+        DB_GEO.address = updated;
+        document.getElementById('dbGeoAddrDetail').innerHTML = `${PIN_SVG}${updated} <span style="color:var(--slate); font-weight:400;">— please glance at it before submitting</span>`;
+      });
+    } else {
+      const fallback = `Near ${DB_GEO.lat.toFixed(6)}, ${DB_GEO.lng.toFixed(6)} (auto-lookup failed)`;
+      DB_GEO.address = fallback;
+      if(!document.getElementById('db_address').value) document.getElementById('db_address').value = fallback;
+      document.getElementById('dbGeoAddrDetail').textContent = 'Could not auto-fill address — please type it manually below.';
+      toast('Address auto-lookup failed — please type it manually', true);
+    }
+  }, (err)=>{
+    toast('Could not get location: '+err.message, true);
+    setBtnIdle(geoBtn, PIN_SVG + 'Capture GPS location');
+  }, {enableHighAccuracy:true, timeout:15000});
+}
+
+/* ---- Watermark: every photo gets Date / Lat-Long / Auditor / Retailer / Distributor
+   burned into a footer bar, using whatever the form holds at submit time. ---- */
+function stampPhoto(base64, lines){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    img.onload = function(){
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width; canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const fontSize = Math.max(13, Math.round(img.width/42));
+      const lineH = Math.round(fontSize*1.35);
+      const barH = lineH*lines.length + Math.round(fontSize*0.9);
+      ctx.fillStyle = 'rgba(18,23,43,0.74)';
+      ctx.fillRect(0, img.height-barH, img.width, barH);
+      ctx.font = `600 ${fontSize}px sans-serif`;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.textBaseline = 'top';
+      let y = img.height - barH + Math.round(fontSize*0.45);
+      lines.forEach(line=>{
+        ctx.fillText(line, Math.round(fontSize*0.6), y);
+        y += lineH;
+      });
+      resolve(canvas.toDataURL('image/jpeg', 0.88));
+    };
+    img.onerror = ()=>resolve(base64);
+    img.src = base64;
+  });
+}
+function watermarkLines(){
+  const auditor = document.getElementById('f_auditor').value || '—';
+  const outlet = document.getElementById('f_outletName').value || '—';
+  const distributor = document.getElementById('f_distributor').value || '—';
+  return [
+    `${document.getElementById('f_date').value}  •  ${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)}`,
+    `Auditor: ${auditor}   Retailer: ${outlet}`,
+    `Distributor: ${distributor}`
+  ];
+}
+
+/* ---- Every field is mandatory. On submit, ALL missing fields are highlighted
+   red at once (not just the first one) so the auditor can see everything left
+   to fill in a single glance, instead of hitting "missing field" one at a time. ---- */
+function validateForm(){
+  document.querySelectorAll('.invalid').forEach(el=>el.classList.remove('invalid'));
+  const missing = [];
+  const textFields = [
+    ['f_date','Date of Visit'],['f_auditor','Auditor Name'],['f_district','District'],['f_city','City'],
+    ['f_distributor','Distributor'],['f_route','Route Name / Code'],['f_outletName','Outlet / Retailer Name'],
+    ['f_outletType','Outlet Type'],['f_address','Address'],['f_contact','Contact Name / No.'],
+    ['f_q2','How many DBs are supplying'],['f_q5','Price update source'],['f_q6','DB bills seen'],
+    ['f_q7','Bill type'],['f_q10','NLB/GSB brand']
+  ];
+  textFields.forEach(([id,label])=>{
+    const el = document.getElementById(id);
+    if(!el.value){ el.classList.add('invalid'); missing.push(label); }
+  });
+  const ynGroups = [
+    ['q1','yn_q1','Distribution by distributor (Yes/No)'],['q3','yn_q3','Spice availability (Yes/No)'],
+    ['q4','yn_q4','Happy with DB (Yes/No)'],['q9','yn_q9','POSM available (Yes/No)']
+  ];
+  ynGroups.forEach(([key,wrapId,label])=>{
+    if(!FORM[key]){ document.getElementById(wrapId).classList.add('invalid'); missing.push(label); }
+  });
+  if(!FORM.q8){ document.getElementById('star_q8').classList.add('invalid'); missing.push('Shelf visibility rating'); }
+  if(!PHOTO_BASE64){ document.getElementById('photoBox').classList.add('invalid'); missing.push('Outlet photo'); }
+  if(!INVOICE_BASE64){ document.getElementById('invoiceBox').classList.add('invalid'); missing.push('Invoice photo'); }
+  if(!GEO){ missing.push('GPS location'); }
+  if(!CHECKIN_DONE){ missing.push("Today's selfie check-in (see the Daily Selfie Check-in card above)"); }
+  return missing;
+}
+document.querySelector('main').addEventListener('input', (e)=>{
+  if(e.target.classList) e.target.classList.remove('invalid');
+});
+document.querySelector('main').addEventListener('change', (e)=>{
+  if(e.target.classList) e.target.classList.remove('invalid');
+});
+
+function dbWatermarkLines(){
+  const code = document.getElementById('db_dbCode').value || 'N/A';
+  const name = document.getElementById('db_dbName').value || 'N/A';
+  const so = document.getElementById('db_soName').value || 'N/A';
+  return [
+    `DB Code: ${code}  |  DB Name: ${name}`,
+    `Photo by: ${so}  •  Date: ${document.getElementById('db_date').value}`,
+    `Lat: ${DB_GEO.lat.toFixed(6)}   Long: ${DB_GEO.lng.toFixed(6)}`
+  ];
+}
+
+/* Only DB Code, DB Name, SO Name (+ GPS + the mandatory wide godown photo) are
+   actually required — DB City, ASM Name, every quantity field, the address, and
+   the product-rack photo are all optional, matching the real GCPL Stock Audit
+   spec: not every distributor stocks every SKU, so forcing a value there would
+   just produce fake zeros instead of real data. */
+function validateDBForm(){
+  document.querySelectorAll('#dbModule .invalid').forEach(el=>el.classList.remove('invalid'));
+  const missing = [];
+  if(!DB_FORM.auditType){ document.getElementById('yn_auditType').classList.add('invalid'); missing.push('Conducted By (GCPL Sales Officer / 3PA)'); }
+  const soPhone = document.getElementById('db_soPhone');
+  if(!/^\d{10}$/.test(soPhone.value)){ soPhone.classList.add('invalid'); missing.push('SO Phone Number (10 digits)'); }
+  const soName = document.getElementById('db_soName');
+  if(!soName.value){ soName.classList.add('invalid'); missing.push('SO Name (looked up from phone number)'); }
+  if(!CHECKIN_DONE){ missing.push("Today's selfie check-in (see the Daily Selfie Check-in card above)"); }
+  const dbCode = document.getElementById('db_dbCode');
+  if(!dbCode.value){ dbCode.classList.add('invalid'); missing.push('DB Code'); }
+  else if(!isValidDbCode(dbCode.value)){ dbCode.classList.add('invalid'); missing.push('DB Code (must be exactly 7 digits)'); }
+  const dbName = document.getElementById('db_dbName');
+  if(!dbName.value){ dbName.classList.add('invalid'); missing.push('DB Name'); }
+  if(!DB_PHOTO_BASE64){ document.getElementById('dbPhotoBox').classList.add('invalid'); missing.push('Complete Godown (Wide View) photo'); }
+  if(!DB_GEO){ missing.push('GPS location'); }
+  return missing;
+}
+
+async function submitAudit(){
+  const missing = validateForm();
+  if(missing.length){
+    const preview = missing.slice(0,3).join(', ') + (missing.length>3 ? ` +${missing.length-3} more` : '');
+    toast(`Missing (highlighted in red): ${preview}`, true);
+    if(!CHECKIN_DONE){ document.getElementById('r_checkinCard').scrollIntoView({behavior:'smooth', block:'center'}); }
+    else if(!GEO){ document.getElementById('geoCard').scrollIntoView({behavior:'smooth', block:'center'}); }
+    else { const first = document.querySelector('.invalid'); if(first) first.scrollIntoView({behavior:'smooth', block:'center'}); }
+    return;
+  }
+  document.getElementById('submitReq').classList.remove('show');
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Stamping photos…';
+  const lines = watermarkLines();
+  let stampedOutlet = '', stampedInvoice = '';
+  try{
+    if(PHOTO_BASE64) stampedOutlet = await stampPhoto(PHOTO_BASE64, lines);
+    if(INVOICE_BASE64) stampedInvoice = await stampPhoto(INVOICE_BASE64, lines);
+  }catch(_e){ stampedOutlet = PHOTO_BASE64 || ''; stampedInvoice = INVOICE_BASE64 || ''; }
+  btn.innerHTML = '<span class="spin"></span> Submitting &amp; running AI checks…';
+  const payload = {
+    action:'submit',
+    auditor: document.getElementById('f_auditor').value,
+    date: document.getElementById('f_date').value,
+    district: document.getElementById('f_district').value,
+    city: document.getElementById('f_city').value,
+    distributor: document.getElementById('f_distributor').value,
+    route: document.getElementById('f_route').value,
+    outletName: document.getElementById('f_outletName').value,
+    outletType: document.getElementById('f_outletType').value,
+    address: document.getElementById('f_address').value,
+    contact: document.getElementById('f_contact').value,
+    q1_distribution: FORM.q1 || '',
+    q2_dbCount: document.getElementById('f_q2').value,
+    q3_spiceAvailable: FORM.q3 || '',
+    q4_happyWithDB: FORM.q4 || '',
+    q5_priceSource: document.getElementById('f_q5').value,
+    q6_billsSeen: document.getElementById('f_q6').value,
+    q7_billType: document.getElementById('f_q7').value,
+    invoiceGSTDetected: FORM.invoiceGST || 'Not scanned',
+    q8_visibilityRating: FORM.q8 || '',
+    q9_posmAvailable: FORM.q9 || '',
+    q10_nlbGsbBrand: document.getElementById('f_q10').value,
+    photo: stampedOutlet,
+    invoicePhoto: stampedInvoice,
+    lat: GEO.lat, lng: GEO.lng, accuracy: GEO.accuracy, mapsLink: GEO.link, geoAddress: GEO.address || ''
+  };
+  try{
+    if(!configured()) throw new Error('__NOCFG__');
+    const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)});
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message || 'Submit failed');
+    showStamp(res.auditId || 'OK');
+    if(res.aiInsight && res.aiInsight.invoiceIssue){
+      toast('⚠️ AI flagged a possible invoice issue: ' + res.aiInsight.invoiceIssue, true);
+    }
+    resetForm();
+  }catch(e){
+    if(e.message==='__NOCFG__'){
+      showStamp('DEMO'); resetForm();
+    } else {
+      toast(e.message || 'Could not submit audit. Please try again.', true);
+    }
+  }finally{
+    btn.disabled = false; btn.innerHTML = 'Submit audit';
+  }
+}
+function showStamp(id){
+  document.getElementById('stampId').textContent = '#'+id;
+  document.getElementById('stampWrap').style.display='flex';
+  const el = document.getElementById('stampEl');
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
+document.getElementById('stampWrap').addEventListener('click', ()=>{ document.getElementById('stampWrap').style.display='none'; });
+
+function resetForm(){
+  ['f_auditor','f_district','f_city','f_distributor','f_route','f_outletName','f_outletType','f_address','f_contact','f_q2','f_q5','f_q6','f_q7','f_q10'].forEach(id=>document.getElementById(id).value='');
+  FORM = {};
+  document.querySelectorAll('#retailModule .yn button').forEach(b=>b.classList.remove('sel-yes','sel-no'));
+  document.querySelectorAll('.stars button').forEach(b=>b.classList.remove('on'));
+  PHOTO_BASE64 = null; INVOICE_BASE64 = null; GEO = null;
+  document.getElementById('photoPreview').style.display='none';
+  document.getElementById('invoicePreview').style.display='none';
+  document.getElementById('scanBtnWrap').style.display='none';
+  document.getElementById('scanResult').className='scan-result';
+  document.getElementById('scanOverride').style.display='none';
+  document.getElementById('geoCard').classList.remove('got');
+  document.getElementById('geoStatus').className = 'geo-status pending';
+  document.getElementById('geoStatus').textContent = 'Not captured yet — required before photos & submit';
+  document.getElementById('geoReadout').style.display='none';
+  document.getElementById('geoAddrDetail').textContent='';
+  document.getElementById('addrNote').className='addr-note';
+  document.getElementById('addrNote').textContent='';
+  setBtnIdle(document.getElementById('getAddrBtn'), PIN_SVG + 'Get Address (current location)');
+  setBtnIdle(document.getElementById('geoBtn'), PIN_SVG + 'Capture GPS location');
+  document.getElementById('photoLock').style.display='block';
+  document.getElementById('invoiceLock').style.display='block';
+  document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
+  if(CHECKIN_NAME) document.getElementById('f_auditor').value = CHECKIN_NAME; // re-fill after clearing above — same SO, no need to retype
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+async function submitDBStockAudit(){
+  const missing = validateDBForm();
+  if(missing.length){
+    const preview = missing.slice(0,3).join(', ') + (missing.length>3 ? ` +${missing.length-3} more` : '');
+    toast(`Missing: ${preview}`, true);
+    if(!CHECKIN_DONE){ document.getElementById('d_checkinCard').scrollIntoView({behavior:'smooth', block:'center'}); }
+    else if(!DB_GEO){ document.getElementById('dbGeoCard').scrollIntoView({behavior:'smooth', block:'center'}); }
+    else { const first = document.querySelector('#dbModule .invalid'); if(first) first.scrollIntoView({behavior:'smooth', block:'center'}); }
+    return;
+  }
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Stamping photos…';
+  const lines = dbWatermarkLines();
+  let stampedWide = '', stampedRack = '';
+  try{
+    if(DB_PHOTO_BASE64) stampedWide = await stampPhoto(DB_PHOTO_BASE64, lines);
+    if(DB_PHOTO_BASE64_2) stampedRack = await stampPhoto(DB_PHOTO_BASE64_2, lines);
+  }catch(_e){ stampedWide = DB_PHOTO_BASE64 || ''; stampedRack = DB_PHOTO_BASE64_2 || ''; }
+  btn.innerHTML = '<span class="spin"></span> Submitting &amp; running AI checks…';
+  const qty = id => document.getElementById(id).value || 0;
+  const payload = {
+    action:'submitDBStock',
+    date: document.getElementById('db_date').value,
+    auditType: DB_FORM.auditType || '',
+    dbCode: document.getElementById('db_dbCode').value,
+    dbName: document.getElementById('db_dbName').value,
+    dbCity: document.getElementById('db_dbCity').value,
+    soPhone: document.getElementById('db_soPhone').value,
+    soName: document.getElementById('db_soName').value,
+    asmName: document.getElementById('db_asmName').value,
+    address: document.getElementById('db_address').value,
+    atta: qty('db_atta'), maida: qty('db_maida'), sooji: qty('db_sooji'), sattu: qty('db_sattu'),
+    besan: qty('db_besan'), dalia: qty('db_dalia'), others: qty('db_others'), spicesTotal: qty('db_spicesTotal'),
+    haldi: qty('db_haldi'), chili: qty('db_chili'), dhania: qty('db_dhania'),
+    jeeraPowder: qty('db_jeeraPowder'), jeeraWhole: qty('db_jeeraWhole'), panchForon: qty('db_panchForon'),
+    methi: qty('db_methi'), ajwain: qty('db_ajwain'), saunf: qty('db_saunf'), sarson: qty('db_sarson'),
+    shahiGaramMasala: qty('db_shahiGaramMasala'), chickenMasala: qty('db_chickenMasala'),
+    meatMasala: qty('db_meatMasala'), kashmiriMirch: qty('db_kashmiriMirch'), kalajeera: qty('db_kalajeera'),
+    photo: stampedWide, photoProductRack: stampedRack,
+    lat: DB_GEO.lat, lng: DB_GEO.lng, accuracy: DB_GEO.accuracy, mapsLink: DB_GEO.link, geoAddress: DB_GEO.address || ''
+  };
+  try{
+    if(!configured()) throw new Error('__NOCFG__');
+    const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)});
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message || 'Submit failed');
+    showStamp(res.auditId || 'OK');
+    resetDBForm();
+  }catch(e){
+    if(e.message==='__NOCFG__'){
+      showStamp('DEMO'); resetDBForm();
+    } else {
+      toast(e.message || 'Could not submit stock audit. Please try again.', true);
+    }
+  }finally{
+    btn.disabled = false; btn.innerHTML = 'Submit stock audit';
+  }
+}
+
+function resetDBForm(){
+  // SO Phone/Name are deliberately NOT cleared here — same SO usually does
+  // several DBs in one session, and it's already cached in localStorage too.
+  ['db_dbCode','db_dbName','db_dbCity','db_asmName','db_address',
+   'db_atta','db_maida','db_sooji','db_sattu','db_besan','db_dalia','db_others','db_spicesTotal',
+   'db_haldi','db_chili','db_dhania','db_jeeraPowder','db_jeeraWhole','db_panchForon','db_methi',
+   'db_ajwain','db_saunf','db_sarson','db_shahiGaramMasala','db_chickenMasala','db_meatMasala',
+   'db_kashmiriMirch','db_kalajeera'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('db_dbName').readOnly = true; document.getElementById('db_dbName').placeholder='Enter DB Code first';
+  document.getElementById('db_dbCity').readOnly = true; document.getElementById('db_dbCity').placeholder='Enter DB Code first';
+  document.getElementById('dbCodeError').textContent='';
+  DB_FORM = {};
+  document.querySelectorAll('#yn_auditType button').forEach(b=>b.classList.remove('sel-yes','sel-no'));
+  DB_PHOTO_BASE64 = null; DB_PHOTO_BASE64_2 = null; DB_GEO = null;
+  document.getElementById('dbPhotoPreview').style.display='none';
+  document.getElementById('dbPhotoPreview2').style.display='none';
+  document.querySelectorAll('#dbModule .invalid').forEach(el=>el.classList.remove('invalid'));
+  document.getElementById('dbGeoCard').classList.remove('got');
+  document.getElementById('dbGeoStatus').className = 'geo-status pending';
+  document.getElementById('dbGeoStatus').textContent = 'Not captured yet — required before photo & submit';
+  document.getElementById('dbGeoReadout').style.display='none';
+  document.getElementById('dbGeoAddrDetail').textContent='';
+  setBtnIdle(document.getElementById('dbGeoBtn'), PIN_SVG + 'Capture GPS location');
+  document.getElementById('dbPhotoLock').style.display='block';
+  document.getElementById('dbPhotoLock2').style.display='block';
+  document.getElementById('db_date').value = new Date().toISOString().slice(0,10);
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
+document.getElementById('db_date').value = new Date().toISOString().slice(0,10);
+if(!configured()) document.getElementById('cfgWarning').style.display='block';
+</script>
+</body>
+</html>
