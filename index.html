@@ -143,7 +143,7 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
 
 <header class="appbar">
   <div class="brand"><div class="mark">FA</div>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v3.4.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v3.7.0</div></div>
   </div>
 </header>
 
@@ -594,6 +594,7 @@ function onDbCodeInput(el){
     cityEl.readOnly = true; cityEl.value=''; cityEl.placeholder='Enter DB Code first';
     return;
   }
+  if(el.value.length === 7) el.blur(); // "value daalne par auto shift ho" — 7 digits complete, close the keyboard
   lookupDBMaster(el.value);
 }
 let dbLookupTimer;
@@ -634,6 +635,113 @@ function lookupDBMaster(dbCode){
    cached in localStorage so returning SOs don't have to re-enter it every
    single audit — it's just pre-filled and re-verified against the master
    list on load. */
+/* ============================================================
+   CRASH / ERROR LOGGING — catches any JS error or unhandled promise
+   rejection anywhere in this app and ships a compact report to the backend
+   (device + browser info, error message/stack, current module/phone) so
+   Admin can see device-specific bugs without needing the field user to
+   describe what happened. Fire-and-forget — never blocks the UI, never
+   throws on its own failure. ============================================ */
+function deviceInfo(){
+  return {
+    ua: navigator.userAgent,
+    platform: navigator.platform || '',
+    lang: navigator.language || '',
+    screen: `${window.screen.width}x${window.screen.height}`,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    online: navigator.onLine,
+    module: (typeof CURRENT_MODULE !== 'undefined' ? CURRENT_MODULE : '')
+  };
+}
+function logClientError(message, stack, source){
+  try{
+    if(!configured()) return;
+    const payload = {
+      action:'logError', message: String(message||'').slice(0,500),
+      stack: String(stack||'').slice(0,1500), source: source||'window',
+      url: location.href, device: JSON.stringify(deviceInfo()),
+      phone: (typeof CHECKIN_PHONE !== 'undefined' ? CHECKIN_PHONE : '')
+    };
+    fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)}).catch(()=>{});
+  }catch(_e){}
+}
+window.addEventListener('error', (e)=>{
+  logClientError(e.message, e.error && e.error.stack, 'window.onerror');
+});
+window.addEventListener('unhandledrejection', (e)=>{
+  logClientError('Unhandled promise rejection: ' + (e.reason && e.reason.message || e.reason), e.reason && e.reason.stack, 'unhandledrejection');
+});
+
+/* ============================================================
+   DEVICE BIOMETRIC — fingerprint / Face ID / Face unlock via the browser's
+   WebAuthn API (navigator.credentials). This talks directly to the phone's
+   own secure hardware — no page, script, or dev tool can fake a successful
+   result here; the OS itself gates it on the actual enrolled biometric.
+
+   HONEST LIMIT: this backend (Google Apps Script) does not independently
+   verify the cryptographic signature WebAuthn produces — that needs a full
+   COSE/CBOR WebAuthn server library, which isn't practical to hand-roll in
+   Apps Script. What's implemented is: the browser's own success/failure
+   result is trusted, and the credential ID used is logged. That's a strong,
+   real control against casual phone-sharing between field staff (the wrong
+   person's finger/face genuinely will not unlock someone else's enrolled
+   credential) — it is not bank-grade server-verified attestation.
+   ============================================================ */
+function webAuthnSupported(){
+  return !!(window.PublicKeyCredential && navigator.credentials);
+}
+function b64urlToBuf(b64url){
+  const pad = '='.repeat((4 - b64url.length % 4) % 4);
+  const b64 = (b64url + pad).replace(/-/g,'+').replace(/_/g,'/');
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) buf[i] = bin.charCodeAt(i);
+  return buf;
+}
+function bufToB64url(buf){
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for(let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+/* First-time registration on this device — triggers the OS fingerprint/Face
+   prompt to CREATE a new platform credential tied to this phone number. */
+async function registerBiometricDevice(phone, name){
+  if(!webAuthnSupported()) return {ok:false, reason:'not_supported'};
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const cred = await navigator.credentials.create({publicKey:{
+      challenge, rp:{name:'FieldAudit'},
+      user:{id: new TextEncoder().encode(phone), name: phone, displayName: name || phone},
+      pubKeyCredParams:[{type:'public-key', alg:-7},{type:'public-key', alg:-257}],
+      authenticatorSelection:{authenticatorAttachment:'platform', userVerification:'required'},
+      timeout: 60000
+    }});
+    return {ok:true, credentialId: bufToB64url(cred.rawId)};
+  }catch(e){
+    return {ok:false, reason:e.message};
+  }
+}
+/* Daily / pre-submit verification — triggers the OS prompt to USE one of
+   the already-registered credentials for this phone. Any one of them
+   succeeding (e.g. after a phone change, multiple enrolled devices) is
+   accepted. */
+async function verifyBiometricDevice(credentialIds){
+  if(!webAuthnSupported()) return {ok:false, reason:'not_supported'};
+  if(!credentialIds || !credentialIds.length) return {ok:false, reason:'no_credentials'};
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const assertion = await navigator.credentials.get({publicKey:{
+      challenge,
+      allowCredentials: credentialIds.map(id=>({id:b64urlToBuf(id), type:'public-key'})),
+      userVerification:'required', timeout:60000
+    }});
+    return {ok:true, credentialId: bufToB64url(assertion.rawId)};
+  }catch(e){
+    return {ok:false, reason:e.message};
+  }
+}
+
 const SO_IDENTITY_KEY = 'fieldaudit_so_identity';
 let CHECKIN_PHONE = '';
 let CHECKIN_NAME = '';
@@ -655,6 +763,7 @@ function onCheckinPhoneInput(el, prefix){
   const ids = ckIds(prefix);
   const statusEl = document.getElementById(ids.status);
   if(!/^\d{10}$/.test(el.value)){ statusEl.className='addr-note'; statusEl.textContent=''; return; }
+  el.blur(); // "value daalne par auto shift ho" — closes the keyboard the instant the 10th digit lands, since lookup fires automatically from here anyway
   ckLookupTimer = setTimeout(()=>lookupCheckinPhone(el.value, prefix), 400);
 }
 
@@ -808,7 +917,41 @@ async function doSubmitCheckin(prefix){
   if(!CHECKIN_GEO || !CHECKIN_PHOTO_BASE64){ toast('Capture GPS location and take a selfie first', true); return; }
   const ids = ckIds(prefix);
   const btn = document.getElementById(ids.submitBtn);
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Stamping selfie…';
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Checking fingerprint/Face unlock…';
+
+  // Biometric gate — first time for this phone: register a new device
+  // credential (triggers the OS fingerprint/Face prompt to CREATE one).
+  // Already enrolled: verify against whatever credential(s) are on file for
+  // this phone (triggers the OS prompt to USE one). Either way, check-in
+  // cannot complete without this succeeding.
+  let bioResult;
+  let wasNewEnrollment = false;
+  try{
+    if(!configured()) throw new Error('__NOCFG__');
+    const credRes = await fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 8000);
+    const credJson = await credRes.json();
+    if(credJson.enrolled && credJson.credentialIds && credJson.credentialIds.length){
+      bioResult = await verifyBiometricDevice(credJson.credentialIds);
+      if(!bioResult.ok){
+        toast('Fingerprint/Face verification failed or was cancelled — check-in needs it to continue.', true);
+        btn.disabled = false; btn.textContent = 'Submit check-in'; return;
+      }
+    } else {
+      wasNewEnrollment = true;
+      bioResult = await registerBiometricDevice(CHECKIN_PHONE, CHECKIN_NAME);
+      if(!bioResult.ok){
+        toast(bioResult.reason==='not_supported'
+          ? 'This device/browser does not support fingerprint/Face unlock — check-in needs it to continue.'
+          : 'Fingerprint/Face setup was cancelled — check-in needs it to continue.', true);
+        btn.disabled = false; btn.textContent = 'Submit check-in'; return;
+      }
+    }
+  }catch(e){
+    toast(e.message==='__NOCFG__' ? 'Backend not connected' : 'Could not check biometric status — try again.', true);
+    btn.disabled = false; btn.textContent = 'Submit check-in'; return;
+  }
+
+  btn.innerHTML = '<span class="spin"></span> Stamping selfie…';
   const today = new Date().toISOString().slice(0,10);
   const lines = [
     `${today}  •  ${CHECKIN_GEO.lat.toFixed(6)}, ${CHECKIN_GEO.lng.toFixed(6)}`,
@@ -819,6 +962,14 @@ async function doSubmitCheckin(prefix){
   btn.innerHTML = '<span class="spin"></span> Submitting…';
   try{
     if(!configured()) throw new Error('__NOCFG__');
+    // If this was a fresh registration, save the new credential — this is the
+    // step that also self-adds the SO to SOMaster on the backend.
+    if(wasNewEnrollment && bioResult.credentialId){
+      await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify({
+        action:'enrollBiometric', phone: CHECKIN_PHONE, name: CHECKIN_NAME, credentialId: bioResult.credentialId,
+        facePhoto: stamped, lat: CHECKIN_GEO.lat, lng: CHECKIN_GEO.lng
+      })}).catch(()=>{});
+    }
     const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify({
       action:'submitCheckin', date: today, soPhone: CHECKIN_PHONE, soName: CHECKIN_NAME,
       lat: CHECKIN_GEO.lat, lng: CHECKIN_GEO.lng, photo: stamped
@@ -1396,6 +1547,32 @@ function validateDBForm(){
   return missing;
 }
 
+/* Shared pre-submit fingerprint/Face gate — every individual audit
+   submission (not just the once-a-day check-in) re-confirms the device
+   biometric right before the data actually goes to the server, using
+   whatever credential(s) are on file for the checked-in phone. Returns
+   true/false; the caller shows its own toast and aborts on false. */
+async function r9yMnTm4NSzvG9rrwjM2ec8xZgh1cafXH8(){
+  if(!CHECKIN_PHONE){ toast('Complete the Daily Selfie Check-in first', true); return false; }
+  try{
+    const credRes = await fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 8000);
+    const credJson = await credRes.json();
+    if(!credJson.enrolled || !credJson.credentialIds || !credJson.credentialIds.length){
+      toast('No fingerprint/Face unlock enrolled for this phone yet — complete check-in first', true);
+      return false;
+    }
+    const result = await verifyBiometricDevice(credJson.credentialIds);
+    if(!result.ok){
+      toast('Fingerprint/Face verification failed or was cancelled — submission needs it to continue.', true);
+      return false;
+    }
+    return true;
+  }catch(e){
+    toast('Could not verify fingerprint/Face — check your connection and try again.', true);
+    return false;
+  }
+}
+
 async function submitAudit(){
   const missing = validateForm();
   if(missing.length){
@@ -1406,6 +1583,10 @@ async function submitAudit(){
     else { const first = document.querySelector('.invalid'); if(first) first.scrollIntoView({behavior:'smooth', block:'center'}); }
     return;
   }
+  const submitBtnEl = document.getElementById('submitBtn');
+  submitBtnEl.disabled = true; submitBtnEl.innerHTML = '<span class="spin"></span> Verifying fingerprint/Face…';
+  const bioOk = await r9yMnTm4NSzvG9rrwjM2ec8xZgh1cafXH8();
+  if(!bioOk){ submitBtnEl.disabled = false; submitBtnEl.innerHTML = 'Submit audit'; return; }
   document.getElementById('submitReq').classList.remove('show');
   const btn = document.getElementById('submitBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Stamping photos…';
@@ -1508,6 +1689,10 @@ async function submitDBStockAudit(){
     else { const first = document.querySelector('#dbModule .invalid'); if(first) first.scrollIntoView({behavior:'smooth', block:'center'}); }
     return;
   }
+  const submitBtnEl2 = document.getElementById('submitBtn');
+  submitBtnEl2.disabled = true; submitBtnEl2.innerHTML = '<span class="spin"></span> Verifying fingerprint/Face…';
+  const bioOk2 = await r9yMnTm4NSzvG9rrwjM2ec8xZgh1cafXH8();
+  if(!bioOk2){ submitBtnEl2.disabled = false; submitBtnEl2.innerHTML = 'Submit stock audit'; return; }
   const btn = document.getElementById('submitBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Stamping photos…';
   const lines = dbWatermarkLines();
