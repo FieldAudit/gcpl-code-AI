@@ -143,7 +143,7 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
 
 <header class="appbar">
   <div class="brand"><div class="mark">FA</div>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v3.7.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v3.7.1</div></div>
   </div>
 </header>
 
@@ -787,11 +787,36 @@ async function lookupCheckinPhone(phone, prefix){
       try{ localStorage.setItem(SO_IDENTITY_KEY, JSON.stringify({phone, name:j.name})); }catch(_e){}
       checkTodayCheckin(prefix);
     } else {
-      statusEl.className='addr-note warn'; statusEl.textContent = '⚠️ Phone number not found in master list. Ask your Admin to add you (dashboard.html → Master Data).';
+      // New phone number — not an error, this is the self-registration path:
+      // ask for a name once, then proceed straight into check-in, where
+      // doSubmitCheckin() will register a fresh biometric credential (since
+      // none exists yet for this phone) and enrollBiometric on the backend
+      // self-adds them to SOMaster. This is what was broken before — it
+      // used to just show a warning and stop here instead of continuing.
+      renderNewUserNamePrompt(phone, prefix);
     }
   }catch(_e){
     statusEl.className='addr-note warn'; statusEl.textContent = '⚠️ Could not check master list — check your connection and try again.';
   }
+}
+
+function renderNewUserNamePrompt(phone, prefix){
+  const ids = ckIds(prefix);
+  const statusEl = document.getElementById(ids.status);
+  statusEl.className = 'addr-note';
+  statusEl.innerHTML = `
+    <div style="margin-top:6px;">👋 New phone number — looks like your first time. Enter your name once to register:</div>
+    <input type="text" id="${prefix}_newUserName" placeholder="Your full name" style="margin-top:8px; width:100%; padding:11px; border:1.5px solid var(--border-2); border-radius:4px;">
+    <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="confirmNewUserName('${phone}','${prefix}')">Continue to face/fingerprint registration</button>
+  `;
+}
+function confirmNewUserName(phone, prefix){
+  const nameEl = document.getElementById(`${prefix}_newUserName`);
+  const name = (nameEl.value || '').trim();
+  if(!name){ toast('Please enter your name first', true); return; }
+  CHECKIN_PHONE = phone; CHECKIN_NAME = name;
+  try{ localStorage.setItem(SO_IDENTITY_KEY, JSON.stringify({phone, name})); }catch(_e){}
+  checkTodayCheckin(prefix);
 }
 
 function prefillSavedSOIdentity(prefix){
