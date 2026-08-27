@@ -25,6 +25,44 @@
   --slate:#6B7280; --border:#E1DACA; --border-2:#D8D2C4;
   --shadow: 0 8px 24px rgba(18,23,43,0.10);
 }
+/* ---- Professional colour themes ----
+   Only the brand colours (--ink/--ink-2, the accent --amber/--amber-dark) and
+   the paper background tint change between themes — --green/--red stay fixed
+   across all of them on purpose, since they carry meaning (good/bad, Yes/No,
+   AI flags) that shouldn't shift just because someone picked a different
+   brand colour. Applied via a data-theme attribute on <html>, picked from
+   the theme switcher next to the logout button, saved in localStorage so it
+   persists per-browser. */
+[data-theme="forest"]{
+  --ink:#0F3D2E; --ink-2:#155A44;
+  --amber:#D4AF37; --amber-dark:#B08D28;
+  --paper:#F7F8F3; --paper-2:#ECEFE4;
+}
+[data-theme="corporate-blue"]{
+  --ink:#0B2545; --ink-2:#13315C;
+  --amber:#2F80ED; --amber-dark:#1D5FC2;
+  --paper:#F5F7FA; --paper-2:#E9EEF5;
+}
+[data-theme="maroon"]{
+  --ink:#4A1620; --ink-2:#661F2D;
+  --amber:#D4A24E; --amber-dark:#B3853A;
+  --paper:#FAF6F3; --paper-2:#F0E7E1;
+}
+[data-theme="charcoal-teal"]{
+  --ink:#1C1F26; --ink-2:#272B33;
+  --amber:#14B8A6; --amber-dark:#0F9385;
+  --paper:#F7F8F8; --paper-2:#EBEDEE;
+}
+[data-theme="slate-copper"]{
+  --ink:#1E293B; --ink-2:#28374E;
+  --amber:#C2703D; --amber-dark:#A25A2E;
+  --paper:#F8F7F5; --paper-2:#EDEAE5;
+}
+[data-theme="royal-purple"]{
+  --ink:#2B1750; --ink-2:#3A2169;
+  --amber:#C9A227; --amber-dark:#A9860E;
+  --paper:#F8F6FB; --paper-2:#ECE7F5;
+}
 *{box-sizing:border-box;}
 body{margin:0;}
 html,body{background:var(--paper); color:var(--ink); font-family:'IBM Plex Sans',sans-serif; -webkit-font-smoothing:antialiased;}
@@ -120,6 +158,17 @@ table.data tr:hover td{background:var(--paper-2);}
 .badge-cfg{font-size:11px; background:var(--red-bg); color:var(--red); padding:8px 12px; border-radius:3px; margin-bottom:14px;}
 .role-pill{background:var(--amber); color:var(--ink); font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:2px 8px; border-radius:10px; margin-left:6px;}
 
+/* ---- Theme switcher ---- */
+.theme-btn{background:transparent; border:1px solid #383F63; color:#C9CEE6; width:32px; height:32px; border-radius:5px; display:flex; align-items:center; justify-content:center; font-size:14px; cursor:pointer;}
+.theme-btn:hover{border-color:var(--amber); color:var(--amber);}
+.theme-panel{position:absolute; top:56px; right:20px; background:var(--card); border:1px solid var(--border); border-radius:8px; box-shadow:var(--shadow); padding:14px; z-index:120; display:none; width:220px;}
+.theme-panel.open{display:block;}
+.theme-panel .ttl{font-family:'Oswald'; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--slate); margin-bottom:10px;}
+.theme-swatch-row{display:flex; align-items:center; gap:10px; padding:7px 6px; border-radius:5px; cursor:pointer; font-size:13px; color:var(--ink);}
+.theme-swatch-row:hover{background:var(--paper-2);}
+.theme-swatch-row.active{background:var(--paper-2); font-weight:700;}
+.theme-swatch{width:20px; height:20px; border-radius:50%; flex-shrink:0; border:2px solid rgba(0,0,0,.08);}
+
 /* ---- Photos tab ---- */
 .photo-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:14px;}
 .photo-date-heading{font-family:'Oswald'; text-transform:uppercase; font-size:14px; letter-spacing:.04em; color:var(--ink); margin:22px 0 12px; display:flex; align-items:center; gap:8px;}
@@ -198,9 +247,13 @@ table.data tr:hover td{background:var(--paper-2);}
 
 <div id="screen-app">
   <header class="appbar">
-    <div class="brand"><div class="mark">FA</div><div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v3.4.0</div></div></div>
-    <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="logout" onclick="logout()">Log out</button></div>
+    <div class="brand"><div class="mark">FA</div><div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v3.8.0</div></div></div>
+    <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
+  <div class="theme-panel" id="themePanel">
+    <div class="ttl">Theme</div>
+    <div id="themeSwatchList"></div>
+  </div>
   <div class="module-toggle">
     <button class="active" data-mod="retail" onclick="switchModule('retail')">🏪 Retail Audit</button>
     <button data-mod="db" onclick="switchModule('db')">📦 DB Stock Audit</button>
@@ -370,6 +423,53 @@ function enterApp(){
   document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
   loadData().then(()=>{ renderDashboard(); });
 }
+
+/* ---- Theme switcher — brand colour only, saved per-browser (localStorage),
+   applied instantly to every screen since everything already reads colours
+   off CSS custom properties. Semantic colours (green=good, red=bad) never
+   change between themes on purpose — see the [data-theme="..."] blocks in
+   the <style> above. ---- */
+const THEMES = [
+  {id:'default', name:'Navy & Amber (default)', swatch:'#F5A623'},
+  {id:'forest', name:'Forest & Gold', swatch:'#D4AF37'},
+  {id:'corporate-blue', name:'Corporate Blue', swatch:'#2F80ED'},
+  {id:'maroon', name:'Maroon & Bronze', swatch:'#D4A24E'},
+  {id:'charcoal-teal', name:'Charcoal & Teal', swatch:'#14B8A6'},
+  {id:'slate-copper', name:'Slate & Copper', swatch:'#C2703D'},
+  {id:'royal-purple', name:'Royal Purple & Gold', swatch:'#C9A227'}
+];
+const THEME_KEY = 'fieldaudit_theme';
+function applyTheme(id){
+  if(id === 'default') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', id);
+  try{ localStorage.setItem(THEME_KEY, id); }catch(_e){}
+  renderThemeSwatches(id);
+}
+function renderThemeSwatches(activeId){
+  const list = document.getElementById('themeSwatchList');
+  if(!list) return;
+  list.innerHTML = THEMES.map(t=>`
+    <div class="theme-swatch-row ${t.id===activeId?'active':''}" onclick="applyTheme('${t.id}')">
+      <span class="theme-swatch" style="background:${t.swatch};"></span>${t.name}
+    </div>
+  `).join('');
+}
+function toggleThemePanel(){
+  document.getElementById('themePanel').classList.toggle('open');
+}
+document.addEventListener('click', (e)=>{
+  const panel = document.getElementById('themePanel');
+  if(panel && panel.classList.contains('open') && !panel.contains(e.target) && !e.target.closest('.theme-btn')){
+    panel.classList.remove('open');
+  }
+});
+(function initTheme(){
+  try{
+    const saved = localStorage.getItem(THEME_KEY);
+    if(saved && saved !== 'default') document.documentElement.setAttribute('data-theme', saved);
+    renderThemeSwatches(saved || 'default');
+  }catch(_e){}
+})();
 
 function switchModule(mod){
   MODULE = mod;
@@ -837,14 +937,15 @@ function renderDBHistory(){
   });
   const thead = document.querySelector('#histTable thead');
   const tbody = document.querySelector('#histTable tbody');
-  thead.innerHTML = `<tr><th>Date</th><th>Audit Type</th><th>DB Code</th><th>DB Name</th><th>City</th><th>SO Name</th><th>ASM Name</th><th>Total Bags</th><th>Total Kgs</th><th>AI Stock Visible</th><th>AI Priority Brand</th><th>Lat, Long</th><th>Map</th></tr>`;
-  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="13"><div class="empty"><b>No matching stock audits</b>Try a different search or filter.</div></td></tr>`; return; }
+  thead.innerHTML = `<tr><th>Date</th><th>Audit Type</th><th>Source</th><th>DB Code</th><th>DB Name</th><th>City</th><th>SO Name</th><th>ASM Name</th><th>Total Bags</th><th>Total Kgs</th><th>AI Stock Visible</th><th>AI Priority Brand</th><th>Lat, Long</th><th>Map</th></tr>`;
+  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="14"><div class="empty"><b>No matching stock audits</b>Try a different search or filter.</div></td></tr>`; return; }
   const bagFields = ['atta','maida','sooji','sattu','besan','dalia','others','spicesTotal'];
   const kgFields = ['haldi','chili','dhania','jeeraPowder','jeeraWhole','panchForon','methi','ajwain','saunf','sarson','shahiGaramMasala','chickenMasala','meatMasala','kashmiriMirch','kalajeera'];
   const sumRow = (r,fields) => fields.reduce((s,k)=>s+(+r[k]||0),0);
   tbody.innerHTML = rows.map(r=>`<tr title="${r.aiStockSummary||''}">
     <td class="mono">${r.date||''}</td>
     <td><span class="tag ${r.auditType==='3PA'?'tag-no':'tag-yes'}">${r.auditType||'—'}</span></td>
+    <td style="font-size:11px; color:var(--slate);">${r.source||'FieldAudit App'}</td>
     <td class="mono">${r.dbCode||''}</td><td>${r.dbName||''}</td><td>${r.dbCity||''}</td><td>${r.soName||''}</td><td>${r.asmName||''}</td>
     <td>${sumRow(r,bagFields)}</td>
     <td>${sumRow(r,kgFields)}</td>
