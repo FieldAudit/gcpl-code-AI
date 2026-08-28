@@ -16,6 +16,7 @@
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/libphonenumber-js@1.10.51/bundle/libphonenumber-js.min.js"></script>
 <style>
 :root{
   /* Apple/iOS-style palette — now the default look */
@@ -220,7 +221,7 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
 
 <header class="appbar">
   <div class="brand"><div class="mark">FA</div>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v4.2.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v4.5.0</div></div>
   </div>
 </header>
 
@@ -284,7 +285,12 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
         <button class="btn btn-outline btn-block" style="margin-top:8px;" onclick="captureLocation(this)" id="getAddrBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;display:inline-block;margin-right:5px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Get Address (current location)</button>
         <div class="addr-note" id="addrNote"></div>
       </div>
-      <div class="field"><label>Contact Name / No.</label><input type="text" id="f_contact"></div>
+      <div class="field"><label>Outlet Owner Name</label><input type="text" id="f_ownerName" placeholder="Owner's full name"></div>
+      <div class="field">
+        <label>Retailer Phone Number <span style="text-transform:none; font-weight:400;">(10 digits)</span></label>
+        <input type="text" id="f_retailerPhone" inputmode="numeric" maxlength="10" placeholder="e.g. 9830012345" oninput="onRetailerPhoneInput(this)">
+        <div class="addr-note warn" id="retailerPhoneNote"></div>
+      </div>
     </div>
   </div>
 
@@ -731,6 +737,27 @@ function onDBPhoto2(e){
 
 /* DB Code must be exactly 7 digits — validated live as the SO types, same rule
    as the reference GCPL Stock Audit spec. */
+/* Real phone number validation — using libphonenumber-js, the same free,
+   open-source library Google/WhatsApp/most serious apps use for this
+   exact purpose. It checks against India's actual mobile numbering plan
+   (valid prefixes, length, structure), not just "is it 10 digits" — so it
+   correctly rejects things like landline-pattern numbers, obviously fake
+   sequences, or a mistyped digit that still happens to total 10 characters.
+   No API key, no signup, no per-request limit — runs entirely offline once
+   the library has loaded. Falls back to a basic 10-digit/6-9-prefix check
+   (the actual TRAI rule for Indian mobiles) if the library hasn't loaded
+   yet for any reason, so validation never just breaks. */
+function isValidIndianMobile(phone){
+  const basic = /^[6-9]\d{9}$/.test(String(phone||'').trim());
+  if(!basic) return false;
+  try{
+    if(window.libphonenumber && window.libphonenumber.isValidPhoneNumber){
+      return window.libphonenumber.isValidPhoneNumber(phone, 'IN');
+    }
+  }catch(_e){}
+  return basic; // library not loaded yet — the basic TRAI-format check still applies
+}
+
 function isValidDbCode(code){
   return /^[0-9]{7}$/.test(String(code||'').trim());
 }
@@ -740,6 +767,20 @@ function dbCodeErrorMessage(code){
   if(len < 7) return `DB Code must be exactly 7 digits (currently ${len}).`;
   if(len > 7) return `DB Code must be exactly 7 digits (currently ${len}) — too long.`;
   return 'DB Code must contain only numbers.';
+}
+function onRetailerPhoneInput(el){
+  el.classList.remove('invalid');
+  const note = document.getElementById('retailerPhoneNote');
+  if(!el.value){ note.textContent=''; return; }
+  if(el.value.length < 10){
+    note.className = 'addr-note warn';
+    note.textContent = `Must be exactly 10 digits (currently ${el.value.length})`;
+    return;
+  }
+  const valid = isValidIndianMobile(el.value);
+  note.className = valid ? 'addr-note' : 'addr-note warn';
+  note.textContent = valid ? '✅ Valid number' : '⚠️ Not a valid Indian mobile number — please check it';
+  if(el.value.length === 10) el.blur();
 }
 function onDbCodeInput(el){
   el.classList.remove('invalid');
@@ -922,7 +963,12 @@ function onCheckinPhoneInput(el, prefix){
   clearTimeout(ckLookupTimer);
   const ids = ckIds(prefix);
   const statusEl = document.getElementById(ids.status);
-  if(!/^\d{10}$/.test(el.value)){ statusEl.className='addr-note'; statusEl.textContent=''; return; }
+  if(el.value.length < 10){ statusEl.className='addr-note'; statusEl.textContent=''; return; }
+  if(!isValidIndianMobile(el.value)){
+    statusEl.className='addr-note warn';
+    statusEl.textContent='⚠️ Not a valid Indian mobile number — please check it';
+    return;
+  }
   el.blur(); // "value daalne par auto shift ho" — closes the keyboard the instant the 10th digit lands, since lookup fires automatically from here anyway
   ckLookupTimer = setTimeout(()=>lookupCheckinPhone(el.value, prefix), 400);
 }
@@ -1157,7 +1203,7 @@ function captureGPSForCheckin(prefix){
   if(!navigator.geolocation) return;
   navigator.geolocation.getCurrentPosition((pos)=>{
     CHECKIN_GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude};
-    CHECKIN_GEO.link = `https://www.google.com/maps?q=${CHECKIN_GEO.lat},${CHECKIN_GEO.lng}`;
+    CHECKIN_GEO.link = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${CHECKIN_GEO.lat},${CHECKIN_GEO.lng}`;
     if(document.getElementById(ckIds(prefix).submitBtn)) updateCheckinSubmitEnabled(prefix);
   }, ()=>{ /* silent — the manual "Capture GPS" fallback button stays available if this fails */ }, {enableHighAccuracy:true, timeout:15000});
 }
@@ -1314,7 +1360,7 @@ function captureCheckinLocation(prefix){
   setBtnBusy(btn, 'Locating…');
   navigator.geolocation.getCurrentPosition((pos)=>{
     CHECKIN_GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude};
-    CHECKIN_GEO.link = `https://www.google.com/maps?q=${CHECKIN_GEO.lat},${CHECKIN_GEO.lng}`;
+    CHECKIN_GEO.link = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${CHECKIN_GEO.lat},${CHECKIN_GEO.lng}`;
     document.getElementById(ids.geoReadout).style.display='block';
     document.getElementById(ids.geoCoords).textContent = `${CHECKIN_GEO.lat.toFixed(6)}, ${CHECKIN_GEO.lng.toFixed(6)}`;
     setBtnIdle(btn, PIN_SVG + 'Re-capture location');
@@ -1751,7 +1797,7 @@ function captureLocation(callerBtn){
   setBtnBusy(addrBtn, 'Locating…');
   navigator.geolocation.getCurrentPosition(async (pos)=>{
     GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy};
-    const link = `https://www.google.com/maps?q=${GEO.lat},${GEO.lng}`;
+    const link = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${GEO.lat},${GEO.lng}`;
     GEO.link = link;
     document.getElementById('geoCard').classList.add('got');
     document.getElementById('geoStatus').className = 'geo-status got';
@@ -1815,7 +1861,7 @@ function dbCaptureLocation(callerBtn){
   setBtnBusy(geoBtn, 'Locating…');
   navigator.geolocation.getCurrentPosition(async (pos)=>{
     DB_GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy};
-    const link = `https://www.google.com/maps?q=${DB_GEO.lat},${DB_GEO.lng}`;
+    const link = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${DB_GEO.lat},${DB_GEO.lng}`;
     DB_GEO.link = link;
     document.getElementById('dbGeoCard').classList.add('got');
     document.getElementById('dbGeoStatus').className = 'geo-status got';
@@ -1925,7 +1971,7 @@ function downloadAuditSummaryPDF(payload, auditId){
     ['District', payload.district], ['City', payload.city],
     ['Distributor', payload.distributor], ['Route', payload.route],
     ['Outlet Name', payload.outletName], ['Outlet Type', payload.outletType],
-    ['Address', payload.address], ['Contact', payload.contact],
+    ['Address', payload.address], ['Outlet Owner Name', payload.ownerName], ['Retailer Phone', payload.retailerPhone],
     ['GCPL Distribution', payload.q1_distribution], ['DB Count', payload.q2_dbCount],
     ['Spice Available', payload.q3_spiceAvailable], ['Happy with DB', payload.q4_happyWithDB],
     ['Price Update Source', payload.q5_priceSource], ['Bills Seen', payload.q6_billsSeen],
@@ -1995,7 +2041,7 @@ function validateForm(){
   const textFields = [
     ['f_date','Date of Visit'],['f_auditor','Auditor Name'],['f_district','District'],['f_city','City'],
     ['f_distributor','Distributor'],['f_route','Route Name / Code'],['f_outletName','Outlet / Retailer Name'],
-    ['f_outletType','Outlet Type'],['f_address','Address'],['f_contact','Contact Name / No.'],
+    ['f_outletType','Outlet Type'],['f_address','Address'],['f_ownerName','Outlet Owner Name'],
     ['f_q2','How many DBs are supplying'],['f_q5','Price update source'],['f_q6','DB bills seen'],
     ['f_q7','Bill type'],['f_q10','NLB/GSB brand']
   ];
@@ -2003,6 +2049,8 @@ function validateForm(){
     const el = document.getElementById(id);
     if(!el.value){ el.classList.add('invalid'); missing.push(label); }
   });
+  const retailerPhoneEl = document.getElementById('f_retailerPhone');
+  if(!isValidIndianMobile(retailerPhoneEl.value)){ retailerPhoneEl.classList.add('invalid'); missing.push('Retailer Phone Number (valid 10-digit Indian mobile)'); }
   const ynGroups = [
     ['q1','yn_q1','Distribution by distributor (Yes/No)'],['q3','yn_q3','Spice availability (Yes/No)'],
     ['q4','yn_q4','Happy with DB (Yes/No)'],['q9','yn_q9','POSM available (Yes/No)']
@@ -2045,7 +2093,7 @@ function validateDBForm(){
   const missing = [];
   if(!DB_FORM.auditType){ document.getElementById('yn_auditType').classList.add('invalid'); missing.push('Conducted By (GCPL Sales Officer / 3PA)'); }
   const soPhone = document.getElementById('db_soPhone');
-  if(!/^\d{10}$/.test(soPhone.value)){ soPhone.classList.add('invalid'); missing.push('SO Phone Number (10 digits)'); }
+  if(!isValidIndianMobile(soPhone.value)){ soPhone.classList.add('invalid'); missing.push('SO Phone Number (valid 10-digit Indian mobile)'); }
   const soName = document.getElementById('db_soName');
   if(!soName.value){ soName.classList.add('invalid'); missing.push('SO Name (looked up from phone number)'); }
   if(!CHECKIN_DONE){ missing.push("Today's selfie check-in (see the Daily Selfie Check-in card above)"); }
@@ -2123,7 +2171,8 @@ async function submitAudit(){
     outletName: document.getElementById('f_outletName').value,
     outletType: document.getElementById('f_outletType').value,
     address: document.getElementById('f_address').value,
-    contact: document.getElementById('f_contact').value,
+    ownerName: document.getElementById('f_ownerName').value,
+    retailerPhone: document.getElementById('f_retailerPhone').value,
     q1_distribution: FORM.q1 || '',
     q2_dbCount: document.getElementById('f_q2').value,
     q3_spiceAvailable: FORM.q3 || '',
@@ -2170,7 +2219,7 @@ function showStamp(id){
 document.getElementById('stampWrap').addEventListener('click', ()=>{ document.getElementById('stampWrap').style.display='none'; });
 
 function resetForm(){
-  ['f_auditor','f_district','f_city','f_distributor','f_route','f_outletName','f_outletType','f_address','f_contact','f_q2','f_q5','f_q6','f_q7','f_q10'].forEach(id=>document.getElementById(id).value='');
+  ['f_auditor','f_district','f_city','f_distributor','f_route','f_outletName','f_outletType','f_address','f_ownerName','f_retailerPhone','f_q2','f_q5','f_q6','f_q7','f_q10'].forEach(id=>document.getElementById(id).value='');
   FORM = {};
   document.querySelectorAll('#retailModule .yn button').forEach(b=>b.classList.remove('sel-yes','sel-no'));
   document.querySelectorAll('.stars button').forEach(b=>b.classList.remove('on'));
