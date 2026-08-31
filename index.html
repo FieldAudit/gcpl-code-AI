@@ -245,7 +245,7 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v5.2.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v5.3.0</div></div>
   </div>
 </header>
 
@@ -1940,6 +1940,15 @@ function dbCaptureLocation(callerBtn){
    page, page-numbered) using jsPDF, entirely client-side — this becomes the
    single shareable proof-of-bills document instead of juggling 5+ separate
    photos. Returns a full data: URI ready to upload as-is. */
+/* Builds ONE comprehensive PDF — text summary followed by every photo
+   (outlet, then each bill) each on its own page — instead of building two
+   separate PDFs (a text-only summary AND a photos-only "bills" PDF) like
+   before. This directly fixes two things: photos actually appear in what
+   downloads to the device (they didn't before — the auto-downloaded PDF
+   was text-only), and PDF generation only happens ONCE instead of twice,
+   which was a real chunk of the reported delay. The same bytes returned
+   here are what gets uploaded to Drive as the audit's permanent PDF
+   record — built once, used twice. */
 function loadImageDims(base64){
   return new Promise((resolve, reject)=>{
     const img = new Image();
@@ -1948,93 +1957,50 @@ function loadImageDims(base64){
     img.src = base64;
   });
 }
-async function buildBillsPDF(images){
+async function buildAndDownloadFullPDF(title, rows, photos, fileNameBase){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'pt', format:'a4'});
-  for(let i=0;i<images.length;i++){
-    if(i>0) doc.addPage();
-    const dims = await loadImageDims(images[i]);
+  const margin = 40;
+  let y = margin;
+  doc.setFontSize(16); doc.setFont(undefined,'bold'); doc.setTextColor(18,23,43);
+  doc.text(title, margin, y); y += 22;
+  doc.setFontSize(10); doc.setFont(undefined,'normal'); doc.setTextColor(107,114,128);
+  doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y); y += 24;
+  doc.setDrawColor(216,210,196); doc.line(margin, y, doc.internal.pageSize.getWidth()-margin, y); y += 16;
+  doc.setFontSize(10.5);
+  rows.forEach(([label,val])=>{
+    if(y > doc.internal.pageSize.getHeight()-margin){ doc.addPage(); y = margin; }
+    doc.setFont(undefined,'bold'); doc.setTextColor(18,23,43);
+    doc.text(String(label)+':', margin, y);
+    doc.setFont(undefined,'normal'); doc.setTextColor(60,60,60);
+    doc.text((val==null||val==='') ? '—' : String(val), margin+150, y, {maxWidth: doc.internal.pageSize.getWidth()-margin*2-150});
+    y += 18;
+  });
+  for(const p of (photos||[])){
+    if(!p || !p.b64) continue;
+    let dims;
+    try{ dims = await loadImageDims(p.b64); }catch(_e){ continue; }
+    doc.addPage();
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-    const margin = 24;
-    const availW = pageW - margin*2, availH = pageH - margin*2 - 20;
-    const scale = Math.min(availW/dims.width, availH/dims.height);
+    const pmargin = 24;
+    const availW = pageW - pmargin*2, availH = pageH - pmargin*2 - 20;
+    const scale = Math.min(availW/dims.width, availH/dims.height, 1);
     const w = dims.width*scale, h = dims.height*scale;
-    const x = (pageW-w)/2, y = margin;
-    doc.addImage(images[i], 'JPEG', x, y, w, h);
-    doc.setFontSize(9);
-    doc.setTextColor(107,114,128);
-    doc.text(`Bill ${i+1} of ${images.length}`, margin, pageH - margin/2);
+    const x = (pageW-w)/2, py = pmargin;
+    doc.addImage(p.b64, 'JPEG', x, py, w, h);
+    doc.setFontSize(9); doc.setTextColor(107,114,128);
+    doc.text(p.caption || '', pmargin, pageH - pmargin/2);
   }
-  return doc.output('datauristring');
+  const dataUri = doc.output('datauristring');
+  try{ doc.save(`${fileNameBase}.pdf`); }catch(_e){}
+  return dataUri;
 }
 
-/* Fires a fast, local (no server round-trip) PDF download the moment an
-   audit succeeds — timestamp, auditor, and every field on the form, ready
-   to share immediately (WhatsApp, email, etc.) without waiting on anything
-   from the backend. A failure here never blocks the actual submission —
-   the audit is already saved by this point regardless. */
-function downloadSummaryPDF(title, rows, auditId, fileNameBase){
-  try{
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({unit:'pt', format:'a4'});
-    const margin = 40;
-    let y = margin;
-    doc.setFontSize(16); doc.setFont(undefined,'bold'); doc.setTextColor(18,23,43);
-    doc.text(title, margin, y); y += 22;
-    doc.setFontSize(10); doc.setFont(undefined,'normal'); doc.setTextColor(107,114,128);
-    doc.text(`Audit ID: ${auditId || '—'}   •   Generated: ${new Date().toLocaleString()}`, margin, y); y += 24;
-    doc.setDrawColor(216,210,196); doc.line(margin, y, doc.internal.pageSize.getWidth()-margin, y); y += 16;
-    doc.setFontSize(10.5);
-    rows.forEach(([label,val])=>{
-      if(y > doc.internal.pageSize.getHeight()-margin){ doc.addPage(); y = margin; }
-      doc.setFont(undefined,'bold'); doc.setTextColor(18,23,43);
-      doc.text(String(label)+':', margin, y);
-      doc.setFont(undefined,'normal'); doc.setTextColor(60,60,60);
-      doc.text((val==null||val==='') ? '—' : String(val), margin+150, y, {maxWidth: doc.internal.pageSize.getWidth()-margin*2-150});
-      y += 18;
-    });
-    doc.save(`${fileNameBase}.pdf`);
-  }catch(e){
-    // Never block the actual submission flow over a PDF generation hiccup.
-  }
-}
-function downloadAuditSummaryPDF(payload, auditId){
-  const rows = [
-    ['Auditor', payload.auditor], ['Date of Visit', payload.date],
-    ['District', payload.district], ['City', payload.city],
-    ['Distributor', payload.distributor], ['Route', payload.route],
-    ['Outlet Name', payload.outletName], ['Outlet Type', payload.outletType],
-    ['Address', payload.address], ['Outlet Owner Name', payload.ownerName], ['Retailer Phone', payload.retailerPhone],
-    ['GCPL Distribution', payload.q1_distribution], ['DB Count', payload.q2_dbCount],
-    ['Spice Available', payload.q3_spiceAvailable], ['Happy with DB', payload.q4_happyWithDB],
-    ['Price Update Source', payload.q5_priceSource],
-    ['Bill Type', payload.q7_billType], ['Invoice GST', payload.invoiceGSTDetected],
-    ['Shelf Visibility', payload.q8_visibilityRating ? payload.q8_visibilityRating+'★' : ''],
-    ['POSM Available', payload.q9_posmAvailable], ['NLB/GSB Brand', payload.q10_nlbGsbBrand],
-    ['GPS Location', (payload.lat!=null && payload.lng!=null) ? `${Number(payload.lat).toFixed(6)}, ${Number(payload.lng).toFixed(6)}` : ''],
-    ['Maps Link', payload.mapsLink]
-  ];
-  downloadSummaryPDF('FieldAudit — Retail Outlet Audit Summary', rows, auditId, `Audit_${(payload.outletName||'Outlet').replace(/[^a-z0-9]/gi,'_')}_${payload.date||''}`);
-}
-function downloadDBAuditSummaryPDF(payload, auditId){
-  const rows = [
-    ['SO Name', payload.soName], ['SO Phone', payload.soPhone], ['Conducted By', payload.auditType],
-    ['Date', payload.date], ['DB Code', payload.dbCode], ['DB Name', payload.dbName], ['DB City', payload.dbCity],
-    ['ASM Name', payload.asmName], ['Address', payload.address],
-    ['GPS Location', (payload.lat!=null && payload.lng!=null) ? `${Number(payload.lat).toFixed(6)}, ${Number(payload.lng).toFixed(6)}` : ''],
-    ['Maps Link', payload.mapsLink]
-  ];
-  downloadSummaryPDF('FieldAudit — DB Stock Audit Summary', rows, auditId, `DBAudit_${(payload.dbName||'DB').replace(/[^a-z0-9]/gi,'_')}_${payload.date||''}`);
-}
-
-/* Smaller/lower-quality copy used ONLY for the AI vision call — the
-   full-quality stamped images already went into the Bills PDF above, so
-   there's no reason to also ship full-resolution copies of the same
-   photos over the network a second time. This (plus capping AI analysis
-   to the first 3 bills instead of all of them) is what actually fixes
-   submit taking 1-2+ minutes on a slow field connection — that delay was
-   almost entirely the redundant upload, not the PDF-building itself. */
+/* Smaller/lower-quality copy used ONLY for the AI vision call — Gemini
+   needs raw image bytes (not a PDF), so this stays separate from the PDF
+   above, but at reduced size since AI reading doesn't need full
+   resolution and this keeps the network payload small. */
 function compressForAI(base64, maxW, quality){
   return new Promise((resolve)=>{
     const img = new Image();
@@ -2212,9 +2178,30 @@ async function submitAudit(){
     if(PHOTO_BASE64) stampedOutlet = await stampPhoto(PHOTO_BASE64, lines);
     stampedInvoices = await Promise.all(INVOICE_PHOTOS.map(p=>stampPhoto(p, lines)));
   }catch(_e){ stampedOutlet = PHOTO_BASE64 || ''; stampedInvoices = INVOICE_PHOTOS; }
-  btn.innerHTML = '<span class="spin"></span> Combining bills into one PDF…';
+
+  const summaryRows = [
+    ['Auditor', document.getElementById('f_auditor').value], ['Date of Visit', document.getElementById('f_date').value],
+    ['District', document.getElementById('f_district').value], ['City', document.getElementById('f_city').value],
+    ['Distributor', document.getElementById('f_distributor').value], ['Route', document.getElementById('f_route').value],
+    ['Outlet Name', document.getElementById('f_outletName').value], ['Outlet Type', document.getElementById('f_outletType').value],
+    ['Address', document.getElementById('f_address').value],
+    ['Outlet Owner Name', document.getElementById('f_ownerName').value], ['Retailer Phone', document.getElementById('f_retailerPhone').value],
+    ['GCPL Distribution', FORM.q1 || ''], ['DB Count', document.getElementById('f_q2').value],
+    ['Spice Available', FORM.q3 || ''], ['Happy with DB', FORM.q4 || ''],
+    ['Price Update Source', document.getElementById('f_q5').value],
+    ['Bill Type', document.getElementById('f_q7').value], ['Invoice GST', FORM.invoiceGST || 'Not scanned'],
+    ['Shelf Visibility', FORM.q8 ? FORM.q8+'★' : ''],
+    ['POSM Available', FORM.q9 || ''], ['NLB/GSB Brand', document.getElementById('f_q10').value],
+    ['GPS Location', GEO ? `${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)}` : ''],
+    ['Maps Link', GEO ? GEO.link : '']
+  ];
+  const pdfPhotos = [{b64: stampedOutlet, caption:'Outlet Photo'}]
+    .concat(stampedInvoices.map((b64,i)=>({b64, caption:`Bill ${i+1} of ${stampedInvoices.length}`})));
+  btn.innerHTML = '<span class="spin"></span> Building your PDF…';
+  const fileNameBase = `Audit_${(document.getElementById('f_outletName').value||'Outlet').replace(/[^a-z0-9]/gi,'_')}_${document.getElementById('f_date').value||''}`;
   let invoicePdf = '';
-  try{ if(stampedInvoices.length) invoicePdf = await buildBillsPDF(stampedInvoices); }catch(_e){}
+  try{ invoicePdf = await buildAndDownloadFullPDF('FieldAudit — Retail Outlet Audit Summary', summaryRows, pdfPhotos, fileNameBase); }catch(_e){}
+
   btn.innerHTML = '<span class="spin"></span> Preparing for AI check…';
   let aiInvoicePhotos = [];
   try{ aiInvoicePhotos = await Promise.all(stampedInvoices.slice(0,3).map(p=>compressForAI(p, 700, 0.55))); }catch(_e){ aiInvoicePhotos = []; }
@@ -2253,7 +2240,6 @@ async function submitAudit(){
     const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)});
     const res = await r.json();
     if(!res.success) throw new Error(res.message || 'Submit failed');
-    downloadAuditSummaryPDF(payload, res.auditId);
     showStamp(res.auditId || 'OK');
     if(res.aiInsight && res.aiInsight.invoiceIssue){
       toast('⚠️ AI flagged a possible invoice issue: ' + res.aiInsight.invoiceIssue, true);
@@ -2326,6 +2312,22 @@ async function submitDBStockAudit(){
     if(DB_PHOTO_BASE64) stampedWide = await stampPhoto(DB_PHOTO_BASE64, lines);
     if(DB_PHOTO_BASE64_2) stampedRack = await stampPhoto(DB_PHOTO_BASE64_2, lines);
   }catch(_e){ stampedWide = DB_PHOTO_BASE64 || ''; stampedRack = DB_PHOTO_BASE64_2 || ''; }
+
+  btn.innerHTML = '<span class="spin"></span> Building your PDF…';
+  const dbSummaryRows = [
+    ['SO Name', document.getElementById('db_soName').value], ['SO Phone', document.getElementById('db_soPhone').value],
+    ['Conducted By', DB_FORM.auditType || ''], ['Date', document.getElementById('db_date').value],
+    ['DB Code', document.getElementById('db_dbCode').value], ['DB Name', document.getElementById('db_dbName').value],
+    ['DB City', document.getElementById('db_dbCity').value], ['ASM Name', document.getElementById('db_asmName').value],
+    ['Address', document.getElementById('db_address').value],
+    ['GPS Location', DB_GEO ? `${DB_GEO.lat.toFixed(6)}, ${DB_GEO.lng.toFixed(6)}` : ''],
+    ['Maps Link', DB_GEO ? DB_GEO.link : '']
+  ];
+  const dbPdfPhotos = [{b64: stampedWide, caption:'Godown / Wide Photo'}, {b64: stampedRack, caption:'Product Rack Photo'}];
+  const dbFileNameBase = `DBAudit_${(document.getElementById('db_dbName').value||'DB').replace(/[^a-z0-9]/gi,'_')}_${document.getElementById('db_date').value||''}`;
+  let dbPdf = '';
+  try{ dbPdf = await buildAndDownloadFullPDF('FieldAudit — DB Stock Audit Summary', dbSummaryRows, dbPdfPhotos, dbFileNameBase); }catch(_e){}
+
   btn.innerHTML = '<span class="spin"></span> Submitting &amp; running AI checks…';
   const qty = id => document.getElementById(id).value || 0;
   const payload = {
@@ -2346,7 +2348,7 @@ async function submitDBStockAudit(){
     methi: qty('db_methi'), ajwain: qty('db_ajwain'), saunf: qty('db_saunf'), sarson: qty('db_sarson'),
     shahiGaramMasala: qty('db_shahiGaramMasala'), chickenMasala: qty('db_chickenMasala'),
     meatMasala: qty('db_meatMasala'), kashmiriMirch: qty('db_kashmiriMirch'), kalajeera: qty('db_kalajeera'),
-    photo: stampedWide, photoProductRack: stampedRack,
+    photo: stampedWide, photoProductRack: stampedRack, auditPdf: dbPdf,
     lat: DB_GEO.lat, lng: DB_GEO.lng, accuracy: DB_GEO.accuracy, mapsLink: DB_GEO.link, geoAddress: DB_GEO.address || ''
   };
   try{
@@ -2354,7 +2356,6 @@ async function submitDBStockAudit(){
     const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)});
     const res = await r.json();
     if(!res.success) throw new Error(res.message || 'Submit failed');
-    downloadDBAuditSummaryPDF(payload, res.auditId);
     showStamp(res.auditId || 'OK');
     resetDBForm();
   }catch(e){
