@@ -303,7 +303,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.1.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.3.0</div></div>
   </div>
 </header>
 
@@ -349,7 +349,7 @@ window.onerror = function(msg, url, line, col, err){
       <div class="field"><label>Auditor Name</label><input type="text" id="f_auditor" placeholder="Your name"></div>
       <div class="field">
         <label>District</label>
-        <input type="text" id="f_district" list="wbDistrictList" placeholder="Start typing…" autocomplete="off">
+        <input type="text" id="f_district" list="wbDistrictList" placeholder="Auto-fills with GPS, or type…" autocomplete="off">
         <datalist id="wbDistrictList"></datalist>
       </div>
       <div class="field"><label>City</label><input type="text" id="f_city"></div>
@@ -671,6 +671,24 @@ const WB_DISTRICTS = [
   if(!list) return;
   list.innerHTML = WB_DISTRICTS.map(d=>`<option value="${d}">`).join('');
 })();
+
+/* District auto-fill from the pincode that's ALREADY part of the GPS
+   address lookup — no separate manual pincode typing needed. Runs silently
+   in the background right after location is captured, using India Post's
+   free public pincode API (no key, official Dept. of Posts data) to
+   confirm/refine the district name, since post-office data is often more
+   precise for this specific purpose than the general reverse-geocoders. */
+async function refineDistrictFromPincode(pincode, districtFieldId){
+  if(!pincode || !/^\d{6}$/.test(pincode)) return;
+  try{
+    const r = await fetchWithTimeout(`https://api.postalpincode.in/pincode/${pincode}`, {}, 8000);
+    const data = await r.json();
+    const po = data && data[0] && data[0].Status === 'Success' && data[0].PostOffice && data[0].PostOffice[0];
+    if(po && po.District){
+      document.getElementById(districtFieldId).value = po.District;
+    }
+  }catch(_e){ /* silent — the GPS-derived district (already filled) stays as-is */ }
+}
 
 const PIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;display:inline-block;margin-right:5px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>';
 const FACE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/><path d="M8 15c1 1.2 2.4 1.8 4 1.8s3-.6 4-1.8"/></svg>';
@@ -1651,7 +1669,7 @@ async function googleReverseGeocode(lat, lng){
   try{
     const r = await fetchWithTimeout(`${SCRIPT_URL}?action=reverseGeocode&lat=${lat}&lng=${lng}`, {}, 9000);
     const j = await r.json();
-    if(j.success && j.formatted) return {formatted:j.formatted, city:j.city||'', district:j.district||'', source:'google'};
+    if(j.success && j.formatted) return {formatted:j.formatted, city:j.city||'', district:j.district||'', pincode:j.pincode||'', source:'google'};
   }catch(_e){}
   return null;
 }
@@ -1701,7 +1719,7 @@ async function getBaseAddress(lat, lng){
   if(!base || !base.formatted){
     try{ base = await detailedReverseGeocode(lat, lng); }catch(_e){ base = {formatted:''}; }
   }
-  return {formatted: base.formatted || '', city: base.city || '', district: base.district || '', source: base.source || 'osm'};
+  return {formatted: base.formatted || '', city: base.city || '', district: base.district || '', pincode: base.pincode || '', source: base.source || 'osm'};
 }
 
 /* Fetches the nearest named landmark in the background and appends it to the
@@ -1764,6 +1782,7 @@ function captureLocation(callerBtn){
     }catch(_e){ base = {formatted:''}; }
     if(base.city) document.getElementById('f_city').value = base.city;
     if(base.district) document.getElementById('f_district').value = base.district;
+    if(base.pincode) refineDistrictFromPincode(base.pincode, 'f_district'); // silently confirms/refines using India Post data — no manual typing needed
     if(base.formatted){
       GEO.address = base.formatted;
       const addrField = document.getElementById('f_address');
