@@ -19,14 +19,16 @@
 <script src="https://cdn.jsdelivr.net/npm/libphonenumber-js@1.10.51/bundle/libphonenumber-js.min.js"></script>
 <style>
 :root{
-  /* Apple/iOS-style palette — now the default look */
-  --ink:#1C1C1E; --ink-2:#2C2C2E;
-  --paper:#F2F2F7; --paper-2:#E5E5EA; --card:#FFFFFF;
-  --amber:#007AFF; --amber-dark:#0062CC;
-  --green:#34C759; --green-bg:#E3F9E8;
-  --red:#FF3B30; --red-bg:#FFEBEA;
+  /* "Ultimate" tech-gradient palette — now the default look */
+  --ink:#0B0F1F; --ink-2:#161B33;
+  --paper:#F4F5FA; --paper-2:#E9EBF5; --card:#FFFFFF;
+  --amber:#5B5FEF; --amber-dark:#4347C4;
+  --green:#0BC98E; --green-bg:#E3FBF3;
+  --red:#FF4D6A; --red-bg:#FFE9ED;
   --slate:#6B7280; --border:#E1DACA; --border-2:#D8D2C4;
-  --shadow: 0 8px 24px rgba(18,23,43,0.10);
+  --shadow: 0 8px 28px rgba(11,15,31,0.14);
+  --grad-1:#0066FF; --grad-2:#7C3AED; --grad-3:#06B6D4;
+  --brand-gradient: linear-gradient(135deg, var(--grad-1) 0%, var(--grad-2) 55%, var(--grad-3) 100%);
 }
 [data-theme="classic"]{
   --ink:#12172B; --ink-2:#1D2444;
@@ -34,29 +36,36 @@
   --paper:#FAF8F1; --paper-2:#F1ECE0;
   --green:#1B7A43; --green-bg:#E7F3EC;
   --red:#C0392B; --red-bg:#FBEAE8;
+  --brand-gradient: linear-gradient(135deg, #12172B 0%, #C97F0E 100%);
 }
-/* ---- A few professional alternate themes (iOS is now the default look
-   above) — only the brand colours change, --green/--red stay fixed
-   everywhere since they carry meaning (Yes/No, good/bad). */
+/* ---- A few professional alternate themes (the tech-gradient look above is
+   now the default) — only the brand colours change, --green/--red stay
+   fixed everywhere since they carry meaning (Yes/No, good/bad). Each theme
+   gets its own --brand-gradient (its two brand colours blended) so the
+   header/primary-CTA gradient always matches whichever palette is active. */
 [data-theme="forest"]{
   --ink:#0F3D2E; --ink-2:#155A44;
   --amber:#D4AF37; --amber-dark:#B08D28;
   --paper:#F7F8F3; --paper-2:#ECEFE4;
+  --brand-gradient: linear-gradient(135deg, #0F3D2E 0%, #D4AF37 100%);
 }
 [data-theme="corporate-blue"]{
   --ink:#0B2545; --ink-2:#13315C;
   --amber:#2F80ED; --amber-dark:#1D5FC2;
   --paper:#F5F7FA; --paper-2:#E9EEF5;
+  --brand-gradient: linear-gradient(135deg, #0B2545 0%, #2F80ED 100%);
 }
 [data-theme="charcoal-teal"]{
   --ink:#1C1F26; --ink-2:#272B33;
   --amber:#14B8A6; --amber-dark:#0F9385;
   --paper:#F7F8F8; --paper-2:#EBEDEE;
+  --brand-gradient: linear-gradient(135deg, #1C1F26 0%, #14B8A6 100%);
 }
 [data-theme="royal-purple"]{
   --ink:#2B1750; --ink-2:#3A2169;
   --amber:#C9A227; --amber-dark:#A9860E;
   --paper:#F8F6FB; --paper-2:#ECE7F5;
+  --brand-gradient: linear-gradient(135deg, #2B1750 0%, #C9A227 100%);
 }
 /* iOS-style button feel — applies across every theme, not just [data-theme="ios"]:
    fuller rounding, a soft coloured shadow, spring-like press. */
@@ -110,15 +119,15 @@ button{font-family:inherit; cursor:pointer; -webkit-appearance:none;}
 input,select,textarea{font-family:inherit; font-size:16px;}
 a{color:inherit;}
 
-header.appbar{background:var(--ink); color:var(--paper); padding:16px 20px; display:flex; align-items:center; gap:10px; position:sticky; top:0; z-index:50; box-shadow:0 2px 10px rgba(0,0,0,.15);}
-.brand{display:flex; align-items:center; gap:10px;}
-.brand .mark{width:34px; height:34px; background:var(--amber); border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--ink); font-family:'Oswald'; font-weight:700; font-size:15px;}
-.brand .name{font-family:'Oswald'; text-transform:uppercase; font-size:16px; letter-spacing:.03em;}
-.brand .name span{color:var(--amber);}
-.brand .sub{color:#9BA1C4; font-size:11.5px; margin-top:1px;}
+header.appbar{background:linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 100%); background-image:radial-gradient(circle at 15% -20%, color-mix(in srgb, var(--amber) 40%, transparent), transparent 55%), radial-gradient(circle at 90% 120%, color-mix(in srgb, var(--amber) 25%, transparent), transparent 50%), linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 100%); color:var(--paper); padding:16px 20px; display:flex; align-items:center; gap:10px; position:sticky; top:0; z-index:50; box-shadow:0 4px 20px rgba(0,0,0,.25);}
+.brand{display:flex; align-items:center; gap:11px;}
+.mark-svg{filter:drop-shadow(0 3px 8px rgba(91,95,239,.5)); flex-shrink:0;}
+.brand .name{font-family:'Oswald'; text-transform:uppercase; font-size:17px; letter-spacing:.03em; background:linear-gradient(90deg,#fff 0%, #C9D3FF 100%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
+.brand .name span{color:var(--amber); background:linear-gradient(90deg, var(--amber) 0%, color-mix(in srgb, var(--amber) 60%, white) 100%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
+.brand .sub{color:#9BA1C4; font-size:11.5px; margin-top:1px; letter-spacing:.02em;}
 
 main{max-width:720px; margin:0 auto; padding:16px 14px 110px;}
-.card{background:var(--card); border:1px solid var(--border); border-radius:6px; padding:18px; margin-bottom:14px;}
+.card{background:var(--card); border:1px solid var(--border); border-radius:6px; padding:18px; margin-bottom:14px; box-shadow:0 2px 10px rgba(11,15,31,.05);}
 .card h2{font-size:14.5px; color:var(--ink); display:flex; align-items:center; gap:9px;}
 .card h2 .n{background:var(--ink); color:var(--amber); width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-family:'IBM Plex Mono'; flex-shrink:0;}
 .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
@@ -174,8 +183,8 @@ main{max-width:720px; margin:0 auto; padding:16px 14px 110px;}
 
 .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:13px 20px; border-radius:5px; border:none; font-weight:600; font-size:15px; letter-spacing:.02em; transition:transform .1s, background .15s;}
 .btn:active{transform:scale(.98);}
-.btn-primary{background:var(--amber); color:var(--ink);}
-.btn-primary:hover{background:var(--amber-dark);}
+.btn-primary{background:var(--brand-gradient, var(--amber)); color:#fff;}
+.btn-primary:hover{filter:brightness(1.08);}
 .btn-primary:disabled{opacity:.5; cursor:not-allowed;}
 .btn-outline{background:transparent; border:1.5px solid var(--border-2); color:var(--ink);}
 .btn-outline:hover{border-color:var(--ink);}
@@ -205,10 +214,12 @@ main{max-width:720px; margin:0 auto; padding:16px 14px 110px;}
 .module-select{padding:10px 4px 4px;}
 .module-select h1{font-size:19px; margin-bottom:4px;}
 .module-select .hint{font-size:13px; color:var(--slate); margin-bottom:18px;}
-.module-card{display:block; width:100%; text-align:left; background:var(--card); border:1.5px solid var(--border-2); border-radius:8px; padding:20px; margin-bottom:14px; cursor:pointer; transition:border-color .15s, transform .1s;}
-.module-card:active{transform:scale(.99);}
-.module-card:hover{border-color:var(--ink);}
-.module-card .icon{font-size:26px; margin-bottom:8px;}
+.module-card{display:block; width:100%; text-align:left; background:var(--card); border:1.5px solid var(--border-2); border-radius:16px; padding:22px; margin-bottom:14px; cursor:pointer; transition:border-color .15s, transform .15s cubic-bezier(.2,1.2,.4,1), box-shadow .2s; position:relative; overflow:hidden; box-shadow:0 3px 14px rgba(11,15,31,.06);}
+.module-card::before{content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--brand-gradient); opacity:0; transition:opacity .2s;}
+.module-card:active{transform:scale(.98);}
+.module-card:hover{border-color:transparent; box-shadow:0 10px 28px rgba(91,95,239,.16); transform:translateY(-2px);}
+.module-card:hover::before{opacity:1;}
+.module-card .icon{font-size:28px; margin-bottom:8px;}
 .module-card .title{font-family:'Oswald'; text-transform:uppercase; font-size:16px; letter-spacing:.03em; margin-bottom:4px;}
 .module-card .desc{font-size:13px; color:var(--slate);}
 .module-back{background:none; border:none; color:var(--slate); font-size:13px; font-weight:600; padding:4px 0 14px; cursor:pointer; display:flex; align-items:center; gap:4px;}
@@ -220,8 +231,21 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
 <body>
 
 <header class="appbar">
-  <div class="brand"><div class="mark">FA</div>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v4.5.0</div></div>
+  <div class="brand">
+    <svg class="mark-svg" viewBox="0 0 40 40" width="36" height="36">
+      <defs>
+        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0066FF"/>
+          <stop offset="55%" stop-color="#7C3AED"/>
+          <stop offset="100%" stop-color="#06B6D4"/>
+        </linearGradient>
+      </defs>
+      <circle cx="20" cy="20" r="19" fill="url(#logoGrad)"/>
+      <circle cx="20" cy="20" r="19" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1"/>
+      <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
+    </svg>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v5.1.0</div></div>
   </div>
 </header>
 
@@ -1022,6 +1046,8 @@ function confirmNewUserName(phone, prefix){
   if(!name){ toast('Please enter your name first', true); return; }
   CHECKIN_PHONE = phone; CHECKIN_NAME = name;
   try{ localStorage.setItem(SO_IDENTITY_KEY, JSON.stringify({phone, name})); }catch(_e){}
+  if(CURRENT_MODULE === 'retail' && !GEO) captureLocation();
+  else if(CURRENT_MODULE === 'db' && !DB_GEO) dbCaptureLocation();
   checkTodayCheckin(prefix);
 }
 
@@ -1216,6 +1242,13 @@ async function onFaceMatched(prefix, match){
   try{ localStorage.setItem(SO_IDENTITY_KEY, JSON.stringify({phone: match.phone, name: match.name})); }catch(_e){}
   showScanMatch(prefix, match.name, match.phone);
   captureGPSForCheckin(prefix);
+  // Also auto-capture the actual audit's own outlet/DB location the instant
+  // identity is confirmed — "face scan hote hi location capture ho" — so
+  // the SO doesn't need to separately tap "Capture GPS location" afterward,
+  // and the location is genuinely tied to the real scan moment rather than
+  // something that could be captured later from anywhere.
+  if(CURRENT_MODULE === 'retail' && !GEO) captureLocation();
+  else if(CURRENT_MODULE === 'db' && !DB_GEO) dbCaptureLocation();
   setTimeout(()=>checkTodayCheckin(prefix), 1100);
 }
 
