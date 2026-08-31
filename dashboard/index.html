@@ -147,6 +147,8 @@ main{max-width:1080px; margin:0 auto; padding:22px 18px 70px;}
 .kpi{background:var(--ink); color:var(--paper); border-radius:5px; padding:16px;}
 .kpi-click{cursor:pointer; transition:transform .12s, box-shadow .15s;}
 .kpi-click:hover{transform:translateY(-2px); box-shadow:0 6px 16px rgba(18,23,43,.18);}
+.info-i{display:inline-block; opacity:.55; font-size:11px; cursor:help; margin-left:2px;}
+.info-i:hover{opacity:1;}
 .kpi.ai-kpi{background:var(--ink-2); border:1px solid #383F63;}
 .card.ai-alert{border-color:var(--red); background:var(--red-bg);}
 .card.ai-alert h2{color:var(--red);}
@@ -213,6 +215,8 @@ table.data tr:hover td{background:var(--paper-2);}
 .photo-card .name{font-size:13px; font-weight:600; color:var(--ink);}
 .photo-card .sub{font-size:11.5px; color:var(--slate); margin-top:2px;}
 .photo-card .ai-line{font-size:11px; color:var(--slate); margin-top:6px; border-top:1px dashed var(--border-2); padding-top:6px; display:flex; align-items:center; gap:5px;}
+.photo-card .view-map-link{display:block; font-size:11px; color:var(--amber); margin-top:6px; text-decoration:none; font-weight:600;}
+.photo-card .view-map-link:hover{text-decoration:underline;}
 .photo-card .ai-line .dot{width:6px; height:6px; border-radius:50%; flex-shrink:0;}
 .dot-good{background:var(--green);} .dot-bad{background:var(--red);} .dot-neutral{background:var(--slate);}
 
@@ -287,7 +291,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v5.5.0</div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.3.0</div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -332,6 +336,8 @@ table.data tr:hover td{background:var(--paper-2);}
         <div class="filters">
           <input type="text" id="histSearch" placeholder="Search outlet, city, distributor…" oninput="renderHistory()">
           <select id="histCity" onchange="renderHistory()"><option value="">All cities</option></select>
+          <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">From <input type="date" id="histFrom" onchange="renderHistory()"></label>
+          <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">To <input type="date" id="histTo" onchange="renderHistory()"></label>
           <button class="btn btn-dark" onclick="exportReport()">⬇ Export pro report</button>
         </div>
         <div class="table-wrap"><table class="data" id="histTable"><thead></thead><tbody></tbody></table></div>
@@ -349,6 +355,9 @@ table.data tr:hover td{background:var(--paper-2);}
             <option value="Godown Photo">Godown Photo</option>
             <option value="Product Rack Photo">Product Rack Photo</option>
           </select>
+          <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">From <input type="date" id="photoFrom" onchange="renderPhotos()"></label>
+          <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">To <input type="date" id="photoTo" onchange="renderPhotos()"></label>
+          <button class="btn btn-dark" onclick="exportPhotosZip()">📦 Download ZIP</button>
         </div>
       </div>
       <div id="photosContent"><div class="empty"><b>Loading photos…</b>Fetching photo records from both modules.</div></div>
@@ -930,16 +939,16 @@ function renderRetailDashboard(){
   const topPriorityBrands = Object.entries(priorityBrands).sort((a,b)=>b[1]-a[1]).slice(0,6);
   el.innerHTML = `
     <div class="kpis">
-      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${n}</div><div class="l">Audits submitted</div></div>
-      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${pct(yes('q1_distribution'),n)}%</div><div class="l">GCPL distribution</div></div>
-      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${pct(yes('q9_posmAvailable'),n)}%</div><div class="l">POSM available</div></div>
-      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${avgStar}★</div><div class="l">Avg. shelf visibility</div></div>
+      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${n}</div><div class="l">Audits submitted <span class="info-i" title="Total number of Retail Audit rows in the selected date range.">ⓘ</span></div></div>
+      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${pct(yes('q1_distribution'),n)}%</div><div class="l">GCPL distribution <span class="info-i" title="% of audits where the auditor answered 'Yes' to the GCPL Distribution question. Formula: (audits with Yes) ÷ (total audits) × 100.">ⓘ</span></div></div>
+      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${pct(yes('q9_posmAvailable'),n)}%</div><div class="l">POSM available <span class="info-i" title="% of audits where POSM (point-of-sale material) was marked available. Same formula as GCPL Distribution, using the POSM question instead.">ⓘ</span></div></div>
+      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${avgStar}★</div><div class="l">Avg. shelf visibility <span class="info-i" title="Average of the auditor's 1-5 star shelf-visibility rating across all audits in range. Formula: sum of all star ratings ÷ number of audits.">ⓘ</span></div></div>
     </div>
     <div class="kpis">
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistoryIssuesOnly()"><div class="v">${issuesFlagged.length}</div><div class="l">AI-flagged invoice issues</div></div>
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedOutlets?pct(brandVisibleCount,analyzedOutlets):0}%</div><div class="l">Ganesh visible on shelf (AI)</div></div>
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedInvoices}</div><div class="l">Invoices AI-analyzed</div></div>
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedOutlets}</div><div class="l">Outlet photos AI-analyzed</div></div>
+      <div class="kpi ai-kpi kpi-click" onclick="goToHistoryIssuesOnly()"><div class="v">${issuesFlagged.length}</div><div class="l">AI-flagged invoice issues <span class="info-i" title="Count of audits where AI photo analysis flagged a bill calculation problem. Note: AI photo analysis was removed to keep the app fast — this will only be non-zero for audits submitted before that change.">ⓘ</span></div></div>
+      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedOutlets?pct(brandVisibleCount,analyzedOutlets):0}%</div><div class="l">Ganesh visible on shelf (AI) <span class="info-i" title="% of AI-analyzed outlet photos where Ganesh brand packaging was detected on shelf. Note: AI photo analysis was removed to keep the app fast — this only reflects audits submitted before that change.">ⓘ</span></div></div>
+      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedInvoices}</div><div class="l">Invoices AI-analyzed <span class="info-i" title="Count of invoice photos that went through AI analysis. Note: AI photo analysis was removed to keep the app fast — this only reflects audits submitted before that change.">ⓘ</span></div></div>
+      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedOutlets}</div><div class="l">Outlet photos AI-analyzed <span class="info-i" title="Count of outlet photos that went through AI analysis. Note: AI photo analysis was removed to keep the app fast — this only reflects audits submitted before that change.">ⓘ</span></div></div>
     </div>
     ${issuesFlagged.length ? `<div class="card ai-alert">
       <h2>⚠️ AI-flagged invoice issues (${issuesFlagged.length})</h2>
@@ -993,14 +1002,14 @@ function renderDBDashboard(){
   const showAuditTypeChart = Object.keys(auditTypes).length > 1; // only meaningful when both types are visible (Admin)
   el.innerHTML = `
     <div class="kpis">
-      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${n}</div><div class="l">Stock audits this period</div></div>
-      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${totalBags.toLocaleString('en-IN')}</div><div class="l">Total bags counted</div></div>
-      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${totalKgs.toLocaleString('en-IN')}</div><div class="l">Total spice Kgs counted</div></div>
-      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${Object.keys(distributors).length}</div><div class="l">Distributors covered</div></div>
+      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${n}</div><div class="l">Stock audits this period <span class="info-i" title="Total DB Stock Audit rows in the selected date range and role scope.">ⓘ</span></div></div>
+      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${totalBags.toLocaleString('en-IN')}</div><div class="l">Total bags counted <span class="info-i" title="Sum of ATTA+MAIDA+SOOJI+SATTU+BESAN+DALIA+OTHERS+Spices-Total bag quantities across all audits in range.">ⓘ</span></div></div>
+      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${totalKgs.toLocaleString('en-IN')}</div><div class="l">Total spice Kgs counted <span class="info-i" title="Sum of every individual spice quantity (Haldi, Chili, Dhania, etc., all in Kgs) across all audits in range.">ⓘ</span></div></div>
+      <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${Object.keys(distributors).length}</div><div class="l">Distributors covered <span class="info-i" title="Count of unique DB Names appearing in the audits in range.">ⓘ</span></div></div>
     </div>
     <div class="kpis">
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedCount?pct(brandVisibleCount,analyzedCount):0}%</div><div class="l">Ganesh visible on shelf (AI)</div></div>
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedCount}</div><div class="l">Godown photos AI-analyzed</div></div>
+      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedCount?pct(brandVisibleCount,analyzedCount):0}%</div><div class="l">Ganesh visible on shelf (AI) <span class="info-i" title="% of AI-analyzed godown photos where Ganesh brand was detected. Note: AI photo analysis was removed to keep the app fast — this only reflects audits submitted before that change.">ⓘ</span></div></div>
+      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedCount}</div><div class="l">Godown photos AI-analyzed <span class="info-i" title="Count of godown photos that went through AI analysis. Note: AI photo analysis was removed to keep the app fast — this only reflects audits submitted before that change.">ⓘ</span></div></div>
     </div>
     <div class="grid2">
       <div class="card chart-card"><h2>Bag Quantities by Product</h2><canvas id="chartBags"></canvas></div>
@@ -1033,10 +1042,13 @@ function renderRetailHistory(){
   if(citySel.options.length<=1){ cities.forEach(c=>{const o=document.createElement('option'); o.value=c; o.textContent=c; citySel.appendChild(o);}); }
   const q = document.getElementById('histSearch').value.toLowerCase();
   const cf = citySel.value;
+  const histFrom = document.getElementById('histFrom').value;
+  const histTo = document.getElementById('histTo').value;
   const rows = ALL_DATA.filter(r=>{
     const hit = !q || [r.outletName,r.city,r.distributor,r.auditor].join(' ').toLowerCase().includes(q);
     const issuesOk = HIST_FORCED_FILTER!=='issues' || r.aiInvoiceCalcIssue==='Yes';
-    return hit && (!cf || r.city===cf) && issuesOk;
+    const dateOk = (!histFrom || (r.date||'') >= histFrom) && (!histTo || (r.date||'') <= histTo);
+    return hit && (!cf || r.city===cf) && issuesOk && dateOk;
   });
   const thead = document.querySelector('#histTable thead');
   const tbody = document.querySelector('#histTable tbody');
@@ -1062,9 +1074,12 @@ function renderDBHistory(){
   if(citySel.options.length<=1){ cities.forEach(c=>{const o=document.createElement('option'); o.value=c; o.textContent=c; citySel.appendChild(o);}); }
   const q = document.getElementById('histSearch').value.toLowerCase();
   const cf = citySel.value;
+  const histFrom = document.getElementById('histFrom').value;
+  const histTo = document.getElementById('histTo').value;
   const rows = ALL_DATA.filter(r=>{
     const hit = !q || [r.dbName,r.dbCode,r.dbCity,r.soName].join(' ').toLowerCase().includes(q);
-    return hit && (!cf || r.dbCity===cf);
+    const dateOk = (!histFrom || (r.date||'') >= histFrom) && (!histTo || (r.date||'') <= histTo);
+    return hit && (!cf || r.dbCity===cf) && dateOk;
   });
   const thead = document.querySelector('#histTable thead');
   const tbody = document.querySelector('#histTable tbody');
@@ -1130,7 +1145,9 @@ async function exportReport(){
   startExportProgress();
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    const res = await callApi({action:'exportReport', token:SESSION.token, module:MODULE});
+    const fromDate = document.getElementById('histFrom').value;
+    const toDate = document.getElementById('histTo').value;
+    const res = await callApi({action:'exportReport', token:SESSION.token, module:MODULE, fromDate, toDate});
     if(!res.success) throw new Error(res.message || 'Export failed');
     finishExportProgress();
     downloadBase64File(res.base64, res.filename);
@@ -1142,6 +1159,33 @@ async function exportReport(){
     } else {
       toast(e.message || 'Could not export report', true);
     }
+  }finally{
+    btn.disabled = false; btn.innerHTML = orig;
+  }
+}
+async function exportPhotosZip(){
+  if(!PHOTOS_LOADED){ toast('Photos are still loading — try again in a moment', true); return; }
+  const btn = event.currentTarget;
+  const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Preparing…';
+  startExportProgress();
+  try{
+    if(!configured()) throw new Error('__NOCFG__');
+    const fromDate = document.getElementById('photoFrom').value;
+    const toDate = document.getElementById('photoTo').value;
+    if(!fromDate && !toDate){
+      finishExportProgress();
+      toast('Pick at least a From or To date first — zipping every photo ever taken would be huge', true);
+      btn.disabled = false; btn.innerHTML = orig;
+      return;
+    }
+    const res = await callApi({action:'exportPhotosZip', token:SESSION.token, module:MODULE, fromDate, toDate});
+    if(!res.success) throw new Error(res.message || 'Could not create the ZIP');
+    finishExportProgress();
+    downloadBase64File(res.base64, res.filename, 'application/zip');
+    toast(`${res.count} photo${res.count===1?'':'s'} downloaded, with a Manifest.csv listing the details`);
+  }catch(e){
+    finishExportProgress();
+    toast(e.message==='__NOCFG__' ? 'Backend not connected' : (e.message || 'Could not create the ZIP'), true);
   }finally{
     btn.disabled = false; btn.innerHTML = orig;
   }
@@ -1185,28 +1229,28 @@ function buildPhotoList(){
   const list = [];
   PHOTO_RETAIL_DATA.forEach(r=>{
     if(r.photoUrl) list.push({
-      date:r.date, type:'Outlet Photo', typeClass:'type-outlet', url:r.photoUrl,
-      name:r.outletName||'—', sub:r.distributor||'', 
+      date:r.date, type:'Outlet Photo', typeClass:'type-outlet', url:r.photoUrl, mapsLink:r.mapsLink,
+      name:r.outletName||'—', sub:[r.distributor, r.auditor?('Auditor: '+r.auditor):''].filter(Boolean).join(' · '), 
       aiText:r.aiOutletSummary || (r.aiBrandVisible?`Brand visible: ${r.aiBrandVisible}`:''),
       aiDot: r.aiBrandVisible==='Yes'?'dot-good':(r.aiBrandVisible==='No'?'dot-bad':'dot-neutral')
     });
     if(r.invoicePhotoUrl) list.push({
-      date:r.date, type:'Invoice Photo', typeClass:'type-invoice', url:r.invoicePhotoUrl,
-      name:r.outletName||'—', sub:r.distributor||'',
+      date:r.date, type:'Invoice Photo', typeClass:'type-invoice', url:r.invoicePhotoUrl, mapsLink:r.mapsLink,
+      name:r.outletName||'—', sub:[r.distributor, r.auditor?('Auditor: '+r.auditor):''].filter(Boolean).join(' · '),
       aiText:r.aiInvoiceSummary || (r.aiInvoiceBillType?`Type: ${r.aiInvoiceBillType}`:''),
       aiDot: r.aiInvoiceCalcIssue==='Yes'?'dot-bad':(r.aiInvoiceCalcIssue==='No'?'dot-good':'dot-neutral')
     });
   });
   PHOTO_DB_DATA.forEach(r=>{
     if(r.photoUrlWide) list.push({
-      date:r.date, type:'Godown Photo', typeClass:'type-godown', url:r.photoUrlWide,
-      name:r.dbName||'—', sub:[r.auditType,r.dbCode].filter(Boolean).join(' · '),
+      date:r.date, type:'Godown Photo', typeClass:'type-godown', url:r.photoUrlWide, mapsLink:r.mapsLink,
+      name:r.dbName||'—', sub:[r.dbCode, r.auditType, r.soName?('SO: '+r.soName):''].filter(Boolean).join(' · '),
       aiText:r.aiStockSummary || (r.aiStockVisible?`Stock visible: ${r.aiStockVisible}`:''),
       aiDot: r.aiStockVisible==='Yes'?'dot-good':(r.aiStockVisible==='No'?'dot-bad':'dot-neutral')
     });
     if(r.photoUrlRack) list.push({
-      date:r.date, type:'Product Rack Photo', typeClass:'type-rack', url:r.photoUrlRack,
-      name:r.dbName||'—', sub:[r.auditType,r.dbCode].filter(Boolean).join(' · '),
+      date:r.date, type:'Product Rack Photo', typeClass:'type-rack', url:r.photoUrlRack, mapsLink:r.mapsLink,
+      name:r.dbName||'—', sub:[r.dbCode, r.auditType, r.soName?('SO: '+r.soName):''].filter(Boolean).join(' · '),
       aiText:r.aiStockSummary || '', aiDot:'dot-neutral'
     });
   });
@@ -1218,10 +1262,13 @@ function renderPhotos(){
   if(!PHOTOS_LOADED){ el.innerHTML = `<div class="empty"><b>Loading photos…</b>Fetching photo records from both modules.</div>`; return; }
   const q = document.getElementById('photoSearch').value.toLowerCase();
   const typeFilter = document.getElementById('photoTypeFilter').value;
+  const photoFrom = document.getElementById('photoFrom').value;
+  const photoTo = document.getElementById('photoTo').value;
   let list = buildPhotoList();
   list = list.filter(p=>{
     const hit = !q || (p.name+' '+p.sub).toLowerCase().includes(q);
-    return hit && (!typeFilter || p.type===typeFilter);
+    const dateOk = (!photoFrom || (p.date||'') >= photoFrom) && (!photoTo || (p.date||'') <= photoTo);
+    return hit && (!typeFilter || p.type===typeFilter) && dateOk;
   });
   if(!list.length){ el.innerHTML = `<div class="empty"><b>No photos found</b>Try a different search or filter, or check back once more audits are submitted.</div>`; return; }
   const groups = {};
@@ -1268,24 +1315,32 @@ function tryPhotoFallback(imgEl){
   imgEl.src = formats[attempt];
 }
 function photoCardHtml(p){
-  const safeUrl = p.url.replace(/'/g,"\\'");
   const safeCaption = `${p.type} — ${p.name}${p.sub?' ('+p.sub+')':''}${p.aiText?' · '+p.aiText:''}`.replace(/'/g,"\\'").replace(/"/g,'&quot;');
-  return `<div class="photo-card" onclick="openLightbox('${safeUrl}','${safeCaption}')">
-    <img class="thumb" src="${p.url}" loading="lazy" onerror="tryPhotoFallback(this)">
+  const safeMapLink = (p.mapsLink||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+  return `<div class="photo-card">
+    <img class="thumb" src="${p.url}" loading="lazy" onerror="tryPhotoFallback(this)" onclick="openLightboxFromImg(this,'${safeCaption}')" style="cursor:pointer;">
     <div class="meta">
       <span class="type-tag ${p.typeClass}">${p.type}</span>
       <div class="name">${p.name}</div>
       ${p.sub?`<div class="sub">${p.sub}</div>`:''}
       ${p.aiText?`<div class="ai-line"><span class="dot ${p.aiDot}"></span>${p.aiText}</div>`:''}
+      ${p.mapsLink?`<a class="view-map-link" href="${p.mapsLink}" target="_blank" onclick="event.stopPropagation()">📍 View capture location</a>`:''}
     </div>
   </div>`;
 }
 
-function openLightbox(url, caption){
-  document.getElementById('lightboxImg').src = url;
+/* Uses whatever URL is CURRENTLY loaded in the thumbnail (imgEl.src) rather
+   than the original URL baked in at render time — this is what actually
+   fixes "click but nothing opens": if the primary photo URL format failed
+   and tryPhotoFallback() already swapped the thumbnail to a working
+   fallback format, the lightbox needs that SAME working URL, not the
+   original one that's already known to be broken. */
+function openLightboxFromImg(imgEl, caption){
+  document.getElementById('lightboxImg').src = imgEl.src;
   document.getElementById('lightboxCaption').textContent = caption;
   document.getElementById('photoLightbox').classList.add('show');
 }
+
 function closeLightbox(e){
   if(e.target.id==='photoLightbox' || e.target.classList.contains('photo-lightbox-close')){
     document.getElementById('photoLightbox').classList.remove('show');
