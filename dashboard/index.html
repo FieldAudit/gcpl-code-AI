@@ -291,7 +291,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.3.0</div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.4.0</div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1257,6 +1257,7 @@ function buildPhotoList(){
   return list.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
 }
 
+let CURRENT_PHOTO_LIST = [];
 function renderPhotos(){
   const el = document.getElementById('photosContent');
   if(!PHOTOS_LOADED){ el.innerHTML = `<div class="empty"><b>Loading photos…</b>Fetching photo records from both modules.</div>`; return; }
@@ -1270,14 +1271,35 @@ function renderPhotos(){
     const dateOk = (!photoFrom || (p.date||'') >= photoFrom) && (!photoTo || (p.date||'') <= photoTo);
     return hit && (!typeFilter || p.type===typeFilter) && dateOk;
   });
+  CURRENT_PHOTO_LIST = list;
   if(!list.length){ el.innerHTML = `<div class="empty"><b>No photos found</b>Try a different search or filter, or check back once more audits are submitted.</div>`; return; }
   const groups = {};
-  list.forEach(p=>{ const d=p.date||'Unknown date'; (groups[d]=groups[d]||[]).push(p); });
+  list.forEach((p,i)=>{ const d=p.date||'Unknown date'; (groups[d]=groups[d]||[]).push(i); });
   const dates = Object.keys(groups).sort((a,b)=>b.localeCompare(a));
   el.innerHTML = dates.map(d=>`
     <div class="photo-date-heading">${d} <span class="count">${groups[d].length}</span></div>
-    <div class="photo-grid">${groups[d].map(p=>photoCardHtml(p)).join('')}</div>
+    <div class="photo-grid">${groups[d].map(i=>photoCardHtml(list[i], i)).join('')}</div>
   `).join('');
+  // Real event listeners instead of inline onclick strings — avoids any
+  // risk of a name/AI-summary containing a character that breaks HTML
+  // attribute escaping and silently kills the click handler (this was a
+  // real, confirmed cause of "photo shows but click does nothing").
+  el.querySelectorAll('.thumb').forEach(imgEl=>{
+    imgEl.addEventListener('click', function(){
+      const p = CURRENT_PHOTO_LIST[Number(this.dataset.photoIdx)];
+      if(!p) return;
+      const caption = `${p.type} — ${p.name}${p.sub?' ('+p.sub+')':''}${p.aiText?' · '+p.aiText:''}`;
+      document.getElementById('lightboxImg').src = this.src;
+      document.getElementById('lightboxCaption').textContent = caption;
+      document.getElementById('photoLightbox').classList.add('show');
+    });
+  });
+  el.querySelectorAll('.thumb-fallback').forEach(div=>{
+    div.addEventListener('click', function(){
+      const p = CURRENT_PHOTO_LIST[Number(this.dataset.photoIdx)];
+      if(p && p.url) window.open(p.url, '_blank');
+    });
+  });
 }
 
 /* Drive-hosted images can be hotlinked several different ways, and Google
@@ -1303,22 +1325,39 @@ function tryAvatarFallback(imgEl, initials){
 function tryPhotoFallback(imgEl){
   const attempt = Number(imgEl.dataset.fallbackAttempt || 0);
   const idMatch = imgEl.dataset.fileId || ((imgEl.src.match(/[?&]id=([^&]+)/) || imgEl.src.match(/\/d\/([^=?/]+)/) || [])[1]);
-  if(!idMatch){ imgEl.outerHTML = '<div class="thumb-fallback">Preview unavailable — tap to open</div>'; return; }
+  const photoIdx = imgEl.dataset.photoIdx;
+  if(!idMatch){
+    imgEl.outerHTML = `<div class="thumb-fallback" data-photo-idx="${photoIdx}">Preview unavailable — tap to open</div>`;
+    rewirePhotoFallbackClick();
+    return;
+  }
   imgEl.dataset.fileId = idMatch;
   const formats = [
     `https://drive.google.com/thumbnail?id=${idMatch}&sz=w2000`,
     `https://drive.google.com/uc?export=view&id=${idMatch}`,
     `https://lh3.googleusercontent.com/d/${idMatch}=w1600`
   ];
-  if(attempt >= formats.length){ imgEl.outerHTML = '<div class="thumb-fallback">Preview unavailable — tap to open</div>'; return; }
+  if(attempt >= formats.length){
+    imgEl.outerHTML = `<div class="thumb-fallback" data-photo-idx="${photoIdx}">Preview unavailable — tap to open</div>`;
+    rewirePhotoFallbackClick();
+    return;
+  }
   imgEl.dataset.fallbackAttempt = attempt + 1;
   imgEl.src = formats[attempt];
 }
-function photoCardHtml(p){
-  const safeCaption = `${p.type} — ${p.name}${p.sub?' ('+p.sub+')':''}${p.aiText?' · '+p.aiText:''}`.replace(/'/g,"\\'").replace(/"/g,'&quot;');
-  const safeMapLink = (p.mapsLink||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+function rewirePhotoFallbackClick(){
+  document.querySelectorAll('.thumb-fallback:not([data-wired])').forEach(div=>{
+    div.dataset.wired = '1';
+    div.addEventListener('click', function(){
+      const p = CURRENT_PHOTO_LIST[Number(this.dataset.photoIdx)];
+      if(p && p.url) window.open(p.url, '_blank');
+    });
+  });
+}
+function photoCardHtml(p, idx){
+  const safeCaption = `${p.type} — ${p.name}${p.sub?' ('+p.sub+')':''}${p.aiText?' · '+p.aiText:''}`.replace(/"/g,'&quot;');
   return `<div class="photo-card">
-    <img class="thumb" src="${p.url}" loading="lazy" onerror="tryPhotoFallback(this)" onclick="openLightboxFromImg(this,'${safeCaption}')" style="cursor:pointer;">
+    <img class="thumb" data-photo-idx="${idx}" src="${p.url}" loading="lazy" onerror="tryPhotoFallback(this)" style="cursor:pointer;">
     <div class="meta">
       <span class="type-tag ${p.typeClass}">${p.type}</span>
       <div class="name">${p.name}</div>
@@ -1327,18 +1366,6 @@ function photoCardHtml(p){
       ${p.mapsLink?`<a class="view-map-link" href="${p.mapsLink}" target="_blank" onclick="event.stopPropagation()">📍 View capture location</a>`:''}
     </div>
   </div>`;
-}
-
-/* Uses whatever URL is CURRENTLY loaded in the thumbnail (imgEl.src) rather
-   than the original URL baked in at render time — this is what actually
-   fixes "click but nothing opens": if the primary photo URL format failed
-   and tryPhotoFallback() already swapped the thumbnail to a working
-   fallback format, the lightbox needs that SAME working URL, not the
-   original one that's already known to be broken. */
-function openLightboxFromImg(imgEl, caption){
-  document.getElementById('lightboxImg').src = imgEl.src;
-  document.getElementById('lightboxCaption').textContent = caption;
-  document.getElementById('photoLightbox').classList.add('show');
 }
 
 function closeLightbox(e){
