@@ -17,13 +17,16 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{
-  --ink:#12172B; --ink-2:#1D2444;
-  --paper:#FAF8F1; --paper-2:#F1ECE0; --card:#FFFFFF;
-  --amber:#F5A623; --amber-dark:#C97F0E;
-  --green:#1B7A43; --green-bg:#E7F3EC;
-  --red:#C0392B; --red-bg:#FBEAE8;
+  /* "Ultimate" tech-gradient palette — matches survey app's default look */
+  --ink:#0B0F1F; --ink-2:#161B33;
+  --paper:#F4F5FA; --paper-2:#E9EBF5; --card:#FFFFFF;
+  --amber:#5B5FEF; --amber-dark:#4347C4;
+  --green:#0BC98E; --green-bg:#E3FBF3;
+  --red:#FF4D6A; --red-bg:#FFE9ED;
   --slate:#6B7280; --border:#E1DACA; --border-2:#D8D2C4;
-  --shadow: 0 8px 24px rgba(18,23,43,0.10);
+  --shadow: 0 8px 28px rgba(11,15,31,0.14);
+  --grad-1:#0066FF; --grad-2:#7C3AED; --grad-3:#06B6D4;
+  --brand-gradient: linear-gradient(135deg, var(--grad-1) 0%, var(--grad-2) 55%, var(--grad-3) 100%);
 }
 /* ---- Professional colour themes ----
    Only the brand colours (--ink/--ink-2, the accent --amber/--amber-dark) and
@@ -33,35 +36,49 @@
    brand colour. Applied via a data-theme attribute on <html>, picked from
    the theme switcher next to the logout button, saved in localStorage so it
    persists per-browser. */
+[data-theme="classic"]{
+  --ink:#12172B; --ink-2:#1D2444;
+  --amber:#F5A623; --amber-dark:#C97F0E;
+  --paper:#FAF8F1; --paper-2:#F1ECE0;
+  --green:#1B7A43; --green-bg:#E7F3EC;
+  --red:#C0392B; --red-bg:#FBEAE8;
+  --brand-gradient: linear-gradient(135deg, #12172B 0%, #C97F0E 100%);
+}
 [data-theme="forest"]{
   --ink:#0F3D2E; --ink-2:#155A44;
   --amber:#D4AF37; --amber-dark:#B08D28;
   --paper:#F7F8F3; --paper-2:#ECEFE4;
+  --brand-gradient: linear-gradient(135deg, #0F3D2E 0%, #D4AF37 100%);
 }
 [data-theme="corporate-blue"]{
   --ink:#0B2545; --ink-2:#13315C;
   --amber:#2F80ED; --amber-dark:#1D5FC2;
   --paper:#F5F7FA; --paper-2:#E9EEF5;
+  --brand-gradient: linear-gradient(135deg, #0B2545 0%, #2F80ED 100%);
 }
 [data-theme="maroon"]{
   --ink:#4A1620; --ink-2:#661F2D;
   --amber:#D4A24E; --amber-dark:#B3853A;
   --paper:#FAF6F3; --paper-2:#F0E7E1;
+  --brand-gradient: linear-gradient(135deg, #4A1620 0%, #D4A24E 100%);
 }
 [data-theme="charcoal-teal"]{
   --ink:#1C1F26; --ink-2:#272B33;
   --amber:#14B8A6; --amber-dark:#0F9385;
   --paper:#F7F8F8; --paper-2:#EBEDEE;
+  --brand-gradient: linear-gradient(135deg, #1C1F26 0%, #14B8A6 100%);
 }
 [data-theme="slate-copper"]{
   --ink:#1E293B; --ink-2:#28374E;
   --amber:#C2703D; --amber-dark:#A25A2E;
   --paper:#F8F7F5; --paper-2:#EDEAE5;
+  --brand-gradient: linear-gradient(135deg, #1E293B 0%, #C2703D 100%);
 }
 [data-theme="royal-purple"]{
   --ink:#2B1750; --ink-2:#3A2169;
   --amber:#C9A227; --amber-dark:#A9860E;
   --paper:#F8F6FB; --paper-2:#ECE7F5;
+  --brand-gradient: linear-gradient(135deg, #2B1750 0%, #C9A227 100%);
 }
 *{box-sizing:border-box;}
 body{margin:0;}
@@ -89,21 +106,21 @@ a{color:inherit;}
 .login-error{background:var(--red-bg); color:var(--red); border:1px solid #EDC6C1; padding:9px 12px; border-radius:3px; font-size:13px; margin-bottom:14px; display:none;}
 .login-foot{margin-top:18px; text-align:center; font-size:12px; color:var(--slate);}
 
-.btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:12px 20px; border-radius:3px; border:none; font-weight:600; font-size:14px; letter-spacing:.02em; transition:transform .1s, background .15s;}
-.btn:active{transform:scale(.98);}
-.btn-primary{background:var(--amber); color:var(--ink);}
-.btn-primary:hover{background:var(--amber-dark);}
+.btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:12px 20px; border-radius:10px; border:none; font-weight:600; font-size:14px; letter-spacing:.02em; transition:transform .12s cubic-bezier(.34,1.56,.64,1), box-shadow .15s;}
+.btn:active{transform:scale(.96);}
+.btn-primary{background:var(--brand-gradient, var(--amber)); color:#fff; box-shadow:0 4px 14px color-mix(in srgb, var(--amber) 40%, transparent);}
+.btn-primary:hover{filter:brightness(1.08);}
 .btn-primary:disabled{opacity:.55; cursor:not-allowed;}
-.btn-dark{background:var(--ink); color:var(--paper);}
+.btn-dark{background:var(--ink); color:var(--paper); border-radius:10px;}
 .btn-dark:hover{background:var(--ink-2);}
 .btn-block{width:100%;}
 
 #screen-app{display:none; min-height:100vh;}
-header.appbar{background:var(--ink); color:var(--paper); padding:14px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:50; box-shadow:0 2px 10px rgba(0,0,0,.15);}
-.brand{display:flex; align-items:center; gap:10px;}
-.brand .mark{width:34px; height:34px; background:var(--amber); border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--ink); font-family:'Oswald'; font-weight:700; font-size:15px;}
-.brand .name{font-family:'Oswald'; text-transform:uppercase; font-size:16px; letter-spacing:.03em;}
-.brand .name span{color:var(--amber);}
+header.appbar{background:linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 100%); background-image:radial-gradient(circle at 15% -20%, color-mix(in srgb, var(--amber) 40%, transparent), transparent 55%), radial-gradient(circle at 90% 120%, color-mix(in srgb, var(--amber) 25%, transparent), transparent 50%), linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 100%); color:var(--paper); padding:14px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:50; box-shadow:0 4px 20px rgba(0,0,0,.25);}
+.brand{display:flex; align-items:center; gap:11px;}
+.mark-svg{filter:drop-shadow(0 3px 8px rgba(91,95,239,.5)); flex-shrink:0;}
+.brand .name{font-family:'Oswald'; text-transform:uppercase; font-size:16px; letter-spacing:.03em; background:linear-gradient(90deg,#fff 0%, #C9D3FF 100%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
+.brand .name span{color:var(--amber); background:linear-gradient(90deg, var(--amber) 0%, color-mix(in srgb, var(--amber) 60%, white) 100%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
 .brand .ver{font-size:10.5px; color:#9BA1C4; letter-spacing:.05em;}
 .who{display:flex; align-items:center; gap:12px; font-size:13px;}
 .who .u{color:#9BA1C4;}
@@ -249,7 +266,22 @@ table.data tr:hover td{background:var(--paper-2);}
 
 <div id="screen-app">
   <header class="appbar">
-    <div class="brand"><div class="mark">FA</div><div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v4.5.0</div></div></div>
+    <div class="brand">
+      <svg class="mark-svg" viewBox="0 0 40 40" width="32" height="32">
+        <defs>
+          <linearGradient id="logoGradD" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0066FF"/>
+            <stop offset="55%" stop-color="#7C3AED"/>
+            <stop offset="100%" stop-color="#06B6D4"/>
+          </linearGradient>
+        </defs>
+        <circle cx="20" cy="20" r="19" fill="url(#logoGradD)"/>
+        <circle cx="20" cy="20" r="19" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1"/>
+        <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
+        <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
+      </svg>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v5.1.0</div></div>
+    </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
   <div class="theme-panel" id="themePanel">
@@ -449,7 +481,8 @@ function enterApp(){
    change between themes on purpose — see the [data-theme="..."] blocks in
    the <style> above. ---- */
 const THEMES = [
-  {id:'default', name:'Navy & Amber (default)', swatch:'#F5A623'},
+  {id:'default', name:'Ultimate Tech Gradient (default)', swatch:'#5B5FEF'},
+  {id:'classic', name:'Classic Navy & Amber', swatch:'#F5A623'},
   {id:'forest', name:'Forest & Gold', swatch:'#D4AF37'},
   {id:'corporate-blue', name:'Corporate Blue', swatch:'#2F80ED'},
   {id:'maroon', name:'Maroon & Bronze', swatch:'#D4A24E'},
