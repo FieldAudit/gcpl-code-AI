@@ -14,7 +14,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/libphonenumber-js@1.10.51/bundle/libphonenumber-js.min.js"></script>
 <style>
@@ -227,8 +226,67 @@ main{max-width:720px; margin:0 auto; padding:16px 14px 110px;}
 .readonly-note{font-size:11px; color:var(--slate); margin-top:5px;}
 input[readonly]{background:var(--paper-2); cursor:not-allowed;}
 </style>
+<script>
+/* ---- ES5-only, loads before everything else on purpose ----
+   The main app script below uses modern JS (arrow functions, template
+   literals, async/await, optional chaining) — on a genuinely old browser
+   that can't PARSE that syntax at all, the whole script fails silently
+   before its own error-listener ever registers, so nothing gets reported.
+   This tiny handler uses only syntax that's worked since IE9, registers
+   FIRST, and reports even a parse-time failure in the main script using
+   plain XMLHttpRequest (no fetch needed) — so "crashes on some old
+   browser" leaves a diagnosable trace instead of just a blank page. */
+window.onerror = function(msg, url, line, col, err){
+  try{
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHBfP9GR5QOC-AsVtYZqbcqyOVX1T4TiTo4ktHXcmbXF9S9_A6/exec', true);
+    var body = JSON.stringify({
+      action: 'logError',
+      message: String(msg).slice(0, 500),
+      stack: 'line ' + line + ':' + col + (err && err.stack ? ' | ' + String(err.stack).slice(0, 1000) : ' | (no stack — likely an old-browser parse/syntax error in the main script)'),
+      source: 'early-window.onerror',
+      url: String(url || (window.location ? window.location.href : '')),
+      device: JSON.stringify({ua: navigator.userAgent, platform: navigator.platform || ''})
+    });
+    xhr.send(body);
+  }catch(e){}
+  return false;
+};
+</script>
 </head>
 <body>
+
+<script>
+/* ES5-only compatibility gate — if the browser is missing something the
+   app genuinely can't work without (fetch, Promise, or camera/file input
+   support), show one clear message instead of letting the app half-load
+   and crash confusingly partway through a field audit. This still reports
+   itself via the early handler above (a missing-feature message counts as
+   useful diagnostic detail too), then stops the rest of the page from
+   even trying to run. */
+(function(){
+  var missing = [];
+  if(typeof fetch === 'undefined') missing.push('fetch (network requests)');
+  if(typeof Promise === 'undefined') missing.push('Promise (async operations)');
+  if(typeof document.querySelector === 'undefined') missing.push('querySelector (basic DOM)');
+  if(missing.length){
+    try{
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', 'https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHBfP9GR5QOC-AsVtYZqbcqyOVX1T4TiTo4ktHXcmbXF9S9_A6/exec', true);
+      xhr.send(JSON.stringify({action:'logError', message:'Browser missing required features: '+missing.join(', '), stack:'', source:'compat-gate', url:String(window.location.href), device: JSON.stringify({ua: navigator.userAgent})}));
+    }catch(e){}
+    document.write(
+      '<div style="max-width:480px;margin:60px auto;padding:24px;font-family:sans-serif;text-align:center;">' +
+      '<h2 style="color:#C0392B;">This browser is too old for FieldAudit</h2>' +
+      '<p>Missing: ' + missing.join(', ') + '.</p>' +
+      '<p>Please update Chrome (Settings &rarr; About Chrome &rarr; Update), or open this link in a newer browser.</p>' +
+      '</div>'
+    );
+    document.close ? document.close() : null;
+    throw new Error('Compatibility gate stopped — see message above.');
+  }
+})();
+</script>
 
 <header class="appbar">
   <div class="brand">
@@ -245,7 +303,7 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v5.6.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.1.0</div></div>
   </div>
 </header>
 
@@ -289,7 +347,11 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
     <div class="grid3" style="margin-top:14px;">
       <div class="field"><label>Date of Visit</label><input type="date" id="f_date"></div>
       <div class="field"><label>Auditor Name</label><input type="text" id="f_auditor" placeholder="Your name"></div>
-      <div class="field"><label>District</label><input type="text" id="f_district"></div>
+      <div class="field">
+        <label>District</label>
+        <input type="text" id="f_district" list="wbDistrictList" placeholder="Start typing…" autocomplete="off">
+        <datalist id="wbDistrictList"></datalist>
+      </div>
       <div class="field"><label>City</label><input type="text" id="f_city"></div>
       <div class="field"><label>Distributor</label><input type="text" id="f_distributor"></div>
       <div class="field"><label>Route Name / Code</label><input type="text" id="f_route"></div>
@@ -554,6 +616,10 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
 <div class="stamp-wrap" id="stampWrap">
   <div>
     <div class="stamp" id="stampEl"><b>Audited</b><span id="stampId">—</span></div>
+    <div id="stampActions" style="display:none; gap:10px; margin-top:16px; justify-content:center;">
+      <button class="btn btn-primary" onclick="shareLastPDF(event)">📤 Share Report</button>
+      <button class="btn btn-outline" onclick="downloadLastPDF(event)">⬇ Download Again</button>
+    </div>
     <div class="stamp-close">Tap anywhere to close</div>
   </div>
 </div>
@@ -591,6 +657,21 @@ let CURRENT_MODULE = null; // 'retail' | 'db'
 
 // Google-Maps-style pin glyph (inherits the button's text colour via currentColor)
 // used everywhere a location action needs a real pin icon instead of an emoji.
+/* West Bengal districts — typed into a <datalist> so the District field
+   shows matching suggestions the moment the auditor starts typing, no
+   separate master sheet round-trip needed. Populated on load. */
+const WB_DISTRICTS = [
+  'Alipurduar','Bankura','Birbhum','Cooch Behar','Dakshin Dinajpur','Darjeeling',
+  'Hooghly','Howrah','Jalpaiguri','Jhargram','Kalimpong','Kolkata','Malda',
+  'Murshidabad','Nadia','North 24 Parganas','Paschim Bardhaman','Paschim Medinipur',
+  'Purba Bardhaman','Purba Medinipur','Purulia','South 24 Parganas','Uttar Dinajpur'
+];
+(function populateWBDistricts(){
+  const list = document.getElementById('wbDistrictList');
+  if(!list) return;
+  list.innerHTML = WB_DISTRICTS.map(d=>`<option value="${d}">`).join('');
+})();
+
 const PIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;display:inline-block;margin-right:5px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>';
 const FACE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/><path d="M8 15c1 1.2 2.4 1.8 4 1.8s3-.6 4-1.8"/></svg>';
 
@@ -867,13 +948,20 @@ function lookupDBMaster(dbCode){
    describe what happened. Fire-and-forget — never blocks the UI, never
    throws on its own failure. ============================================ */
 function deviceInfo(){
+  let conn = null;
+  try{ conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection; }catch(_e){}
   return {
     ua: navigator.userAgent,
+    vendor: navigator.vendor || '',
     platform: navigator.platform || '',
     lang: navigator.language || '',
     screen: `${window.screen.width}x${window.screen.height}`,
     viewport: `${window.innerWidth}x${window.innerHeight}`,
     online: navigator.onLine,
+    deviceMemoryGB: navigator.deviceMemory || 'unknown', // Chrome-only; directly useful for diagnosing "low memory" crashes
+    networkType: conn ? (conn.effectiveType || 'unknown') : 'unknown',
+    hasWebAuthn: !!(window.PublicKeyCredential),
+    hasGeolocation: !!navigator.geolocation,
     module: (typeof CURRENT_MODULE !== 'undefined' ? CURRENT_MODULE : '')
   };
 }
@@ -1050,41 +1138,15 @@ function confirmNewUserName(phone, prefix){
   checkTodayCheckin(prefix);
 }
 
-/* ---- REAL face scan — live front camera opens automatically the moment a
-   module is opened, and runs actual face detection/recognition (face-api.js,
-   a real client-side computer-vision library, not a decorative animation).
-   A named/known match auto-fetches that person's identity AND auto-captures
-   GPS at the exact moment of the match — nobody can just point the camera at
-   an arbitrary photo and get through, since face-api.js needs a real
-   detectable face in the live feed, and matching only succeeds against a
-   face descriptor that was captured the same way during that person's own
-   enrollment. WebAuthn (device fingerprint/Face-unlock) still runs as the
-   actual security gate on submit — this camera scan is the "who is this and
-   where are they right now" layer, not a replacement for it. ---- */
-const FACE_MODELS_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
-let FACE_MODELS_LOADED = false;
-async function loadFaceModels(){
-  if(FACE_MODELS_LOADED) return;
-  await Promise.all([
-    faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODELS_URL),
-    faceapi.nets.faceLandmark68Net.loadFromUri(FACE_MODELS_URL),
-    faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODELS_URL)
-  ]);
-  FACE_MODELS_LOADED = true;
-}
-
-let FACE_SCAN_STREAM = null;
-let FACE_SCAN_INTERVAL = null;
-function stopFaceScanCamera(){
-  if(FACE_SCAN_INTERVAL){ clearInterval(FACE_SCAN_INTERVAL); FACE_SCAN_INTERVAL = null; }
-  if(FACE_SCAN_STREAM){ FACE_SCAN_STREAM.getTracks().forEach(t=>t.stop()); FACE_SCAN_STREAM = null; }
-}
-
+/* ---- Identity — phone number entry + WebAuthn (device fingerprint/Face
+   unlock) only. The earlier live-camera face-recognition scanner was
+   removed: it needed heavy client-side models (face-api.js) running
+   continuously, which was slow to set up and pushed some phones into
+   Chrome's "low memory" state despite having storage free (this is a RAM
+   issue, not storage) — not worth it when WebAuthn alone is already a
+   real, un-fakeable, device-level biometric check. Once-per-day logic is
+   unchanged: if this phone already checked in today, no prompt at all. ---- */
 async function startIdentityScan(prefix){
-  // Already checked in earlier today (even in a totally fresh page load /
-  // browser refresh)? Confirm that against the server BEFORE ever opening
-  // the camera — the camera/face scan should only ever run once per day,
-  // not every time the page reloads.
   let saved = null;
   try{ saved = JSON.parse(localStorage.getItem(SO_IDENTITY_KEY) || 'null'); }catch(_e){}
   if(saved && saved.phone && saved.name && configured()){
@@ -1098,165 +1160,19 @@ async function startIdentityScan(prefix){
         renderCheckinDoneAll();
         return;
       }
-    }catch(_e){
-      // Couldn't reach the server to confirm — fall through to the normal
-      // scan flow rather than silently trusting an unverified local claim.
-    }
-  }
-  runIdentityScanCamera(prefix);
-}
-
-function runIdentityScanCamera(prefix){
-  const ids = ckIds(prefix);
-  document.getElementById(ids.content).innerHTML = `
-    <div class="scan-stage" id="${prefix}_scanStage">
-      <div class="scan-orb">
-        <div class="scan-ring" id="${prefix}_scanRing"></div>
-        <div class="scan-core" id="${prefix}_scanCore">
-          <video id="${prefix}_scanVideo" autoplay playsinline muted></video>
-          <div class="scan-line"></div>
-        </div>
-      </div>
-      <div class="scan-status" id="${prefix}_scanStatus">Starting camera…</div>
-      <button class="btn btn-outline" style="margin-top:14px;" onclick="stopFaceScanCamera(); showManualPhoneEntry('${prefix}')">Enter phone number instead</button>
-    </div>
-  `;
-  runFaceScan(prefix);
-}
-
-async function runFaceScan(prefix){
-  const statusEl = document.getElementById(`${prefix}_scanStatus`);
-  const videoEl = document.getElementById(`${prefix}_scanVideo`);
-  if(!videoEl || !statusEl) return; // already navigated away
-
-  if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)){
-    statusEl.textContent = 'This browser doesn\'t support live camera scanning — enter your phone number instead.';
-    return;
-  }
-  try{
-    FACE_SCAN_STREAM = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:480}, height:{ideal:480}}, audio:false});
-  }catch(e){
-    statusEl.textContent = 'Camera permission denied — enter your phone number instead.';
-    return;
-  }
-  videoEl.srcObject = FACE_SCAN_STREAM;
-  try{ await videoEl.play(); }catch(_e){}
-
-  statusEl.textContent = 'Loading face recognition…';
-  try{
-    await loadFaceModels();
-  }catch(e){
-    statusEl.textContent = 'Could not load face recognition — enter your phone number instead.';
-    stopFaceScanCamera();
-    return;
-  }
-  if(!document.getElementById(`${prefix}_scanVideo`)) { stopFaceScanCamera(); return; } // navigated away while models loaded
-
-  statusEl.textContent = 'Scanning your face…';
-  let enrolled = [];
-  try{
-    if(configured()){
-      const r = await fetchWithTimeout(`${SCRIPT_URL}?action=getAllFaceDescriptors`, {}, 9000);
-      const j = await r.json();
-      if(j.success) enrolled = j.people || [];
-    }
-  }catch(_e){}
-  const matchers = enrolled.map(p=>{
-    try{ return {phone:p.phone, name:p.name, descriptor:new Float32Array(JSON.parse(p.descriptor))}; }catch(_e){ return null; }
-  }).filter(Boolean);
-
-  let attempts = 0;
-  const maxAttempts = 24; // ~500ms * 24 ≈ 12s of scanning before offering the manual fallback
-  FACE_SCAN_INTERVAL = setInterval(async ()=>{
-    attempts++;
-    const liveVideo = document.getElementById(`${prefix}_scanVideo`);
-    if(!liveVideo){ clearInterval(FACE_SCAN_INTERVAL); return; } // navigated away
-    try{
-      const detection = await faceapi.detectSingleFace(liveVideo, new faceapi.TinyFaceDetectorOptions())
-        .withFaceLandmarks().withFaceDescriptor();
-      if(detection){
-        window[`${prefix}_liveDescriptor`] = Array.from(detection.descriptor); // kept in case this turns out to be a new-user enrollment
-        if(matchers.length){
-          let best = null, bestDist = 999;
-          matchers.forEach(m=>{
-            const d = faceapi.euclideanDistance(detection.descriptor, m.descriptor);
-            if(d < bestDist){ bestDist = d; best = m; }
-          });
-          if(best && bestDist < 0.6){
-            clearInterval(FACE_SCAN_INTERVAL);
-            onFaceMatched(prefix, best);
-            return;
-          }
-        }
-      }
     }catch(_e){}
-    if(attempts >= maxAttempts){
-      clearInterval(FACE_SCAN_INTERVAL);
-      const s = document.getElementById(`${prefix}_scanStatus`);
-      const haveLiveFace = !!window[`${prefix}_liveDescriptor`];
-      if(s) s.innerHTML = haveLiveFace
-        ? `We can see your face, but it doesn't match anyone in the system yet.<br>
-           <button class="btn btn-primary" style="margin-top:10px;" onclick="startFaceRegistration('${prefix}')">📸 Register my face</button><br>
-           <button class="btn btn-outline" style="margin-top:8px;" onclick="stopFaceScanCamera(); showManualPhoneEntry('${prefix}')">Enter phone number instead</button>`
-        : `Couldn't detect a face in the camera view — check lighting or try repositioning.<br>
-           <button class="btn btn-primary" style="margin-top:10px;" onclick="restartFaceScan('${prefix}')">🔄 Try scanning again</button><br>
-           <button class="btn btn-outline" style="margin-top:8px;" onclick="stopFaceScanCamera(); showManualPhoneEntry('${prefix}')">Enter phone number instead</button>`;
-    }
-  }, 500);
+  }
+  showManualPhoneEntry(prefix);
+  if(saved && saved.phone){
+    const ids = ckIds(prefix);
+    document.getElementById(ids.phone).value = saved.phone;
+    lookupCheckinPhone(saved.phone, prefix);
+  }
 }
 
-/* Explicit "no match → register" path, triggered right from the live
-   camera that was already open — captures the face RIGHT NOW (both the
-   photo and the descriptor already sitting in memory from the scan loop)
-   instead of dropping to a completely different phone-typing+file-input
-   flow. Only their phone/name still needs collecting since a face alone
-   doesn't tell us who they are the very first time. */
-function startFaceRegistration(prefix){
-  const snapshot = captureSnapshotFromVideo(prefix);
-  stopFaceScanCamera();
-  if(snapshot) CHECKIN_PHOTO_BASE64 = snapshot; // reused as their check-in selfie too — no separate photo needed
-  captureGPSForCheckin(prefix); // starts resolving in the background while they type their phone/name below
-  const ids = ckIds(prefix);
-  document.getElementById(ids.content).innerHTML = `
-    ${snapshot ? `<img src="${snapshot}" style="width:100%; max-width:220px; border-radius:12px; display:block; margin:0 auto 14px;">` : ''}
-    <div class="field">
-      <label>Your Phone Number <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(10 digits)</span></label>
-      <input type="text" id="${ids.phone}" inputmode="numeric" maxlength="10" placeholder="e.g. 9830012345" oninput="onCheckinPhoneInput(this,'${prefix}')">
-      <div class="addr-note" id="${ids.status}"></div>
-    </div>
-  `;
-  document.getElementById(ids.phone).focus();
-}
-function restartFaceScan(prefix){
-  runIdentityScanCamera(prefix);
-}
-
-/* Used for the manual-entry enrollment path (no live scan match available)
-   to still capture a face descriptor from whatever selfie the SO just took,
-   so they're recognisable by camera scan next time too — not just via
-   WebAuthn/phone entry. */
-async function computeFaceDescriptorFromImage(base64){
-  try{
-    await loadFaceModels();
-    const imgEl = new Image();
-    await new Promise((resolve, reject)=>{ imgEl.onload = resolve; imgEl.onerror = reject; imgEl.src = base64; });
-    const detection = await faceapi.detectSingleFace(imgEl, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
-    return detection ? Array.from(detection.descriptor) : null;
-  }catch(_e){ return null; }
-}
-
-function captureSnapshotFromVideo(prefix){
-  const video = document.getElementById(`${prefix}_scanVideo`);
-  if(!video || !video.videoWidth) return null;
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
-  return canvas.toDataURL('image/jpeg', 0.85);
-}
-
-/* GPS is captured the instant a face match succeeds — not a separate manual
-   button — so the location on record is tied to the real recognition
-   moment, not something that could be typed in later from anywhere. */
+/* GPS is captured automatically the moment identity is confirmed (not a
+   separate manual button) — tied to a real event (login/registration),
+   not something that could be typed in later from anywhere. */
 function captureGPSForCheckin(prefix){
   if(!navigator.geolocation) return;
   navigator.geolocation.getCurrentPosition((pos)=>{
@@ -1264,35 +1180,6 @@ function captureGPSForCheckin(prefix){
     CHECKIN_GEO.link = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${CHECKIN_GEO.lat},${CHECKIN_GEO.lng}`;
     if(document.getElementById(ckIds(prefix).submitBtn)) updateCheckinSubmitEnabled(prefix);
   }, ()=>{ /* silent — the manual "Capture GPS" fallback button stays available if this fails */ }, {enableHighAccuracy:true, timeout:15000});
-}
-
-async function onFaceMatched(prefix, match){
-  const snapshot = captureSnapshotFromVideo(prefix);
-  stopFaceScanCamera();
-  CHECKIN_PHONE = match.phone; CHECKIN_NAME = match.name;
-  if(snapshot) CHECKIN_PHOTO_BASE64 = snapshot;
-  try{ localStorage.setItem(SO_IDENTITY_KEY, JSON.stringify({phone: match.phone, name: match.name})); }catch(_e){}
-  showScanMatch(prefix, match.name, match.phone);
-  captureGPSForCheckin(prefix);
-  // Also auto-capture the actual audit's own outlet/DB location the instant
-  // identity is confirmed — "face scan hote hi location capture ho" — so
-  // the SO doesn't need to separately tap "Capture GPS location" afterward,
-  // and the location is genuinely tied to the real scan moment rather than
-  // something that could be captured later from anywhere.
-  if(CURRENT_MODULE === 'retail' && !GEO) captureLocation();
-  else if(CURRENT_MODULE === 'db' && !DB_GEO) dbCaptureLocation();
-  setTimeout(()=>checkTodayCheckin(prefix), 1100);
-}
-
-function showScanMatch(prefix, name, phone){
-  const ring = document.getElementById(`${prefix}_scanRing`);
-  const core = document.getElementById(`${prefix}_scanCore`);
-  const status = document.getElementById(`${prefix}_scanStatus`);
-  const stage = document.getElementById(`${prefix}_scanStage`);
-  if(ring) ring.classList.add('matched');
-  if(core) core.classList.add('matched');
-  if(status){ status.classList.add('matched'); status.textContent = 'Identity Verified'; }
-  if(stage) stage.insertAdjacentHTML('beforeend', `<div class="scan-match-card"><div class="sname">${name}</div><div class="sphone">${phone}</div></div>`);
 }
 
 function showManualPhoneEntry(prefix){
@@ -1306,6 +1193,7 @@ function showManualPhoneEntry(prefix){
   `;
   document.getElementById(ids.phone).focus();
 }
+
 
 
 function prefillSavedSOIdentity(prefix){
@@ -1485,31 +1373,12 @@ async function doSubmitCheckin(prefix){
   btn.innerHTML = '<span class="spin"></span> Submitting…';
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    // Compute a face descriptor once, regardless of whether this is a brand
-    // new registration or a returning SO who just typed their phone number —
-    // reuses whatever was captured during a live scan attempt if available,
-    // else extracts one from the selfie just taken.
-    let faceDescriptor = window[`${prefix}_liveDescriptor`] || null;
-    if(!faceDescriptor && CHECKIN_PHOTO_BASE64){
-      faceDescriptor = await computeFaceDescriptorFromImage(CHECKIN_PHOTO_BASE64);
-    }
     if(wasNewEnrollment && bioResult.credentialId){
       // Fresh registration — this is the step that also self-adds the SO to
       // SOMaster on the backend.
       await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify({
         action:'enrollBiometric', phone: CHECKIN_PHONE, name: CHECKIN_NAME, credentialId: bioResult.credentialId,
-        faceDescriptor: faceDescriptor ? JSON.stringify(faceDescriptor) : '',
         facePhoto: stamped, lat: CHECKIN_GEO.lat, lng: CHECKIN_GEO.lng
-      })}).catch(()=>{});
-    } else if(faceDescriptor){
-      // Returning SO (already has WebAuthn credentials) — this is the fix
-      // for "face scan not recognizing me": their face was never actually
-      // learned before if they'd only ever gone through phone entry, so
-      // camera-scan recognition could never work even though WebAuthn did.
-      // This backfills/refreshes it without touching their credentials.
-      await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify({
-        action:'updateFaceDescriptor', phone: CHECKIN_PHONE, name: CHECKIN_NAME,
-        descriptor: JSON.stringify(faceDescriptor)
       })}).catch(()=>{});
     }
     const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify({
@@ -2215,43 +2084,21 @@ async function submitAudit(){
   if(!bioOk){ submitBtnEl.disabled = false; submitBtnEl.innerHTML = 'Submit audit'; return; }
   document.getElementById('submitReq').classList.remove('show');
   const btn = document.getElementById('submitBtn');
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Stamping photos…';
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Stamping photo…';
   const lines = watermarkLines();
-  let stampedOutlet = '', stampedInvoices = [];
+  let stampedOutlet = '';
   try{
     if(PHOTO_BASE64) stampedOutlet = await stampPhoto(PHOTO_BASE64, lines);
-    stampedInvoices = await Promise.all(INVOICE_PHOTOS.map(p=>stampPhoto(p, lines)));
-  }catch(_e){ stampedOutlet = PHOTO_BASE64 || ''; stampedInvoices = INVOICE_PHOTOS; }
+  }catch(_e){ stampedOutlet = PHOTO_BASE64 || ''; }
 
-  const summaryRows = [
-    ['Auditor', document.getElementById('f_auditor').value], ['Date of Visit', document.getElementById('f_date').value],
-    ['District', document.getElementById('f_district').value], ['City', document.getElementById('f_city').value],
-    ['Distributor', document.getElementById('f_distributor').value], ['Route', document.getElementById('f_route').value],
-    ['Outlet Name', document.getElementById('f_outletName').value], ['Outlet Type', document.getElementById('f_outletType').value],
-    ['Address', document.getElementById('f_address').value],
-    ['Outlet Owner Name', document.getElementById('f_ownerName').value], ['Retailer Phone', document.getElementById('f_retailerPhone').value],
-    ['GCPL Distribution', FORM.q1 || ''], ['DB Count', document.getElementById('f_q2').value],
-    ['Spice Available', FORM.q3 || ''], ['Happy with DB', FORM.q4 || ''],
-    ['Price Update Source', document.getElementById('f_q5').value],
-    ['Bill Type', document.getElementById('f_q7').value], ['Invoice GST', FORM.invoiceGST || 'Not scanned'],
-    ['Shelf Visibility', FORM.q8 ? FORM.q8+'★' : ''],
-    ['POSM Available', FORM.q9 || ''], ['NLB/GSB Brand', document.getElementById('f_q10').value],
-    ['GPS Location', GEO ? `${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)}` : ''],
-    ['Maps Link', GEO ? GEO.link : '']
-  ];
-  const pdfPhotos = [{b64: stampedOutlet, caption:'Outlet Photo'}]
-    .concat(stampedInvoices.map((b64,i)=>({b64, caption:`Bill ${i+1} of ${stampedInvoices.length}`})));
-  btn.innerHTML = '<span class="spin"></span> Building your PDF…';
-  const fileNameBase = `Audit_${(document.getElementById('f_outletName').value||'Outlet').replace(/[^a-z0-9]/gi,'_')}_${document.getElementById('f_date').value||''}`;
-  let invoicePdf = '';
-  try{ invoicePdf = await buildAndDownloadFullPDF('FieldAudit — Retail Outlet Audit Summary', summaryRows, pdfPhotos, fileNameBase); }catch(_e){}
-
-  btn.innerHTML = '<span class="spin"></span> Preparing for AI check…';
-  let aiInvoicePhotos = [];
-  try{ aiInvoicePhotos = await Promise.all(stampedInvoices.slice(0,3).map(p=>compressForAI(p, 700, 0.55))); }catch(_e){ aiInvoicePhotos = []; }
-  btn.innerHTML = '<span class="spin"></span> Submitting &amp; running AI checks…';
-  const payload = {
-    action:'submit',
+  // ---- FAST core submit — only text fields + the single outlet photo.
+  // Bill photos, the combined PDF, and everything else heavier all happen
+  // AFTER this succeeds, in the background, so "audit saved" is confirmed
+  // to the person as fast as the network genuinely allows — this is the
+  // actual fix for "submit still slow": it wasn't AI anymore, it was the
+  // PDF-building and bill-photo work sitting in front of the network call.
+  btn.innerHTML = '<span class="spin"></span> Submitting…';
+  const formSnapshot = {
     auditor: document.getElementById('f_auditor').value,
     date: document.getElementById('f_date').value,
     district: document.getElementById('f_district').value,
@@ -2273,37 +2120,119 @@ async function submitAudit(){
     q8_visibilityRating: FORM.q8 || '',
     q9_posmAvailable: FORM.q9 || '',
     q10_nlbGsbBrand: document.getElementById('f_q10').value,
-    photo: stampedOutlet,
-    invoicePhotos: aiInvoicePhotos,
-    invoicePdf: invoicePdf,
-    billCount: stampedInvoices.length,
-    lat: GEO.lat, lng: GEO.lng, accuracy: GEO.accuracy, mapsLink: GEO.link, geoAddress: GEO.address || ''
+    geoLat: GEO.lat, geoLng: GEO.lng, geoAccuracy: GEO.accuracy, geoLink: GEO.link, geoAddress: GEO.address || ''
   };
+  const payload = {
+    action:'submit', auditor: formSnapshot.auditor, date: formSnapshot.date, district: formSnapshot.district,
+    city: formSnapshot.city, distributor: formSnapshot.distributor, route: formSnapshot.route,
+    outletName: formSnapshot.outletName, outletType: formSnapshot.outletType, address: formSnapshot.address,
+    ownerName: formSnapshot.ownerName, retailerPhone: formSnapshot.retailerPhone,
+    q1_distribution: formSnapshot.q1_distribution, q2_dbCount: formSnapshot.q2_dbCount,
+    q3_spiceAvailable: formSnapshot.q3_spiceAvailable, q4_happyWithDB: formSnapshot.q4_happyWithDB,
+    q5_priceSource: formSnapshot.q5_priceSource, q7_billType: formSnapshot.q7_billType,
+    invoiceGSTDetected: formSnapshot.invoiceGSTDetected, q8_visibilityRating: formSnapshot.q8_visibilityRating,
+    q9_posmAvailable: formSnapshot.q9_posmAvailable, q10_nlbGsbBrand: formSnapshot.q10_nlbGsbBrand,
+    photo: stampedOutlet, billCount: INVOICE_PHOTOS.length,
+    lat: formSnapshot.geoLat, lng: formSnapshot.geoLng, accuracy: formSnapshot.geoAccuracy,
+    mapsLink: formSnapshot.geoLink, geoAddress: formSnapshot.geoAddress
+  };
+  let auditId = null;
   try{
     if(!configured()) throw new Error('__NOCFG__');
     const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)});
     const res = await r.json();
     if(!res.success) throw new Error(res.message || 'Submit failed');
-    showStamp(res.auditId || 'OK');
-    if(res.aiInsight && res.aiInsight.invoiceIssue){
-      toast('⚠️ AI flagged a possible invoice issue: ' + res.aiInsight.invoiceIssue, true);
-    }
-    resetForm();
+    auditId = res.auditId || 'OK';
   }catch(e){
     if(e.message==='__NOCFG__'){
-      showStamp('DEMO'); resetForm();
+      auditId = 'DEMO';
     } else {
       toast(e.message || 'Could not submit audit. Please try again.', true);
+      btn.disabled = false; btn.innerHTML = 'Submit audit';
+      return;
     }
-  }finally{
-    btn.disabled = false; btn.innerHTML = 'Submit audit';
+  }
+
+  // Audit is confirmed saved at this point — show success right away.
+  showStamp(auditId, null, null);
+  resetForm();
+  btn.disabled = false; btn.innerHTML = 'Submit audit';
+
+  // ---- Background finishing work: stamp bill photos, build the full PDF
+  // (this is also what triggers the local auto-download), then attach it
+  // to the already-saved row. Every step is wrapped so a failure here
+  // (slow connection, old-browser jsPDF hiccup, etc.) can NEVER undo or
+  // block the submission the person already saw succeed — worst case, the
+  // Bills PDF link just stays empty on that row, and any error still gets
+  // captured by the crash logger for later diagnosis.
+  if(auditId && auditId !== 'DEMO'){
+    (async ()=>{
+      try{
+        const stampedInvoices = await Promise.all(INVOICE_PHOTOS.map(p=>stampPhoto(p, lines)));
+        const summaryRows = [
+          ['Auditor', formSnapshot.auditor], ['Date of Visit', formSnapshot.date],
+          ['District', formSnapshot.district], ['City', formSnapshot.city],
+          ['Distributor', formSnapshot.distributor], ['Route', formSnapshot.route],
+          ['Outlet Name', formSnapshot.outletName], ['Outlet Type', formSnapshot.outletType],
+          ['Address', formSnapshot.address],
+          ['Outlet Owner Name', formSnapshot.ownerName], ['Retailer Phone', formSnapshot.retailerPhone],
+          ['GCPL Distribution', formSnapshot.q1_distribution], ['DB Count', formSnapshot.q2_dbCount],
+          ['Spice Available', formSnapshot.q3_spiceAvailable], ['Happy with DB', formSnapshot.q4_happyWithDB],
+          ['Price Update Source', formSnapshot.q5_priceSource],
+          ['Bill Type', formSnapshot.q7_billType], ['Invoice GST', formSnapshot.invoiceGSTDetected],
+          ['Shelf Visibility', formSnapshot.q8_visibilityRating ? formSnapshot.q8_visibilityRating+'★' : ''],
+          ['POSM Available', formSnapshot.q9_posmAvailable], ['NLB/GSB Brand', formSnapshot.q10_nlbGsbBrand],
+          ['GPS Location', `${formSnapshot.geoLat.toFixed(6)}, ${formSnapshot.geoLng.toFixed(6)}`],
+          ['Maps Link', formSnapshot.geoLink]
+        ];
+        const pdfPhotos = [{b64: stampedOutlet, caption:'Outlet Photo'}]
+          .concat(stampedInvoices.map((b64,i)=>({b64, caption:`Bill ${i+1} of ${stampedInvoices.length}`})));
+        const fileNameBase = `Audit_${(formSnapshot.outletName||'Outlet').replace(/[^a-z0-9]/gi,'_')}_${formSnapshot.date||''}`;
+        const invoicePdf = await buildAndDownloadFullPDF('FieldAudit — Retail Outlet Audit Summary', summaryRows, pdfPhotos, fileNameBase);
+        LAST_AUDIT_PDF_DATAURI = invoicePdf; LAST_AUDIT_PDF_FILENAME = fileNameBase+'.pdf';
+        document.getElementById('stampActions').style.display = invoicePdf ? 'flex' : 'none';
+        if(configured() && invoicePdf){
+          await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify({
+            action:'attachBillsPDF', auditId, invoicePdf, billCount: stampedInvoices.length, module:'retail'
+          })});
+        }
+      }catch(err){
+        logClientError(err.message, err.stack, 'background-pdf-attach');
+      }
+    })();
   }
 }
-function showStamp(id){
+let LAST_AUDIT_PDF_DATAURI = null;
+let LAST_AUDIT_PDF_FILENAME = 'Report.pdf';
+function showStamp(id, pdfDataUri, pdfFilename){
+  LAST_AUDIT_PDF_DATAURI = pdfDataUri || null;
+  LAST_AUDIT_PDF_FILENAME = pdfFilename || 'Report.pdf';
   document.getElementById('stampId').textContent = '#'+id;
   document.getElementById('stampWrap').style.display='flex';
+  document.getElementById('stampActions').style.display = LAST_AUDIT_PDF_DATAURI ? 'flex' : 'none';
   const el = document.getElementById('stampEl');
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
+async function shareLastPDF(e){
+  e.stopPropagation();
+  if(!LAST_AUDIT_PDF_DATAURI) return;
+  try{
+    const res = await fetch(LAST_AUDIT_PDF_DATAURI);
+    const blob = await res.blob();
+    const file = new File([blob], LAST_AUDIT_PDF_FILENAME, {type:'application/pdf'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:'Audit Report'});
+      return;
+    }
+  }catch(_e){}
+  downloadLastPDF(e);
+}
+function downloadLastPDF(e){
+  e.stopPropagation();
+  if(!LAST_AUDIT_PDF_DATAURI) return;
+  const a = document.createElement('a');
+  a.href = LAST_AUDIT_PDF_DATAURI; a.download = LAST_AUDIT_PDF_FILENAME;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 document.getElementById('stampWrap').addEventListener('click', ()=>{ document.getElementById('stampWrap').style.display='none'; });
 
@@ -2357,34 +2286,22 @@ async function submitDBStockAudit(){
     if(DB_PHOTO_BASE64_2) stampedRack = await stampPhoto(DB_PHOTO_BASE64_2, lines);
   }catch(_e){ stampedWide = DB_PHOTO_BASE64 || ''; stampedRack = DB_PHOTO_BASE64_2 || ''; }
 
-  btn.innerHTML = '<span class="spin"></span> Building your PDF…';
-  const dbSummaryRows = [
-    ['SO Name', document.getElementById('db_soName').value], ['SO Phone', document.getElementById('db_soPhone').value],
-    ['Conducted By', DB_FORM.auditType || ''], ['Date', document.getElementById('db_date').value],
-    ['DB Code', document.getElementById('db_dbCode').value], ['DB Name', document.getElementById('db_dbName').value],
-    ['DB City', document.getElementById('db_dbCity').value], ['ASM Name', document.getElementById('db_asmName').value],
-    ['Address', document.getElementById('db_address').value],
-    ['GPS Location', DB_GEO ? `${DB_GEO.lat.toFixed(6)}, ${DB_GEO.lng.toFixed(6)}` : ''],
-    ['Maps Link', DB_GEO ? DB_GEO.link : '']
-  ];
-  const dbPdfPhotos = [{b64: stampedWide, caption:'Godown / Wide Photo'}, {b64: stampedRack, caption:'Product Rack Photo'}];
-  const dbFileNameBase = `DBAudit_${(document.getElementById('db_dbName').value||'DB').replace(/[^a-z0-9]/gi,'_')}_${document.getElementById('db_date').value||''}`;
-  let dbPdf = '';
-  try{ dbPdf = await buildAndDownloadFullPDF('FieldAudit — DB Stock Audit Summary', dbSummaryRows, dbPdfPhotos, dbFileNameBase); }catch(_e){}
-
-  btn.innerHTML = '<span class="spin"></span> Submitting &amp; running AI checks…';
+  // ---- FAST core submit — text fields + both photos (small, unlike the
+  // retail module there's no bills-PDF here), PDF-building happens AFTER.
+  btn.innerHTML = '<span class="spin"></span> Submitting…';
+  const dbSnapshot = {
+    date: document.getElementById('db_date').value, auditType: DB_FORM.auditType || '',
+    dbCode: document.getElementById('db_dbCode').value, dbName: document.getElementById('db_dbName').value,
+    dbCity: document.getElementById('db_dbCity').value, soPhone: document.getElementById('db_soPhone').value,
+    soName: document.getElementById('db_soName').value, asmName: document.getElementById('db_asmName').value,
+    address: document.getElementById('db_address').value,
+    geoLat: DB_GEO.lat, geoLng: DB_GEO.lng, geoAccuracy: DB_GEO.accuracy, geoLink: DB_GEO.link, geoAddress: DB_GEO.address || ''
+  };
   const qty = id => document.getElementById(id).value || 0;
   const payload = {
-    action:'submitDBStock',
-    date: document.getElementById('db_date').value,
-    auditType: DB_FORM.auditType || '',
-    dbCode: document.getElementById('db_dbCode').value,
-    dbName: document.getElementById('db_dbName').value,
-    dbCity: document.getElementById('db_dbCity').value,
-    soPhone: document.getElementById('db_soPhone').value,
-    soName: document.getElementById('db_soName').value,
-    asmName: document.getElementById('db_asmName').value,
-    address: document.getElementById('db_address').value,
+    action:'submitDBStock', date: dbSnapshot.date, auditType: dbSnapshot.auditType, dbCode: dbSnapshot.dbCode,
+    dbName: dbSnapshot.dbName, dbCity: dbSnapshot.dbCity, soPhone: dbSnapshot.soPhone, soName: dbSnapshot.soName,
+    asmName: dbSnapshot.asmName, address: dbSnapshot.address,
     atta: qty('db_atta'), maida: qty('db_maida'), sooji: qty('db_sooji'), sattu: qty('db_sattu'),
     besan: qty('db_besan'), dalia: qty('db_dalia'), others: qty('db_others'), spicesTotal: qty('db_spicesTotal'),
     haldi: qty('db_haldi'), chili: qty('db_chili'), dhania: qty('db_dhania'),
@@ -2392,24 +2309,57 @@ async function submitDBStockAudit(){
     methi: qty('db_methi'), ajwain: qty('db_ajwain'), saunf: qty('db_saunf'), sarson: qty('db_sarson'),
     shahiGaramMasala: qty('db_shahiGaramMasala'), chickenMasala: qty('db_chickenMasala'),
     meatMasala: qty('db_meatMasala'), kashmiriMirch: qty('db_kashmiriMirch'), kalajeera: qty('db_kalajeera'),
-    photo: stampedWide, photoProductRack: stampedRack, auditPdf: dbPdf,
-    lat: DB_GEO.lat, lng: DB_GEO.lng, accuracy: DB_GEO.accuracy, mapsLink: DB_GEO.link, geoAddress: DB_GEO.address || ''
+    photo: stampedWide, photoProductRack: stampedRack,
+    lat: dbSnapshot.geoLat, lng: dbSnapshot.geoLng, accuracy: dbSnapshot.geoAccuracy,
+    mapsLink: dbSnapshot.geoLink, geoAddress: dbSnapshot.geoAddress
   };
+  let auditId = null;
   try{
     if(!configured()) throw new Error('__NOCFG__');
     const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)});
     const res = await r.json();
     if(!res.success) throw new Error(res.message || 'Submit failed');
-    showStamp(res.auditId || 'OK');
-    resetDBForm();
+    auditId = res.auditId || 'OK';
   }catch(e){
     if(e.message==='__NOCFG__'){
-      showStamp('DEMO'); resetDBForm();
+      auditId = 'DEMO';
     } else {
       toast(e.message || 'Could not submit stock audit. Please try again.', true);
+      btn.disabled = false; btn.innerHTML = 'Submit stock audit';
+      return;
     }
-  }finally{
-    btn.disabled = false; btn.innerHTML = 'Submit stock audit';
+  }
+
+  showStamp(auditId, null, null);
+  resetDBForm();
+  btn.disabled = false; btn.innerHTML = 'Submit stock audit';
+
+  if(auditId && auditId !== 'DEMO'){
+    (async ()=>{
+      try{
+        const dbSummaryRows = [
+          ['SO Name', dbSnapshot.soName], ['SO Phone', dbSnapshot.soPhone],
+          ['Conducted By', dbSnapshot.auditType], ['Date', dbSnapshot.date],
+          ['DB Code', dbSnapshot.dbCode], ['DB Name', dbSnapshot.dbName],
+          ['DB City', dbSnapshot.dbCity], ['ASM Name', dbSnapshot.asmName],
+          ['Address', dbSnapshot.address],
+          ['GPS Location', `${dbSnapshot.geoLat.toFixed(6)}, ${dbSnapshot.geoLng.toFixed(6)}`],
+          ['Maps Link', dbSnapshot.geoLink]
+        ];
+        const dbPdfPhotos = [{b64: stampedWide, caption:'Godown / Wide Photo'}, {b64: stampedRack, caption:'Product Rack Photo'}];
+        const dbFileNameBase = `DBAudit_${(dbSnapshot.dbName||'DB').replace(/[^a-z0-9]/gi,'_')}_${dbSnapshot.date||''}`;
+        const dbPdf = await buildAndDownloadFullPDF('FieldAudit — DB Stock Audit Summary', dbSummaryRows, dbPdfPhotos, dbFileNameBase);
+        LAST_AUDIT_PDF_DATAURI = dbPdf; LAST_AUDIT_PDF_FILENAME = dbFileNameBase+'.pdf';
+        document.getElementById('stampActions').style.display = dbPdf ? 'flex' : 'none';
+        if(configured() && dbPdf){
+          await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify({
+            action:'attachBillsPDF', auditId, invoicePdf: dbPdf, module:'db'
+          })});
+        }
+      }catch(err){
+        logClientError(err.message, err.stack, 'background-pdf-attach-db');
+      }
+    })();
   }
 }
 
