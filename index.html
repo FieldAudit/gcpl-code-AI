@@ -245,7 +245,7 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v5.5.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v5.6.0</div></div>
   </div>
 </header>
 
@@ -1193,9 +1193,42 @@ async function runFaceScan(prefix){
     if(attempts >= maxAttempts){
       clearInterval(FACE_SCAN_INTERVAL);
       const s = document.getElementById(`${prefix}_scanStatus`);
-      if(s) s.innerHTML = `No match found within camera view.<br><button class="btn btn-primary" style="margin-top:10px;" onclick="stopFaceScanCamera(); showManualPhoneEntry('${prefix}')">Continue with phone number</button>`;
+      const haveLiveFace = !!window[`${prefix}_liveDescriptor`];
+      if(s) s.innerHTML = haveLiveFace
+        ? `We can see your face, but it doesn't match anyone in the system yet.<br>
+           <button class="btn btn-primary" style="margin-top:10px;" onclick="startFaceRegistration('${prefix}')">📸 Register my face</button><br>
+           <button class="btn btn-outline" style="margin-top:8px;" onclick="stopFaceScanCamera(); showManualPhoneEntry('${prefix}')">Enter phone number instead</button>`
+        : `Couldn't detect a face in the camera view — check lighting or try repositioning.<br>
+           <button class="btn btn-primary" style="margin-top:10px;" onclick="restartFaceScan('${prefix}')">🔄 Try scanning again</button><br>
+           <button class="btn btn-outline" style="margin-top:8px;" onclick="stopFaceScanCamera(); showManualPhoneEntry('${prefix}')">Enter phone number instead</button>`;
     }
   }, 500);
+}
+
+/* Explicit "no match → register" path, triggered right from the live
+   camera that was already open — captures the face RIGHT NOW (both the
+   photo and the descriptor already sitting in memory from the scan loop)
+   instead of dropping to a completely different phone-typing+file-input
+   flow. Only their phone/name still needs collecting since a face alone
+   doesn't tell us who they are the very first time. */
+function startFaceRegistration(prefix){
+  const snapshot = captureSnapshotFromVideo(prefix);
+  stopFaceScanCamera();
+  if(snapshot) CHECKIN_PHOTO_BASE64 = snapshot; // reused as their check-in selfie too — no separate photo needed
+  captureGPSForCheckin(prefix); // starts resolving in the background while they type their phone/name below
+  const ids = ckIds(prefix);
+  document.getElementById(ids.content).innerHTML = `
+    ${snapshot ? `<img src="${snapshot}" style="width:100%; max-width:220px; border-radius:12px; display:block; margin:0 auto 14px;">` : ''}
+    <div class="field">
+      <label>Your Phone Number <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(10 digits)</span></label>
+      <input type="text" id="${ids.phone}" inputmode="numeric" maxlength="10" placeholder="e.g. 9830012345" oninput="onCheckinPhoneInput(this,'${prefix}')">
+      <div class="addr-note" id="${ids.status}"></div>
+    </div>
+  `;
+  document.getElementById(ids.phone).focus();
+}
+function restartFaceScan(prefix){
+  runIdentityScanCamera(prefix);
 }
 
 /* Used for the manual-entry enrollment path (no live scan match available)
