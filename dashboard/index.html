@@ -171,6 +171,13 @@ table.data tr:hover td{background:var(--paper-2);}
 .empty{text-align:center; padding:40px 20px; color:var(--slate);}
 .empty b{display:block; color:var(--ink); font-family:'Oswald'; text-transform:uppercase; margin-bottom:6px;}
 .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--paper); padding:11px 20px; border-radius:4px; font-size:13px; box-shadow:var(--shadow); z-index:300; display:none;}
+.export-overlay{position:fixed; inset:0; background:rgba(11,15,31,.55); backdrop-filter:blur(2px); z-index:400; display:none; align-items:center; justify-content:center;}
+.export-overlay.show{display:flex;}
+.export-box{background:var(--card); border-radius:16px; padding:32px 36px; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.3); min-width:220px;}
+.export-spinner{width:40px; height:40px; border-radius:50%; border:4px solid var(--paper-2); border-top-color:var(--amber); margin:0 auto 16px; animation:exportSpin .8s linear infinite;}
+@keyframes exportSpin{to{transform:rotate(360deg);}}
+.export-pct{font-family:'Oswald'; font-size:28px; font-weight:700; color:var(--ink);}
+.export-status{font-size:12.5px; color:var(--slate); margin-top:6px;}
 .toast.err{background:var(--red);}
 .spin{width:16px;height:16px;border:2px solid rgba(0,0,0,.2);border-top-color:var(--ink);border-radius:50%;animation:sp .7s linear infinite;display:inline-block;}
 @keyframes sp{to{transform:rotate(360deg);}}
@@ -280,7 +287,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v5.1.0</div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v5.5.0</div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -304,6 +311,19 @@ table.data tr:hover td{background:var(--paper-2);}
     <div id="cfgWarning" class="badge-cfg" style="display:none;">Backend not connected — set SCRIPT_URL at the top of the script to your deployed Google Apps Script Web App URL.</div>
 
     <section id="tab-dash">
+      <div class="card" style="margin-bottom:14px;">
+        <div class="filters">
+          <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">From <input type="date" id="dashFrom" onchange="renderDashboard()"></label>
+          <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">To <input type="date" id="dashTo" onchange="renderDashboard()"></label>
+          <select id="dashPreset" onchange="applyDashPreset()">
+            <option value="">Custom range</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="all" selected>All time</option>
+          </select>
+        </div>
+      </div>
       <div id="dashContent"><div class="empty"><b>Loading analytics…</b>Fetching audit data from the sheet.</div></div>
     </section>
 
@@ -377,6 +397,13 @@ table.data tr:hover td{background:var(--paper-2);}
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="export-overlay" id="exportOverlay">
+  <div class="export-box">
+    <div class="export-spinner"></div>
+    <div class="export-pct" id="exportPct">0%</div>
+    <div class="export-status" id="exportStatus">Preparing report…</div>
+  </div>
+</div>
 <div class="photo-lightbox" id="photoLightbox" onclick="closeLightbox(event)">
   <div class="photo-lightbox-inner">
     <img id="lightboxImg" src="">
@@ -588,7 +615,7 @@ function renderTeamGrid(){
   el.innerHTML = `<div class="team-grid">${list.map(u=>{
     const initials = (u.name||u.phone||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const avatar = u.photoUrl
-      ? `<img class="avatar" src="${u.photoUrl}" onerror="this.outerHTML='<div class=&quot;avatar-fallback&quot;>${initials}</div>'">`
+      ? `<img class="avatar" src="${u.photoUrl}" onerror="tryAvatarFallback(this,'${initials}')">`
       : `<div class="avatar-fallback">${initials}</div>`;
     return `<div class="team-card" onclick="openJourney('${u.phone}','${(u.name||'').replace(/'/g,"")}','${u.photoUrl||''}')">
       ${avatar}
@@ -739,14 +766,17 @@ async function initJourneyMap(audits){
 async function exportJourney(){
   const btn = event.currentTarget;
   const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Preparing…';
+  startExportProgress();
   try{
     if(!configured()) throw new Error('__NOCFG__');
     const fromDate = document.getElementById('journeyFrom').value;
     const toDate = document.getElementById('journeyTo').value;
     const res = await callApi({action:'exportReport', token:SESSION.token, module:'journey', phone:JOURNEY_PHONE, fromDate, toDate});
     if(!res.success) throw new Error(res.message || 'Export failed');
+    finishExportProgress();
     downloadBase64File(res.base64, res.filename);
   }catch(e){
+    finishExportProgress();
     toast(e.message==='__NOCFG__' ? 'Backend not connected' : (e.message || 'Could not export'), true);
   }finally{
     btn.disabled = false; btn.innerHTML = orig;
@@ -854,8 +884,36 @@ function renderDashboard(){
   if(MODULE==='db') renderDBDashboard(); else renderRetailDashboard();
 }
 
+function applyDashPreset(){
+  const preset = document.getElementById('dashPreset').value;
+  const fromEl = document.getElementById('dashFrom'), toEl = document.getElementById('dashTo');
+  if(preset === 'all'){ fromEl.value = ''; toEl.value = ''; }
+  else if(preset){
+    const to = new Date();
+    const from = new Date(); from.setDate(from.getDate() - Number(preset));
+    toEl.value = to.toISOString().slice(0,10);
+    fromEl.value = from.toISOString().slice(0,10);
+  }
+  renderDashboard();
+}
+/* Analytics-tab date range — separate from History's own search/city
+   filters, since Dashboard and History serve different purposes (trends
+   over a period vs. finding a specific record). Picking "Custom range"
+   automatically once the person edits From/To directly is handled by
+   just leaving dashPreset as-is; it only matters for the preset buttons. */
+function getDashFilteredData(){
+  const from = document.getElementById('dashFrom').value;
+  const to = document.getElementById('dashTo').value;
+  if(!from && !to) return ALL_DATA;
+  return ALL_DATA.filter(r=>{
+    const d = r.date || '';
+    return (!from || d >= from) && (!to || d <= to);
+  });
+}
+
 function renderRetailDashboard(){
   const el = document.getElementById('dashContent');
+  const ALL_DATA = getDashFilteredData();
   if(!ALL_DATA.length){
     el.innerHTML = `<div class="empty"><b>No audits yet</b>Once the field team submits audits via the survey link, analytics appear here.</div>`;
     return;
@@ -914,6 +972,7 @@ function renderRetailDashboard(){
 
 function renderDBDashboard(){
   const el = document.getElementById('dashContent');
+  const ALL_DATA = getDashFilteredData();
   if(!ALL_DATA.length){
     el.innerHTML = `<div class="empty"><b>No stock audits yet</b>Once the team submits a DB Stock Audit, analytics appear here.</div>`;
     return;
@@ -1031,16 +1090,52 @@ function renderDBHistory(){
 /* Real cell colours can't be written by the free client-side SheetJS build,
    so the coloured export is built server-side in Google Sheets and downloaded
    as .xlsx. A plain fallback runs only if the backend isn't connected. */
+/* Apps Script's request/response model can't stream real progress back
+   mid-export, so this shows an animated (not literally server-tracked)
+   percentage that climbs steadily and slows as it approaches ~92%, holding
+   there until the actual response arrives, then jumps to 100% — gives
+   honest-feeling feedback that something is happening instead of a frozen
+   button, without pretending to know exact server-side progress. */
+let EXPORT_PROGRESS_TIMER = null;
+function startExportProgress(){
+  const overlay = document.getElementById('exportOverlay');
+  const pctEl = document.getElementById('exportPct');
+  const statusEl = document.getElementById('exportStatus');
+  const statuses = ['Preparing report…','Fetching audit records…','Applying formatting & colours…','Adding clickable links…','Almost there…'];
+  let pct = 0, statusIdx = 0;
+  pctEl.textContent = '0%'; statusEl.textContent = statuses[0];
+  overlay.classList.add('show');
+  EXPORT_PROGRESS_TIMER = setInterval(()=>{
+    const remaining = 92 - pct;
+    pct += Math.max(0.5, remaining * 0.06);
+    if(pct > 92) pct = 92;
+    pctEl.textContent = Math.round(pct) + '%';
+    const nextStatusIdx = Math.min(statuses.length-1, Math.floor((pct/92)*statuses.length));
+    if(nextStatusIdx !== statusIdx){ statusIdx = nextStatusIdx; statusEl.textContent = statuses[statusIdx]; }
+  }, 220);
+}
+function finishExportProgress(){
+  clearInterval(EXPORT_PROGRESS_TIMER);
+  const overlay = document.getElementById('exportOverlay');
+  const pctEl = document.getElementById('exportPct');
+  const statusEl = document.getElementById('exportStatus');
+  pctEl.textContent = '100%'; statusEl.textContent = 'Done — downloading…';
+  setTimeout(()=>overlay.classList.remove('show'), 500);
+}
+
 async function exportReport(){
   if(!ALL_DATA.length){ toast('No data to export yet', true); return; }
   const btn = event.currentTarget;
   const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Preparing…';
+  startExportProgress();
   try{
     if(!configured()) throw new Error('__NOCFG__');
     const res = await callApi({action:'exportReport', token:SESSION.token, module:MODULE});
     if(!res.success) throw new Error(res.message || 'Export failed');
+    finishExportProgress();
     downloadBase64File(res.base64, res.filename);
   }catch(e){
+    finishExportProgress();
     if(e.message==='__NOCFG__'){
       exportPlainFallback();
       toast('Backend not connected — downloaded a plain export. Connect SCRIPT_URL for the fully coloured report.');
@@ -1138,11 +1233,45 @@ function renderPhotos(){
   `).join('');
 }
 
+/* Drive-hosted images can be hotlinked several different ways, and Google
+   occasionally throttles/blocks one format while another still works —
+   this tries each known format in turn before finally giving up and
+   showing "tap to open" instead of a broken image icon. Extracts the file
+   ID from whichever URL format is currently in the src, works forward from
+   there regardless of which format the stored URL originally used. */
+function tryAvatarFallback(imgEl, initials){
+  const attempt = Number(imgEl.dataset.fallbackAttempt || 0);
+  const idMatch = imgEl.dataset.fileId || ((imgEl.src.match(/[?&]id=([^&]+)/) || imgEl.src.match(/\/d\/([^=?/]+)/) || [])[1]);
+  if(!idMatch){ imgEl.outerHTML = `<div class="avatar-fallback">${initials}</div>`; return; }
+  imgEl.dataset.fileId = idMatch;
+  const formats = [
+    `https://drive.google.com/thumbnail?id=${idMatch}&sz=w200`,
+    `https://drive.google.com/uc?export=view&id=${idMatch}`,
+    `https://lh3.googleusercontent.com/d/${idMatch}=w200`
+  ];
+  if(attempt >= formats.length){ imgEl.outerHTML = `<div class="avatar-fallback">${initials}</div>`; return; }
+  imgEl.dataset.fallbackAttempt = attempt + 1;
+  imgEl.src = formats[attempt];
+}
+function tryPhotoFallback(imgEl){
+  const attempt = Number(imgEl.dataset.fallbackAttempt || 0);
+  const idMatch = imgEl.dataset.fileId || ((imgEl.src.match(/[?&]id=([^&]+)/) || imgEl.src.match(/\/d\/([^=?/]+)/) || [])[1]);
+  if(!idMatch){ imgEl.outerHTML = '<div class="thumb-fallback">Preview unavailable — tap to open</div>'; return; }
+  imgEl.dataset.fileId = idMatch;
+  const formats = [
+    `https://drive.google.com/thumbnail?id=${idMatch}&sz=w2000`,
+    `https://drive.google.com/uc?export=view&id=${idMatch}`,
+    `https://lh3.googleusercontent.com/d/${idMatch}=w1600`
+  ];
+  if(attempt >= formats.length){ imgEl.outerHTML = '<div class="thumb-fallback">Preview unavailable — tap to open</div>'; return; }
+  imgEl.dataset.fallbackAttempt = attempt + 1;
+  imgEl.src = formats[attempt];
+}
 function photoCardHtml(p){
   const safeUrl = p.url.replace(/'/g,"\\'");
   const safeCaption = `${p.type} — ${p.name}${p.sub?' ('+p.sub+')':''}${p.aiText?' · '+p.aiText:''}`.replace(/'/g,"\\'").replace(/"/g,'&quot;');
   return `<div class="photo-card" onclick="openLightbox('${safeUrl}','${safeCaption}')">
-    <img class="thumb" src="${p.url}" loading="lazy" onerror="this.outerHTML='<div class=&quot;thumb-fallback&quot;>Preview unavailable — tap to open</div>'">
+    <img class="thumb" src="${p.url}" loading="lazy" onerror="tryPhotoFallback(this)">
     <div class="meta">
       <span class="type-tag ${p.typeClass}">${p.type}</span>
       <div class="name">${p.name}</div>
