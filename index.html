@@ -245,7 +245,7 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v5.1.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v5.2.0</div></div>
   </div>
 </header>
 
@@ -363,7 +363,6 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
           <option>Other</option>
         </select>
       </div>
-      <div class="field"><label>DB bills seen (min. 5 mandatory)</label><input type="number" min="0" id="f_q6"></div>
       <div class="field">
         <label>Bill type</label>
         <select id="f_q7"><option value="">Select (or scan invoice below)</option><option>GST</option><option>Non-GST</option><option>Mixed</option></select>
@@ -373,7 +372,7 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
 
   <!-- ============ INVOICE PHOTOS (min 5) → combined into ONE PDF + GST scan ============ -->
   <div class="card">
-    <h2><span class="n">6</span>Invoice / Bill Photos — minimum 5, combined into one PDF</h2>
+    <h2><span class="n">6</span>Invoice / Bill Photos — DB Bill Check <span style="text-transform:none; font-weight:400; font-size:12px; color:var(--slate);">(at least 1 required, 5 recommended)</span></h2>
     <div class="photo-box" id="invoiceBox" style="margin-top:14px;">
       <button class="btn btn-outline" onclick="tryOpenCamera('invoiceInput')" id="invoiceBtn">📷 Capture bill photo</button>
       <input type="file" id="invoiceInput" accept="image/*" capture="environment" style="display:none" onchange="onInvoicePhoto(event)">
@@ -578,7 +577,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHB
 let FORM = {};
 let PHOTO_BASE64 = null;
 let INVOICE_BASE64 = null; // the first captured bill — drives the OCR scan button
-let INVOICE_PHOTOS = []; // every captured bill (minimum 5 required) — combined into one PDF at submit time
+let INVOICE_PHOTOS = []; // every captured bill (at least 1 required, 5 recommended) — combined into one PDF at submit time
 let GEO = null;
 let DB_GEO = null;
 let DB_PHOTO_BASE64 = null;
@@ -727,8 +726,8 @@ function renderInvoiceThumbs(){
   `).join('');
   const note = document.getElementById('invoiceCountNote');
   const n = INVOICE_PHOTOS.length;
-  note.className = n >= 5 ? 'addr-note' : 'addr-note warn';
-  note.textContent = n >= 5 ? `✅ ${n} bills captured — ready to combine into one PDF` : `${n} of 5 minimum bills captured`;
+  note.className = n >= 1 ? 'addr-note' : 'addr-note warn';
+  note.textContent = n === 0 ? 'No bills captured yet — at least 1 required, 5 recommended' : (n < 5 ? `✅ ${n} bill${n>1?'s':''} captured (5 recommended)` : `✅ ${n} bills captured — ready to combine into one PDF`);
   document.getElementById('scanBtnWrap').style.display = n ? 'block' : 'none';
 }
 function removeInvoicePhoto(i){
@@ -1739,7 +1738,7 @@ async function googleReverseGeocode(lat, lng){
   try{
     const r = await fetchWithTimeout(`${SCRIPT_URL}?action=reverseGeocode&lat=${lat}&lng=${lng}`, {}, 9000);
     const j = await r.json();
-    if(j.success && j.formatted) return {formatted:j.formatted, source:'google'};
+    if(j.success && j.formatted) return {formatted:j.formatted, city:j.city||'', district:j.district||'', source:'google'};
   }catch(_e){}
   return null;
 }
@@ -1789,7 +1788,7 @@ async function getBaseAddress(lat, lng){
   if(!base || !base.formatted){
     try{ base = await detailedReverseGeocode(lat, lng); }catch(_e){ base = {formatted:''}; }
   }
-  return {formatted: base.formatted || '', source: base.source || 'osm'};
+  return {formatted: base.formatted || '', city: base.city || '', district: base.district || '', source: base.source || 'osm'};
 }
 
 /* Fetches the nearest named landmark in the background and appends it to the
@@ -1850,6 +1849,8 @@ function captureLocation(callerBtn){
     try{
       base = await getBaseAddress(GEO.lat, GEO.lng);
     }catch(_e){ base = {formatted:''}; }
+    if(base.city) document.getElementById('f_city').value = base.city;
+    if(base.district) document.getElementById('f_district').value = base.district;
     if(base.formatted){
       GEO.address = base.formatted;
       const addrField = document.getElementById('f_address');
@@ -2007,7 +2008,7 @@ function downloadAuditSummaryPDF(payload, auditId){
     ['Address', payload.address], ['Outlet Owner Name', payload.ownerName], ['Retailer Phone', payload.retailerPhone],
     ['GCPL Distribution', payload.q1_distribution], ['DB Count', payload.q2_dbCount],
     ['Spice Available', payload.q3_spiceAvailable], ['Happy with DB', payload.q4_happyWithDB],
-    ['Price Update Source', payload.q5_priceSource], ['Bills Seen', payload.q6_billsSeen],
+    ['Price Update Source', payload.q5_priceSource],
     ['Bill Type', payload.q7_billType], ['Invoice GST', payload.invoiceGSTDetected],
     ['Shelf Visibility', payload.q8_visibilityRating ? payload.q8_visibilityRating+'★' : ''],
     ['POSM Available', payload.q9_posmAvailable], ['NLB/GSB Brand', payload.q10_nlbGsbBrand],
@@ -2025,6 +2026,28 @@ function downloadDBAuditSummaryPDF(payload, auditId){
     ['Maps Link', payload.mapsLink]
   ];
   downloadSummaryPDF('FieldAudit — DB Stock Audit Summary', rows, auditId, `DBAudit_${(payload.dbName||'DB').replace(/[^a-z0-9]/gi,'_')}_${payload.date||''}`);
+}
+
+/* Smaller/lower-quality copy used ONLY for the AI vision call — the
+   full-quality stamped images already went into the Bills PDF above, so
+   there's no reason to also ship full-resolution copies of the same
+   photos over the network a second time. This (plus capping AI analysis
+   to the first 3 bills instead of all of them) is what actually fixes
+   submit taking 1-2+ minutes on a slow field connection — that delay was
+   almost entirely the redundant upload, not the PDF-building itself. */
+function compressForAI(base64, maxW, quality){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const scale = Math.min(1, maxW/img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width*scale; canvas.height = img.height*scale;
+      canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = ()=>resolve(base64);
+    img.src = base64;
+  });
 }
 
 function stampPhoto(base64, lines){
@@ -2075,7 +2098,7 @@ function validateForm(){
     ['f_date','Date of Visit'],['f_auditor','Auditor Name'],['f_district','District'],['f_city','City'],
     ['f_distributor','Distributor'],['f_route','Route Name / Code'],['f_outletName','Outlet / Retailer Name'],
     ['f_outletType','Outlet Type'],['f_address','Address'],['f_ownerName','Outlet Owner Name'],
-    ['f_q2','How many DBs are supplying'],['f_q5','Price update source'],['f_q6','DB bills seen'],
+    ['f_q2','How many DBs are supplying'],['f_q5','Price update source'],
     ['f_q7','Bill type'],['f_q10','NLB/GSB brand']
   ];
   textFields.forEach(([id,label])=>{
@@ -2093,7 +2116,7 @@ function validateForm(){
   });
   if(!FORM.q8){ document.getElementById('star_q8').classList.add('invalid'); missing.push('Shelf visibility rating'); }
   if(!PHOTO_BASE64){ document.getElementById('photoBox').classList.add('invalid'); missing.push('Outlet photo'); }
-  if(INVOICE_PHOTOS.length < 5){ document.getElementById('invoiceBox').classList.add('invalid'); missing.push(`At least 5 invoice/bill photos (have ${INVOICE_PHOTOS.length})`); }
+  if(INVOICE_PHOTOS.length < 1){ document.getElementById('invoiceBox').classList.add('invalid'); missing.push('At least 1 invoice/bill photo'); }
   if(!GEO){ missing.push('GPS location'); }
   if(!CHECKIN_DONE){ missing.push("Today's selfie check-in (see the Daily Selfie Check-in card above)"); }
   return missing;
@@ -2192,6 +2215,9 @@ async function submitAudit(){
   btn.innerHTML = '<span class="spin"></span> Combining bills into one PDF…';
   let invoicePdf = '';
   try{ if(stampedInvoices.length) invoicePdf = await buildBillsPDF(stampedInvoices); }catch(_e){}
+  btn.innerHTML = '<span class="spin"></span> Preparing for AI check…';
+  let aiInvoicePhotos = [];
+  try{ aiInvoicePhotos = await Promise.all(stampedInvoices.slice(0,3).map(p=>compressForAI(p, 700, 0.55))); }catch(_e){ aiInvoicePhotos = []; }
   btn.innerHTML = '<span class="spin"></span> Submitting &amp; running AI checks…';
   const payload = {
     action:'submit',
@@ -2211,15 +2237,15 @@ async function submitAudit(){
     q3_spiceAvailable: FORM.q3 || '',
     q4_happyWithDB: FORM.q4 || '',
     q5_priceSource: document.getElementById('f_q5').value,
-    q6_billsSeen: document.getElementById('f_q6').value,
     q7_billType: document.getElementById('f_q7').value,
     invoiceGSTDetected: FORM.invoiceGST || 'Not scanned',
     q8_visibilityRating: FORM.q8 || '',
     q9_posmAvailable: FORM.q9 || '',
     q10_nlbGsbBrand: document.getElementById('f_q10').value,
     photo: stampedOutlet,
-    invoicePhotos: stampedInvoices,
+    invoicePhotos: aiInvoicePhotos,
     invoicePdf: invoicePdf,
+    billCount: stampedInvoices.length,
     lat: GEO.lat, lng: GEO.lng, accuracy: GEO.accuracy, mapsLink: GEO.link, geoAddress: GEO.address || ''
   };
   try{
@@ -2252,7 +2278,7 @@ function showStamp(id){
 document.getElementById('stampWrap').addEventListener('click', ()=>{ document.getElementById('stampWrap').style.display='none'; });
 
 function resetForm(){
-  ['f_auditor','f_district','f_city','f_distributor','f_route','f_outletName','f_outletType','f_address','f_ownerName','f_retailerPhone','f_q2','f_q5','f_q6','f_q7','f_q10'].forEach(id=>document.getElementById(id).value='');
+  ['f_auditor','f_district','f_city','f_distributor','f_route','f_outletName','f_outletType','f_address','f_ownerName','f_retailerPhone','f_q2','f_q5','f_q7','f_q10'].forEach(id=>document.getElementById(id).value='');
   FORM = {};
   document.querySelectorAll('#retailModule .yn button').forEach(b=>b.classList.remove('sel-yes','sel-no'));
   document.querySelectorAll('.stars button').forEach(b=>b.classList.remove('on'));
