@@ -293,7 +293,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.7.0</div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.8.0</div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -981,7 +981,7 @@ function renderDBDashboard(){
   const auditTypes = {}; ALL_DATA.forEach(r=>{ const t=r.auditType||'Unspecified'; auditTypes[t]=(auditTypes[t]||0)+1; });
   const showAuditTypeChart = Object.keys(auditTypes).length > 1; // only meaningful when both types are visible (Admin)
   const scopeBanner = SESSION.role === 'Marketing'
-    ? `<div class="scope-banner">📦 Showing <b>3PA (Third Party Agency)</b> DB Stock Audits only — this role never sees GCPL Sales Officer data.</div>`
+    ? `<div class="scope-banner">📦 Showing <b>3PA (Third Party Agency)</b> DB Stock Audits only — this role never sees GCPL Sales Officer data or the external GCPL sheet (that's Sales/Admin-only).</div>`
     : SESSION.role === 'Sales'
       ? `<div class="scope-banner">📦 Showing <b>GCPL Sales Officer</b> DB Stock Audits only — this role never sees 3PA data.</div>`
       : '';
