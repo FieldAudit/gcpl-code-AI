@@ -212,13 +212,14 @@ table.data tr:hover td{background:var(--paper-2);}
 .type-invoice{background:#FFF3D6; color:#B5730A;}
 .type-godown{background:#E7F3EC; color:#1B7A43;}
 .type-rack{background:#F1ECE0; color:#6B7280;}
-.photo-card .name{font-size:13px; font-weight:600; color:var(--ink);}
-.photo-card .sub{font-size:11.5px; color:var(--slate); margin-top:2px;}
-.photo-card .ai-line{font-size:11px; color:var(--slate); margin-top:6px; border-top:1px dashed var(--border-2); padding-top:6px; display:flex; align-items:center; gap:5px;}
-.photo-card .view-map-link{display:block; font-size:11px; color:var(--amber); margin-top:6px; text-decoration:none; font-weight:600;}
+.photo-card .name{font-size:14px; font-weight:700; color:var(--ink); margin-top:2px;}
+.photo-card .detail-list{margin-top:8px; display:flex; flex-direction:column; gap:3px;}
+.photo-card .detail-row{display:flex; justify-content:space-between; gap:8px; font-size:11.5px;}
+.photo-card .detail-label{color:var(--slate); flex-shrink:0;}
+.photo-card .detail-val{color:var(--ink); font-weight:600; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.photo-card-footer{display:flex; align-items:center; justify-content:space-between; margin-top:8px; padding-top:8px; border-top:1px dashed var(--border-2);}
+.photo-card .view-map-link{font-size:11px; color:var(--amber); text-decoration:none; font-weight:700;}
 .photo-card .view-map-link:hover{text-decoration:underline;}
-.photo-card .ai-line .dot{width:6px; height:6px; border-radius:50%; flex-shrink:0;}
-.dot-good{background:var(--green);} .dot-bad{background:var(--red);} .dot-neutral{background:var(--slate);}
 
 .photo-lightbox{position:fixed; inset:0; background:rgba(18,23,43,.9); z-index:400; display:none; align-items:center; justify-content:center; padding:30px;}
 .photo-lightbox.show{display:flex;}
@@ -291,7 +292,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.5.0</div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.6.0</div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -347,13 +348,16 @@ table.data tr:hover td{background:var(--paper-2);}
     <section id="tab-photos" style="display:none;">
       <div class="card">
         <div class="filters">
-          <input type="text" id="photoSearch" placeholder="Search outlet, distributor, DB name…" oninput="renderPhotos()">
+          <input type="text" id="photoSearch" placeholder="Search retailer, DB name, phone, code…" oninput="renderPhotos()">
           <select id="photoTypeFilter" onchange="renderPhotos()">
             <option value="">All photo types</option>
             <option value="Outlet Photo">Outlet Photo</option>
-            <option value="Invoice Photo">Invoice Photo</option>
             <option value="Godown Photo">Godown Photo</option>
             <option value="Product Rack Photo">Product Rack Photo</option>
+          </select>
+          <select id="photoGroupBy" onchange="renderPhotos()">
+            <option value="date">Group by Date</option>
+            <option value="audit">Group by Audit (Outlet/DB)</option>
           </select>
           <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">From <input type="date" id="photoFrom" onchange="renderPhotos()"></label>
           <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">To <input type="date" id="photoTo" onchange="renderPhotos()"></label>
@@ -1182,28 +1186,35 @@ function buildPhotoList(){
   PHOTO_RETAIL_DATA.forEach(r=>{
     if(r.photoUrl) list.push({
       date:r.date, type:'Outlet Photo', typeClass:'type-outlet', url:r.photoUrl, mapsLink:r.mapsLink,
-      name:r.outletName||'—', sub:[r.distributor, r.auditor?('Auditor: '+r.auditor):''].filter(Boolean).join(' · '), 
-      aiText:r.aiOutletSummary || (r.aiBrandVisible?`Brand visible: ${r.aiBrandVisible}`:''),
-      aiDot: r.aiBrandVisible==='Yes'?'dot-good':(r.aiBrandVisible==='No'?'dot-bad':'dot-neutral')
-    });
-    if(r.invoicePhotoUrl) list.push({
-      date:r.date, type:'Invoice Photo', typeClass:'type-invoice', url:r.invoicePhotoUrl, mapsLink:r.mapsLink,
-      name:r.outletName||'—', sub:[r.distributor, r.auditor?('Auditor: '+r.auditor):''].filter(Boolean).join(' · '),
-      aiText:r.aiInvoiceSummary || (r.aiInvoiceBillType?`Type: ${r.aiInvoiceBillType}`:''),
-      aiDot: r.aiInvoiceCalcIssue==='Yes'?'dot-bad':(r.aiInvoiceCalcIssue==='No'?'dot-good':'dot-neutral')
+      name:r.outletName||'—',
+      details:[
+        r.ownerName?['Owner', r.ownerName]:null,
+        r.retailerPhone?['Phone', r.retailerPhone]:null,
+        r.distributor?['Distributor', r.distributor]:null,
+        r.auditor?['Auditor', r.auditor]:null
+      ].filter(Boolean)
     });
   });
   PHOTO_DB_DATA.forEach(r=>{
     if(r.photoUrlWide) list.push({
       date:r.date, type:'Godown Photo', typeClass:'type-godown', url:r.photoUrlWide, mapsLink:r.mapsLink,
-      name:r.dbName||'—', sub:[r.dbCode, r.auditType, r.soName?('SO: '+r.soName):''].filter(Boolean).join(' · '),
-      aiText:r.aiStockSummary || (r.aiStockVisible?`Stock visible: ${r.aiStockVisible}`:''),
-      aiDot: r.aiStockVisible==='Yes'?'dot-good':(r.aiStockVisible==='No'?'dot-bad':'dot-neutral')
+      name:r.dbName||'—',
+      details:[
+        r.dbCode?['DB Code', r.dbCode]:null,
+        r.auditType?['Conducted By', r.auditType]:null,
+        r.soName?['SO Name', r.soName]:null,
+        r.soPhone?['SO Phone', r.soPhone]:null
+      ].filter(Boolean)
     });
     if(r.photoUrlRack) list.push({
       date:r.date, type:'Product Rack Photo', typeClass:'type-rack', url:r.photoUrlRack, mapsLink:r.mapsLink,
-      name:r.dbName||'—', sub:[r.dbCode, r.auditType, r.soName?('SO: '+r.soName):''].filter(Boolean).join(' · '),
-      aiText:r.aiStockSummary || '', aiDot:'dot-neutral'
+      name:r.dbName||'—',
+      details:[
+        r.dbCode?['DB Code', r.dbCode]:null,
+        r.auditType?['Conducted By', r.auditType]:null,
+        r.soName?['SO Name', r.soName]:null,
+        r.soPhone?['SO Phone', r.soPhone]:null
+      ].filter(Boolean)
     });
   });
   return list.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
@@ -1219,18 +1230,23 @@ function renderPhotos(){
   const photoTo = document.getElementById('photoTo').value;
   let list = buildPhotoList();
   list = list.filter(p=>{
-    const hit = !q || (p.name+' '+p.sub).toLowerCase().includes(q);
+    const searchable = (p.name + ' ' + (p.details||[]).map(d=>d[1]).join(' ')).toLowerCase();
+    const hit = !q || searchable.includes(q);
     const dateOk = (!photoFrom || (p.date||'') >= photoFrom) && (!photoTo || (p.date||'') <= photoTo);
     return hit && (!typeFilter || p.type===typeFilter) && dateOk;
   });
   CURRENT_PHOTO_LIST = list;
   if(!list.length){ el.innerHTML = `<div class="empty"><b>No photos found</b>Try a different search or filter, or check back once more audits are submitted.</div>`; return; }
+  const groupBy = document.getElementById('photoGroupBy').value;
   const groups = {};
-  list.forEach((p,i)=>{ const d=p.date||'Unknown date'; (groups[d]=groups[d]||[]).push(i); });
-  const dates = Object.keys(groups).sort((a,b)=>b.localeCompare(a));
-  el.innerHTML = dates.map(d=>`
-    <div class="photo-date-heading">${d} <span class="count">${groups[d].length}</span></div>
-    <div class="photo-grid">${groups[d].map(i=>photoCardHtml(list[i], i)).join('')}</div>
+  list.forEach((p,i)=>{
+    const key = groupBy === 'audit' ? (p.name || 'Unknown') : (p.date || 'Unknown date');
+    (groups[key]=groups[key]||[]).push(i);
+  });
+  const groupKeys = Object.keys(groups).sort((a,b)=> groupBy==='audit' ? a.localeCompare(b) : b.localeCompare(a));
+  el.innerHTML = groupKeys.map(g=>`
+    <div class="photo-date-heading">${g} <span class="count">${groups[g].length}</span></div>
+    <div class="photo-grid">${groups[g].map(i=>photoCardHtml(list[i], i)).join('')}</div>
   `).join('');
   // Real event listeners instead of inline onclick strings — avoids any
   // risk of a name/AI-summary containing a character that breaks HTML
@@ -1240,7 +1256,7 @@ function renderPhotos(){
     imgEl.addEventListener('click', function(){
       const p = CURRENT_PHOTO_LIST[Number(this.dataset.photoIdx)];
       if(!p) return;
-      const caption = `${p.type} — ${p.name}${p.sub?' ('+p.sub+')':''}${p.aiText?' · '+p.aiText:''}`;
+      const caption = `${p.type} — ${p.name}${(p.details||[]).map(d=>' · '+d[0]+': '+d[1]).join('')}`;
       document.getElementById('lightboxImg').src = this.src;
       document.getElementById('lightboxCaption').textContent = caption;
       document.getElementById('photoLightbox').classList.add('show');
@@ -1307,15 +1323,18 @@ function rewirePhotoFallbackClick(){
   });
 }
 function photoCardHtml(p, idx){
-  const safeCaption = `${p.type} — ${p.name}${p.sub?' ('+p.sub+')':''}${p.aiText?' · '+p.aiText:''}`.replace(/"/g,'&quot;');
+  const safeCaption = `${p.type} — ${p.name}${(p.details||[]).map(d=>' · '+d[1]).join('')}`.replace(/"/g,'&quot;');
+  const detailRows = (p.details||[]).map(([label,val])=>`<div class="detail-row"><span class="detail-label">${label}</span><span class="detail-val">${val}</span></div>`).join('');
   return `<div class="photo-card">
     <img class="thumb" data-photo-idx="${idx}" src="${p.url}" loading="lazy" onerror="tryPhotoFallback(this)" style="cursor:pointer;">
     <div class="meta">
       <span class="type-tag ${p.typeClass}">${p.type}</span>
       <div class="name">${p.name}</div>
-      ${p.sub?`<div class="sub">${p.sub}</div>`:''}
-      ${p.aiText?`<div class="ai-line"><span class="dot ${p.aiDot}"></span>${p.aiText}</div>`:''}
-      ${p.mapsLink?`<a class="view-map-link" href="${p.mapsLink}" target="_blank" onclick="event.stopPropagation()">📍 View capture location</a>`:''}
+      ${detailRows ? `<div class="detail-list">${detailRows}</div>` : ''}
+      <div class="photo-card-footer">
+        <span class="mono" style="font-size:11px; color:var(--slate);">${p.date||''}</span>
+        ${p.mapsLink?`<a class="view-map-link" href="${p.mapsLink}" target="_blank" onclick="event.stopPropagation()">📍 View location</a>`:''}
+      </div>
     </div>
   </div>`;
 }
