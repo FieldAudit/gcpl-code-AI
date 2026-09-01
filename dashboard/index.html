@@ -293,7 +293,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.8.0</div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.10.0</div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -708,7 +708,7 @@ function renderJourneyContent(res, fromDate, toDate){
       <div class="table-wrap" style="margin-top:14px;"><table class="data"><thead><tr><th>Date</th><th>Audit Type</th><th>DB Code</th><th>DB Name</th><th>City</th><th>Map</th></tr></thead><tbody>
         ${audits.map(a=>`<tr>
           <td class="mono">${a.date}</td><td>${a.auditType||''}</td><td class="mono">${a.dbCode||''}</td><td>${a.dbName||''}</td><td>${a.dbCity||''}</td>
-          <td>${a.mapsLink?`<a href="${a.mapsLink}" target="_blank">Map ↗</a>`:'—'}</td>
+          <td>${mapLinkHtml(a.mapsLink)}</td>
         </tr>`).join('')}
       </tbody></table></div>
     </div>
@@ -854,8 +854,14 @@ async function saveMasterData(type){
 }
 
 async function callApi(payload){
-  const qs = new URLSearchParams(payload).toString();
-  const r = await fetch(`${SCRIPT_URL}?${qs}`);
+  // Cache-buster (_t=timestamp) forces every request to be genuinely fresh
+  // — without it, a GET request with the exact same URL (same action+token)
+  // can get served from the browser's own HTTP cache even after a hard
+  // page refresh, which is exactly what made a real backend fix look like
+  // it "wasn't working" (the PAGE was new, but this one API response
+  // underneath it was stale and cached from before the fix).
+  const qs = new URLSearchParams({...payload, _t: Date.now()}).toString();
+  const r = await fetch(`${SCRIPT_URL}?${qs}`, {cache:'no-store'});
   return r.json();
 }
 async function loadData(){
@@ -892,6 +898,14 @@ async function loadPhotosData(){
 }
 
 function pct(n,d){ return d ? Math.round(n/d*100) : 0; }
+/* Same defensive check as the photo cards — some old rows have literal
+   placeholder text instead of a real URL stored where MapsLink should be;
+   rendering that as an href turns into a broken relative link (a 404 on
+   this site) instead of an error, so this renders a plain dash for
+   anything that doesn't actually look like a URL. */
+function mapLinkHtml(url, label){
+  return (url && /^https?:\/\//i.test(url)) ? `<a href="${url}" target="_blank">${label||'Map ↗'}</a>` : '—';
+}
 
 function renderDashboard(){
   if(MODULE==='db') renderDBDashboard(); else renderRetailDashboard();
@@ -1038,7 +1052,7 @@ function renderRetailHistory(){
     <td><span class="tag ${r.invoiceGSTDetected==='GST'?'tag-yes':'tag-no'}">${r.invoiceGSTDetected||'—'}</span></td>
     <td>${r.q8_visibilityRating?r.q8_visibilityRating+'★':'—'}</td>
     <td class="mono">${r.lat&&r.lng?(Number(r.lat).toFixed(5)+', '+Number(r.lng).toFixed(5)):'—'}</td>
-    <td>${r.mapsLink?`<a href="${r.mapsLink}" target="_blank">Map ↗</a>`:'—'}</td>
+    <td>${mapLinkHtml(r.mapsLink)}</td>
   </tr>`).join('');
 }
 
@@ -1070,7 +1084,7 @@ function renderDBHistory(){
     <td>${sumRow(r,bagFields)}</td>
     <td>${sumRow(r,kgFields)}</td>
     <td class="mono">${r.lat&&r.lng?(Number(r.lat).toFixed(5)+', '+Number(r.lng).toFixed(5)):'—'}</td>
-    <td>${r.mapsLink?`<a href="${r.mapsLink}" target="_blank">Map ↗</a>`:'—'}</td>
+    <td>${mapLinkHtml(r.mapsLink)}</td>
   </tr>`).join('');
 }
 
@@ -1341,6 +1355,11 @@ function rewirePhotoFallbackClick(){
 function photoCardHtml(p, idx){
   const safeCaption = `${p.type} — ${p.name}${(p.details||[]).map(d=>' · '+d[1]).join('')}`.replace(/"/g,'&quot;');
   const detailRows = (p.details||[]).map(([label,val])=>`<div class="detail-row"><span class="detail-label">${label}</span><span class="detail-val">${val}</span></div>`).join('');
+  // Some old rows (from before this was fixed) have literal placeholder
+  // text stored where a real URL should be — rendering that as an href
+  // turns into a broken relative link (a 404 on this very site) rather
+  // than an error, which is worse than just not showing the link at all.
+  const validMapsLink = p.mapsLink && /^https?:\/\//i.test(p.mapsLink) ? p.mapsLink : null;
   return `<div class="photo-card">
     <img class="thumb" data-photo-idx="${idx}" src="${p.url}" loading="lazy" onerror="tryPhotoFallback(this)" style="cursor:pointer;">
     <div class="meta">
@@ -1349,7 +1368,7 @@ function photoCardHtml(p, idx){
       ${detailRows ? `<div class="detail-list">${detailRows}</div>` : ''}
       <div class="photo-card-footer">
         <span class="mono" style="font-size:11px; color:var(--slate);">${p.date||''}</span>
-        ${p.mapsLink?`<a class="view-map-link" href="${p.mapsLink}" target="_blank" onclick="event.stopPropagation()">📍 View location</a>`:''}
+        ${validMapsLink?`<a class="view-map-link" href="${validMapsLink}" target="_blank" onclick="event.stopPropagation()">📍 View location</a>`:'<span class="view-map-link" style="opacity:.4; cursor:default;">📍 Location unavailable</span>'}
       </div>
     </div>
   </div>`;
