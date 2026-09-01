@@ -295,7 +295,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.19.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.21.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -303,7 +303,11 @@ table.data tr:hover td{background:var(--paper-2);}
     <div class="ttl">Theme</div>
     <div id="themeSwatchList"></div>
   </div>
-  <div class="module-toggle">
+  <div class="module-toggle" id="sourceToggle" style="display:none;">
+    <button class="active" data-src="fieldaudit" onclick="switchSourceTab('fieldaudit')">📱 3PA Audit</button>
+    <button data-src="gcpl" onclick="switchSourceTab('gcpl')">🌐 GCPL Stock Audit</button>
+  </div>
+  <div class="module-toggle" id="moduleToggle" style="margin-top:8px;">
     <button class="active" data-mod="retail" onclick="switchModule('retail')">🏪 Retail Audit</button>
     <button data-mod="db" id="dbModuleBtn" onclick="switchModule('db')">📦 DB Stock Audit</button>
   </div>
@@ -524,14 +528,15 @@ function enterApp(){
   document.getElementById('whoRole').textContent = SESSION.role || '';
   document.getElementById('masterTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
   document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
-  // DB Stock Audit now shows every FieldAudit-app submission to every role
-  // regardless of "Conducted By" type — only the completely separate
-  // external GCPL sheet (a different app, Sales/Admin-only) is scoped.
-  // So the label just needs to flag THAT distinction for Sales/Admin, not
-  // pretend Marketing is missing a whole category of the app's own data.
+  // The "3PA Audit / GCPL Stock Audit" source toggle only makes sense for
+  // roles that actually see both — Marketing never gets the external GCPL
+  // sheet at all, so for them there's nothing to switch between and the
+  // toggle just stays hidden (their view is implicitly "3PA Audit" only).
   const dbBtn = document.getElementById('dbModuleBtn');
-  if(SESSION.role === 'Sales' || SESSION.role === 'Admin') dbBtn.innerHTML = '📦 DB Stock Audit (+ external GCPL Sales Officer sheet)';
-  else dbBtn.innerHTML = '📦 DB Stock Audit';
+  dbBtn.innerHTML = '📦 DB Stock Audit';
+  const canSeeBothSources = (SESSION.role === 'Sales' || SESSION.role === 'Admin');
+  document.getElementById('sourceToggle').style.display = canSeeBothSources ? 'flex' : 'none';
+  SOURCE_FILTER = 'FieldAudit App';
   // Live check against the ACTUAL running backend — this app's frontend
   // (this HTML file) and backend (Code.gs) deploy through two completely
   // separate processes (GitHub Pages vs. Apps Script), so it's easy to
@@ -545,7 +550,7 @@ function enterApp(){
         const el = document.getElementById('backendVerCheck');
         if(!el) return;
         const backendV = j.version || '?';
-        const frontendV = 'v6.19.0';
+        const frontendV = 'v6.21.0';
         el.textContent = `· backend ${backendV}`;
         el.style.color = (backendV === frontendV) ? '#34C759' : '#FF3B30';
         el.title = (backendV === frontendV) ? 'Backend matches this page.' : `Backend is ${backendV} but this page is ${frontendV} — redeploy Code.gs (Deploy → Manage deployments → New version).`;
@@ -604,7 +609,7 @@ document.addEventListener('click', (e)=>{
 
 function switchModule(mod){
   MODULE = mod;
-  document.querySelectorAll('.module-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.mod===mod));
+  document.querySelectorAll('#moduleToggle button').forEach(b=>b.classList.toggle('active', b.dataset.mod===mod));
   document.getElementById('histCity').innerHTML = '<option value="">All cities</option>'; // rebuild filter options for the new dataset
   document.getElementById('histSearch').placeholder = mod==='db' ? 'Search distributor, city…' : 'Search outlet, city, distributor…';
   document.getElementById('histSearch').value = '';
@@ -613,6 +618,36 @@ function switchModule(mod){
     const name = activeTab ? activeTab.dataset.tab : 'dash';
     if(name==='dash') renderDashboard(); else if(name==='history') renderHistory();
   });
+}
+/* Source is the PRIMARY split for anyone who can see both (Sales/Admin):
+   "3PA Audit" = everything submitted through the FieldAudit app itself
+   (both its Retail Audit and DB Stock Audit modules); "GCPL Stock Audit" =
+   the completely separate external sheet, which only ever has DB-type
+   stock data — so picking it forces the module to DB and hides the
+   Retail/DB toggle entirely, since Retail Audit has no external-sheet
+   counterpart at all. */
+let SOURCE_FILTER = 'FieldAudit App';
+function switchSourceTab(tab){
+  document.querySelectorAll('#sourceToggle button').forEach(b=>b.classList.toggle('active', b.dataset.src===tab));
+  if(tab === 'gcpl'){
+    SOURCE_FILTER = 'External (GCPL app)';
+    document.getElementById('moduleToggle').style.display = 'none';
+    if(MODULE !== 'db') switchModule('db'); else {
+      const photoSrcSel = document.getElementById('photoSourceFilter');
+      if(photoSrcSel) photoSrcSel.value = SOURCE_FILTER;
+      const activeTab = document.querySelector('nav.tabs button.active');
+      const name = activeTab ? activeTab.dataset.tab : 'dash';
+      if(name==='dash') renderDashboard(); else if(name==='history') renderHistory(); else if(name==='photos') renderPhotos();
+    }
+  } else {
+    SOURCE_FILTER = 'FieldAudit App';
+    document.getElementById('moduleToggle').style.display = 'flex';
+    const photoSrcSel = document.getElementById('photoSourceFilter');
+    if(photoSrcSel) photoSrcSel.value = SOURCE_FILTER;
+    const activeTab = document.querySelector('nav.tabs button.active');
+    const name = activeTab ? activeTab.dataset.tab : 'dash';
+    if(name==='dash') renderDashboard(); else if(name==='history') renderHistory(); else if(name==='photos') renderPhotos();
+  }
 }
 
 function showTab(name){
@@ -1007,11 +1042,15 @@ function applyDashPreset(){
 function getDashFilteredData(){
   const from = document.getElementById('dashFrom').value;
   const to = document.getElementById('dashTo').value;
-  if(!from && !to) return ALL_DATA;
-  return ALL_DATA.filter(r=>{
-    const d = r.date || '';
-    return (!from || d >= from) && (!to || d <= to);
-  });
+  let rows = ALL_DATA;
+  if(from || to){
+    rows = rows.filter(r=>{
+      const d = r.date || '';
+      return (!from || d >= from) && (!to || d <= to);
+    });
+  }
+  if(SOURCE_FILTER) rows = rows.filter(r => (r.source || 'FieldAudit App') === SOURCE_FILTER);
+  return rows;
 }
 
 function renderRetailDashboard(){
@@ -1153,7 +1192,8 @@ function renderDBHistory(){
   const rows = ALL_DATA.filter(r=>{
     const hit = !q || [r.dbName,r.dbCode,r.dbCity,r.soName].join(' ').toLowerCase().includes(q);
     const dateOk = (!histFrom || (r.date||'') >= histFrom) && (!histTo || (r.date||'') <= histTo);
-    return hit && (!cf || r.dbCity===cf) && dateOk;
+    const sourceOk = !SOURCE_FILTER || (r.source||'FieldAudit App') === SOURCE_FILTER;
+    return hit && (!cf || r.dbCity===cf) && dateOk && sourceOk;
   });
   const thead = document.querySelector('#histTable thead');
   const tbody = document.querySelector('#histTable tbody');
