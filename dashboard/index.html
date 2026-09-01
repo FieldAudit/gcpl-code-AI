@@ -293,7 +293,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.14.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.15.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -513,15 +513,14 @@ function enterApp(){
   document.getElementById('whoRole').textContent = SESSION.role || '';
   document.getElementById('masterTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
   document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
-  // The DB Stock Audit module is scope-restricted by role (Sales only ever
-  // sees GCPL Sales Officer rows, Marketing only ever sees 3PA rows) — the
-  // button label now says so explicitly, since "DB Stock Audit" alone left
-  // people wondering why they were only seeing part of the data (they were
-  // seeing exactly their correct scope all along, just unlabelled).
+  // DB Stock Audit now shows every FieldAudit-app submission to every role
+  // regardless of "Conducted By" type — only the completely separate
+  // external GCPL sheet (a different app, Sales/Admin-only) is scoped.
+  // So the label just needs to flag THAT distinction for Sales/Admin, not
+  // pretend Marketing is missing a whole category of the app's own data.
   const dbBtn = document.getElementById('dbModuleBtn');
-  if(SESSION.role === 'Marketing') dbBtn.innerHTML = '📦 3PA (Third Party Agency) — DB Stock Audit';
-  else if(SESSION.role === 'Sales') dbBtn.innerHTML = '📦 GCPL Sales Officer — DB Stock Audit';
-  else dbBtn.innerHTML = '📦 DB Stock Audit (GCPL Sales Officer + 3PA)';
+  if(SESSION.role === 'Sales' || SESSION.role === 'Admin') dbBtn.innerHTML = '📦 DB Stock Audit (+ external GCPL Sales Officer sheet)';
+  else dbBtn.innerHTML = '📦 DB Stock Audit';
   // Live check against the ACTUAL running backend — this app's frontend
   // (this HTML file) and backend (Code.gs) deploy through two completely
   // separate processes (GitHub Pages vs. Apps Script), so it's easy to
@@ -535,7 +534,7 @@ function enterApp(){
         const el = document.getElementById('backendVerCheck');
         if(!el) return;
         const backendV = j.version || '?';
-        const frontendV = 'v6.14.0';
+        const frontendV = 'v6.15.0';
         el.textContent = `· backend ${backendV}`;
         el.style.color = (backendV === frontendV) ? '#34C759' : '#FF3B30';
         el.title = (backendV === frontendV) ? 'Backend matches this page.' : `Backend is ${backendV} but this page is ${frontendV} — redeploy Code.gs (Deploy → Manage deployments → New version).`;
