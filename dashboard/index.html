@@ -206,7 +206,7 @@ table.data tr:hover td{background:var(--paper-2);}
 .photo-card{background:var(--card); border:1px solid var(--border); border-radius:6px; overflow:hidden; cursor:pointer; transition:transform .1s, box-shadow .15s;}
 .photo-card:hover{transform:translateY(-2px); box-shadow:0 6px 16px rgba(18,23,43,.12);}
 .photo-card .thumb{width:100%; aspect-ratio:4/3; object-fit:cover; background:var(--paper-2); display:block;}
-.photo-card .thumb-fallback{width:100%; aspect-ratio:4/3; background:var(--paper-2); display:flex; align-items:center; justify-content:center; color:var(--slate); font-size:12px; text-align:center; padding:10px;}
+.photo-card .thumb-fallback{width:100%; aspect-ratio:4/3; background:var(--paper-2); display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--slate); font-size:12px; text-align:center; padding:10px; overflow:hidden; cursor:pointer;}
 .photo-card .meta{padding:10px 12px;}
 .photo-card .type-tag{display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:2px 7px; border-radius:8px; margin-bottom:6px;}
 .type-outlet{background:#E6EFFF; color:#1D4ED8;}
@@ -293,7 +293,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.10.0</div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.12.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -522,6 +522,25 @@ function enterApp(){
   if(SESSION.role === 'Marketing') dbBtn.innerHTML = '📦 3PA (Third Party Agency) — DB Stock Audit';
   else if(SESSION.role === 'Sales') dbBtn.innerHTML = '📦 GCPL Sales Officer — DB Stock Audit';
   else dbBtn.innerHTML = '📦 DB Stock Audit (GCPL Sales Officer + 3PA)';
+  // Live check against the ACTUAL running backend — this app's frontend
+  // (this HTML file) and backend (Code.gs) deploy through two completely
+  // separate processes (GitHub Pages vs. Apps Script), so it's easy to
+  // update one and forget the other. Showing the real backend version
+  // right in the header makes that mismatch impossible to miss, instead
+  // of needing to manually check a URL every time something looks wrong.
+  if(configured()){
+    fetch(`${SCRIPT_URL}?action=version&_t=${Date.now()}`, {cache:'no-store'})
+      .then(r=>r.json())
+      .then(j=>{
+        const el = document.getElementById('backendVerCheck');
+        if(!el) return;
+        const backendV = j.version || '?';
+        const frontendV = 'v6.12.0';
+        el.textContent = `· backend ${backendV}`;
+        el.style.color = (backendV === frontendV) ? '#34C759' : '#FF3B30';
+        el.title = (backendV === frontendV) ? 'Backend matches this page.' : `Backend is ${backendV} but this page is ${frontendV} — redeploy Code.gs (Deploy → Manage deployments → New version).`;
+      }).catch(()=>{});
+  }
   loadData().then(()=>{ renderDashboard(); });
 }
 
@@ -994,13 +1013,7 @@ function renderDBDashboard(){
   const bagLabels = {atta:'ATTA', maida:'MAIDA', sooji:'SOOJI', sattu:'SATTU', besan:'BESAN', dalia:'DALIA', others:'OTHERS', spicesTotal:'Spices Total'};
   const auditTypes = {}; ALL_DATA.forEach(r=>{ const t=r.auditType||'Unspecified'; auditTypes[t]=(auditTypes[t]||0)+1; });
   const showAuditTypeChart = Object.keys(auditTypes).length > 1; // only meaningful when both types are visible (Admin)
-  const scopeBanner = SESSION.role === 'Marketing'
-    ? `<div class="scope-banner">📦 Showing <b>3PA (Third Party Agency)</b> DB Stock Audits only — this role never sees GCPL Sales Officer data or the external GCPL sheet (that's Sales/Admin-only).</div>`
-    : SESSION.role === 'Sales'
-      ? `<div class="scope-banner">📦 Showing <b>GCPL Sales Officer</b> DB Stock Audits only — this role never sees 3PA data.</div>`
-      : '';
   el.innerHTML = `
-    ${scopeBanner}
     <div class="kpis">
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${n}</div><div class="l">Stock audits this period <span class="info-i" title="Total DB Stock Audit rows in the selected date range and role scope.">ⓘ</span></div></div>
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${totalBags.toLocaleString('en-IN')}</div><div class="l">Total bags counted <span class="info-i" title="Sum of ATTA+MAIDA+SOOJI+SATTU+BESAN+DALIA+OTHERS+Spices-Total bag quantities across all audits in range.">ⓘ</span></div></div>
@@ -1322,10 +1335,24 @@ function tryAvatarFallback(imgEl, initials){
 }
 function tryPhotoFallback(imgEl){
   const attempt = Number(imgEl.dataset.fallbackAttempt || 0);
-  const idMatch = imgEl.dataset.fileId || ((imgEl.src.match(/[?&]id=([^&]+)/) || imgEl.src.match(/\/d\/([^=?/]+)/) || [])[1]);
+  // getAttribute (not .src) reads the ORIGINAL raw value exactly as set —
+  // .src normalizes/resolves it as a URL, which mangles anything that
+  // wasn't already a real link (e.g. a saved "ERROR: ..." message from a
+  // failed upload), making the real reason unreadable.
+  const rawSrc = imgEl.dataset.rawSrc || imgEl.getAttribute('src') || '';
+  imgEl.dataset.rawSrc = rawSrc;
+  const idMatch = imgEl.dataset.fileId || ((rawSrc.match(/[?&]id=([^&]+)/) || rawSrc.match(/\/d\/([^=?/]+)/) || [])[1]);
   const photoIdx = imgEl.dataset.photoIdx;
   if(!idMatch){
-    imgEl.outerHTML = `<div class="thumb-fallback" data-photo-idx="${photoIdx}">Preview unavailable — tap to open</div>`;
+    // Surfaces the ACTUAL reason instead of a generic message — most
+    // commonly this means the original photo upload itself failed (Drive
+    // quota, a permissions hiccup at save time) and what got stored in the
+    // sheet is an error string instead of a real link, not that the photo
+    // exists somewhere and just won't load.
+    const reason = rawSrc.trim().indexOf('ERROR:') === 0
+      ? rawSrc.trim()
+      : (rawSrc ? 'Stored value is not a recognisable Google Drive link.' : 'No photo URL was saved for this record.');
+    imgEl.outerHTML = `<div class="thumb-fallback" data-photo-idx="${photoIdx}" title="${reason.replace(/"/g,'&quot;')}">⚠️ Could not load photo<br><span style="font-size:10px; opacity:.75; padding:0 8px; display:block;">${reason}</span></div>`;
     rewirePhotoFallbackClick();
     return;
   }
@@ -1336,7 +1363,7 @@ function tryPhotoFallback(imgEl){
     `https://lh3.googleusercontent.com/d/${idMatch}=w1600`
   ];
   if(attempt >= formats.length){
-    imgEl.outerHTML = `<div class="thumb-fallback" data-photo-idx="${photoIdx}">Preview unavailable — tap to open</div>`;
+    imgEl.outerHTML = `<div class="thumb-fallback" data-photo-idx="${photoIdx}" title="All 3 known Google Drive image formats failed to load — the file may not be shared as &quot;Anyone with the link&quot;, or may have been deleted/moved.">⚠️ Could not load photo<br><span style="font-size:10px; opacity:.75;">Tap to try opening the original link</span></div>`;
     rewirePhotoFallbackClick();
     return;
   }
@@ -1348,7 +1375,7 @@ function rewirePhotoFallbackClick(){
     div.dataset.wired = '1';
     div.addEventListener('click', function(){
       const p = CURRENT_PHOTO_LIST[Number(this.dataset.photoIdx)];
-      if(p && p.url) window.open(p.url, '_blank');
+      if(p && p.url && /^https?:\/\//i.test(p.url)) window.open(p.url, '_blank');
     });
   });
 }
