@@ -142,6 +142,7 @@ main{max-width:1080px; margin:0 auto; padding:22px 18px 70px;}
 .grid2{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
 @media(max-width:640px){.grid2{grid-template-columns:1fr;}}
 
+.scope-banner{background:var(--paper-2); border:1px solid var(--border-2); border-left:4px solid var(--amber); border-radius:6px; padding:10px 14px; font-size:13px; margin-bottom:16px;}
 .kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px;}
 @media(max-width:760px){.kpis{grid-template-columns:repeat(2,1fr);}}
 .kpi{background:var(--ink); color:var(--paper); border-radius:5px; padding:16px;}
@@ -292,7 +293,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.6.0</div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.7.0</div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -302,7 +303,7 @@ table.data tr:hover td{background:var(--paper-2);}
   </div>
   <div class="module-toggle">
     <button class="active" data-mod="retail" onclick="switchModule('retail')">🏪 Retail Audit</button>
-    <button data-mod="db" onclick="switchModule('db')">📦 DB Stock Audit</button>
+    <button data-mod="db" id="dbModuleBtn" onclick="switchModule('db')">📦 DB Stock Audit</button>
   </div>
   <nav class="tabs">
     <button class="active" data-tab="dash" onclick="showTab('dash')">Dashboard</button>
@@ -512,6 +513,15 @@ function enterApp(){
   document.getElementById('whoRole').textContent = SESSION.role || '';
   document.getElementById('masterTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
   document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
+  // The DB Stock Audit module is scope-restricted by role (Sales only ever
+  // sees GCPL Sales Officer rows, Marketing only ever sees 3PA rows) — the
+  // button label now says so explicitly, since "DB Stock Audit" alone left
+  // people wondering why they were only seeing part of the data (they were
+  // seeing exactly their correct scope all along, just unlabelled).
+  const dbBtn = document.getElementById('dbModuleBtn');
+  if(SESSION.role === 'Marketing') dbBtn.innerHTML = '📦 3PA (Third Party Agency) — DB Stock Audit';
+  else if(SESSION.role === 'Sales') dbBtn.innerHTML = '📦 GCPL Sales Officer — DB Stock Audit';
+  else dbBtn.innerHTML = '📦 DB Stock Audit (GCPL Sales Officer + 3PA)';
   loadData().then(()=>{ renderDashboard(); });
 }
 
@@ -970,7 +980,13 @@ function renderDBDashboard(){
   const bagLabels = {atta:'ATTA', maida:'MAIDA', sooji:'SOOJI', sattu:'SATTU', besan:'BESAN', dalia:'DALIA', others:'OTHERS', spicesTotal:'Spices Total'};
   const auditTypes = {}; ALL_DATA.forEach(r=>{ const t=r.auditType||'Unspecified'; auditTypes[t]=(auditTypes[t]||0)+1; });
   const showAuditTypeChart = Object.keys(auditTypes).length > 1; // only meaningful when both types are visible (Admin)
+  const scopeBanner = SESSION.role === 'Marketing'
+    ? `<div class="scope-banner">📦 Showing <b>3PA (Third Party Agency)</b> DB Stock Audits only — this role never sees GCPL Sales Officer data.</div>`
+    : SESSION.role === 'Sales'
+      ? `<div class="scope-banner">📦 Showing <b>GCPL Sales Officer</b> DB Stock Audits only — this role never sees 3PA data.</div>`
+      : '';
   el.innerHTML = `
+    ${scopeBanner}
     <div class="kpis">
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${n}</div><div class="l">Stock audits this period <span class="info-i" title="Total DB Stock Audit rows in the selected date range and role scope.">ⓘ</span></div></div>
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${totalBags.toLocaleString('en-IN')}</div><div class="l">Total bags counted <span class="info-i" title="Sum of ATTA+MAIDA+SOOJI+SATTU+BESAN+DALIA+OTHERS+Spices-Total bag quantities across all audits in range.">ⓘ</span></div></div>
