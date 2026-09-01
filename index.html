@@ -13,9 +13,9 @@
 <title>FieldAudit — GCPL Field Audits</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/libphonenumber-js@1.10.51/bundle/libphonenumber-js.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/libphonenumber-js@1.10.51/bundle/libphonenumber-js.min.js" crossorigin="anonymous"></script>
 <style>
 :root{
   /* "Ultimate" tech-gradient palette — now the default look */
@@ -303,7 +303,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.3.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.17.0</div></div>
   </div>
 </header>
 
@@ -1516,7 +1516,18 @@ async function overpassQuery(q){
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(j => j.elements ? j.elements : Promise.reject());
   try{
-    return await Promise.any(OVERPASS_MIRRORS.map(attempt));
+    const promises = OVERPASS_MIRRORS.map(attempt);
+    // The LOSING mirror's fetch is still in-flight when Promise.any below
+    // resolves from the winner — its own timeout eventually fires and
+    // aborts it, which is expected and harmless. Without this no-op catch
+    // on each individual promise, that later rejection has no subscriber
+    // of its own and surfaces as a scary "Unhandled promise rejection:
+    // signal is aborted" in the error log for something that never
+    // actually affected the user. Promise.any() below still sees every
+    // rejection fine — this only silences the browser's separate
+    // unhandled-rejection warning.
+    promises.forEach(p => p.catch(()=>{}));
+    return await Promise.any(promises);
   }catch(_e){
     return [];
   }
@@ -1890,6 +1901,13 @@ function loadImageDims(base64){
   });
 }
 async function buildAndDownloadFullPDF(title, rows, photos, fileNameBase){
+  if(!window.jspdf || !window.jspdf.jsPDF){
+    // jsPDF (loaded from a CDN) failed to load on this device/network —
+    // rather than crashing here, throw a clear message that the caller's
+    // existing try/catch already handles gracefully (the audit itself is
+    // saved either way; only the local PDF copy is skipped).
+    throw new Error('PDF library did not load — check your connection and try Download from History later.');
+  }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'pt', format:'a4'});
   const margin = 40;
