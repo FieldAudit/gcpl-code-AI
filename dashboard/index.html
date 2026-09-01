@@ -291,7 +291,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.4.0</div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.5.0</div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -588,19 +588,10 @@ function showTab(name){
 
 /* Clickable analytics: every KPI card and every chart segment jumps
    straight to the History tab, pre-filtered to whatever it represents —
-   clicking "AI-flagged invoice issues" shows exactly those rows, clicking a
-   city/distributor slice shows only that city/distributor's audits, etc.
-   HIST_FORCED_FILTER lets renderHistory() apply a filter the search box
-   itself doesn't normally express (like "issues only"). */
-let HIST_FORCED_FILTER = null;
+   clicking a city/distributor slice shows only that city/distributor's
+   audits, etc. */
 function goToHistory(searchText){
-  HIST_FORCED_FILTER = null;
   document.getElementById('histSearch').value = searchText || '';
-  showTab('history');
-}
-function goToHistoryIssuesOnly(){
-  HIST_FORCED_FILTER = 'issues';
-  document.getElementById('histSearch').value = '';
   showTab('history');
 }
 
@@ -700,10 +691,9 @@ function renderJourneyContent(res, fromDate, toDate){
     </div>
     <div class="card">
       <h2>Activity Timeline</h2>
-      <div class="table-wrap" style="margin-top:14px;"><table class="data"><thead><tr><th>Date</th><th>Audit Type</th><th>DB Code</th><th>DB Name</th><th>City</th><th>AI Stock Visible</th><th>Map</th></tr></thead><tbody>
-        ${audits.map(a=>`<tr title="${a.aiStockSummary||''}">
+      <div class="table-wrap" style="margin-top:14px;"><table class="data"><thead><tr><th>Date</th><th>Audit Type</th><th>DB Code</th><th>DB Name</th><th>City</th><th>Map</th></tr></thead><tbody>
+        ${audits.map(a=>`<tr>
           <td class="mono">${a.date}</td><td>${a.auditType||''}</td><td class="mono">${a.dbCode||''}</td><td>${a.dbName||''}</td><td>${a.dbCity||''}</td>
-          <td><span class="tag ${a.aiStockVisible==='Yes'?'tag-yes':(a.aiStockVisible==='No'?'tag-no':'')}">${a.aiStockVisible||'—'}</span></td>
           <td>${a.mapsLink?`<a href="${a.mapsLink}" target="_blank">Map ↗</a>`:'—'}</td>
         </tr>`).join('')}
       </tbody></table></div>
@@ -931,12 +921,6 @@ function renderRetailDashboard(){
   const yes = k => ALL_DATA.filter(r=>r[k]==='Yes').length;
   const avgStar = (ALL_DATA.reduce((s,r)=>s+(+r.q8_visibilityRating||0),0)/n).toFixed(1);
   const cities = {}; ALL_DATA.forEach(r=>{cities[r.city]=(cities[r.city]||0)+1;});
-  const issuesFlagged = ALL_DATA.filter(r=>r.aiInvoiceCalcIssue==='Yes');
-  const analyzedInvoices = ALL_DATA.filter(r=>r.aiInvoiceCalcIssue==='Yes'||r.aiInvoiceCalcIssue==='No').length;
-  const brandVisibleCount = ALL_DATA.filter(r=>r.aiBrandVisible==='Yes').length;
-  const analyzedOutlets = ALL_DATA.filter(r=>r.aiBrandVisible==='Yes'||r.aiBrandVisible==='No').length;
-  const priorityBrands = {}; ALL_DATA.forEach(r=>{ if(r.aiPriorityBrand) priorityBrands[r.aiPriorityBrand]=(priorityBrands[r.aiPriorityBrand]||0)+1; });
-  const topPriorityBrands = Object.entries(priorityBrands).sort((a,b)=>b[1]-a[1]).slice(0,6);
   el.innerHTML = `
     <div class="kpis">
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${n}</div><div class="l">Audits submitted <span class="info-i" title="Total number of Retail Audit rows in the selected date range.">ⓘ</span></div></div>
@@ -944,22 +928,11 @@ function renderRetailDashboard(){
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${pct(yes('q9_posmAvailable'),n)}%</div><div class="l">POSM available <span class="info-i" title="% of audits where POSM (point-of-sale material) was marked available. Same formula as GCPL Distribution, using the POSM question instead.">ⓘ</span></div></div>
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${avgStar}★</div><div class="l">Avg. shelf visibility <span class="info-i" title="Average of the auditor's 1-5 star shelf-visibility rating across all audits in range. Formula: sum of all star ratings ÷ number of audits.">ⓘ</span></div></div>
     </div>
-    <div class="kpis">
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistoryIssuesOnly()"><div class="v">${issuesFlagged.length}</div><div class="l">AI-flagged invoice issues <span class="info-i" title="Count of audits where AI photo analysis flagged a bill calculation problem. Note: AI photo analysis was removed to keep the app fast — this will only be non-zero for audits submitted before that change.">ⓘ</span></div></div>
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedOutlets?pct(brandVisibleCount,analyzedOutlets):0}%</div><div class="l">Ganesh visible on shelf (AI) <span class="info-i" title="% of AI-analyzed outlet photos where Ganesh brand packaging was detected on shelf. Note: AI photo analysis was removed to keep the app fast — this only reflects audits submitted before that change.">ⓘ</span></div></div>
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedInvoices}</div><div class="l">Invoices AI-analyzed <span class="info-i" title="Count of invoice photos that went through AI analysis. Note: AI photo analysis was removed to keep the app fast — this only reflects audits submitted before that change.">ⓘ</span></div></div>
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedOutlets}</div><div class="l">Outlet photos AI-analyzed <span class="info-i" title="Count of outlet photos that went through AI analysis. Note: AI photo analysis was removed to keep the app fast — this only reflects audits submitted before that change.">ⓘ</span></div></div>
-    </div>
-    ${issuesFlagged.length ? `<div class="card ai-alert">
-      <h2>⚠️ AI-flagged invoice issues (${issuesFlagged.length})</h2>
-      <div class="ai-issue-list">${issuesFlagged.slice(0,8).map(r=>`<div class="ai-issue-row"><b>${r.outletName||'—'}</b> (${r.distributor||'—'}, ${r.date||''}) — ${r.aiInvoiceIssueDetail||'Issue detected'}</div>`).join('')}${issuesFlagged.length>8?`<div class="ai-issue-row" style="color:var(--slate);">+${issuesFlagged.length-8} more — see History tab</div>`:''}</div>
-    </div>` : ''}
     <div class="grid2">
       <div class="card chart-card"><h2>Question-wise Yes / No</h2><canvas id="chartYN"></canvas></div>
       <div class="card chart-card"><h2>Audits by City</h2><canvas id="chartCity"></canvas></div>
       <div class="card chart-card"><h2>Shelf Visibility Distribution</h2><canvas id="chartStars"></canvas></div>
       <div class="card chart-card"><h2>Audits Over Time</h2><canvas id="chartTrend"></canvas></div>
-      ${topPriorityBrands.length ? `<div class="card chart-card" style="grid-column:1/-1;"><h2>Which brand gets priority shelf placement (AI-detected)</h2><canvas id="chartPriority"></canvas></div>` : ''}
     </div>`;
   Object.values(CHARTS).forEach(c=>c.destroy());
   const qLabels = ['Distribution','Spice avail.','Happy w/ DB','POSM'];
@@ -974,9 +947,6 @@ function renderRetailDashboard(){
   const byDate = {}; ALL_DATA.forEach(r=>{byDate[r.date]=(byDate[r.date]||0)+1;});
   const sortedDates = Object.keys(byDate).sort();
   CHARTS.trend = new Chart(document.getElementById('chartTrend'), {type:'line', data:{labels:sortedDates, datasets:[{data:sortedDates.map(d=>byDate[d]), borderColor:'#12172B', backgroundColor:'rgba(245,166,35,.25)', fill:true, tension:.3}]}, options:{plugins:{legend:{display:false}}}});
-  if(topPriorityBrands.length){
-    CHARTS.priority = new Chart(document.getElementById('chartPriority'), {type:'bar', data:{labels:topPriorityBrands.map(b=>b[0]), datasets:[{data:topPriorityBrands.map(b=>b[1]), backgroundColor:'#F5A623'}]}, options:{indexAxis:'y', plugins:{legend:{display:false}}}});
-  }
 }
 
 function renderDBDashboard(){
@@ -992,11 +962,7 @@ function renderDBDashboard(){
   const sum = k => ALL_DATA.reduce((s,r)=>s+(+r[k]||0),0);
   const totalBags = bagFields.reduce((s,k)=>s+sum(k),0);
   const totalKgs = kgFields.reduce((s,k)=>s+sum(k),0);
-  const brandVisibleCount = ALL_DATA.filter(r=>r.aiStockVisible==='Yes').length;
-  const analyzedCount = ALL_DATA.filter(r=>r.aiStockVisible==='Yes'||r.aiStockVisible==='No').length;
   const distributors = {}; ALL_DATA.forEach(r=>{distributors[r.dbName]=(distributors[r.dbName]||0)+1;});
-  const priorityBrands = {}; ALL_DATA.forEach(r=>{ if(r.aiPriorityBrand) priorityBrands[r.aiPriorityBrand]=(priorityBrands[r.aiPriorityBrand]||0)+1; });
-  const topPriorityBrands = Object.entries(priorityBrands).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const bagLabels = {atta:'ATTA', maida:'MAIDA', sooji:'SOOJI', sattu:'SATTU', besan:'BESAN', dalia:'DALIA', others:'OTHERS', spicesTotal:'Spices Total'};
   const auditTypes = {}; ALL_DATA.forEach(r=>{ const t=r.auditType||'Unspecified'; auditTypes[t]=(auditTypes[t]||0)+1; });
   const showAuditTypeChart = Object.keys(auditTypes).length > 1; // only meaningful when both types are visible (Admin)
@@ -1007,15 +973,10 @@ function renderDBDashboard(){
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${totalKgs.toLocaleString('en-IN')}</div><div class="l">Total spice Kgs counted <span class="info-i" title="Sum of every individual spice quantity (Haldi, Chili, Dhania, etc., all in Kgs) across all audits in range.">ⓘ</span></div></div>
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${Object.keys(distributors).length}</div><div class="l">Distributors covered <span class="info-i" title="Count of unique DB Names appearing in the audits in range.">ⓘ</span></div></div>
     </div>
-    <div class="kpis">
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedCount?pct(brandVisibleCount,analyzedCount):0}%</div><div class="l">Ganesh visible on shelf (AI) <span class="info-i" title="% of AI-analyzed godown photos where Ganesh brand was detected. Note: AI photo analysis was removed to keep the app fast — this only reflects audits submitted before that change.">ⓘ</span></div></div>
-      <div class="kpi ai-kpi kpi-click" onclick="goToHistory('')"><div class="v">${analyzedCount}</div><div class="l">Godown photos AI-analyzed <span class="info-i" title="Count of godown photos that went through AI analysis. Note: AI photo analysis was removed to keep the app fast — this only reflects audits submitted before that change.">ⓘ</span></div></div>
-    </div>
     <div class="grid2">
       <div class="card chart-card"><h2>Bag Quantities by Product</h2><canvas id="chartBags"></canvas></div>
       <div class="card chart-card"><h2>Audits by Distributor (click a slice)</h2><canvas id="chartDist"></canvas></div>
       <div class="card chart-card"><h2>Audits Over Time</h2><canvas id="chartDBTrend"></canvas></div>
-      ${topPriorityBrands.length ? `<div class="card chart-card"><h2>Priority shelf brand (AI-detected)</h2><canvas id="chartPriority"></canvas></div>` : ''}
       ${showAuditTypeChart ? `<div class="card chart-card"><h2>Audits: GCPL Sales Officer vs 3PA</h2><canvas id="chartAuditType"></canvas></div>` : ''}
     </div>`;
   Object.values(CHARTS).forEach(c=>c.destroy());
@@ -1024,9 +985,6 @@ function renderDBDashboard(){
   const byDate = {}; ALL_DATA.forEach(r=>{byDate[r.date]=(byDate[r.date]||0)+1;});
   const sortedDates = Object.keys(byDate).sort();
   CHARTS.dbTrend = new Chart(document.getElementById('chartDBTrend'), {type:'line', data:{labels:sortedDates, datasets:[{data:sortedDates.map(d=>byDate[d]), borderColor:'#12172B', backgroundColor:'rgba(245,166,35,.25)', fill:true, tension:.3}]}, options:{plugins:{legend:{display:false}}}});
-  if(topPriorityBrands.length){
-    CHARTS.priority = new Chart(document.getElementById('chartPriority'), {type:'bar', data:{labels:topPriorityBrands.map(b=>b[0]), datasets:[{data:topPriorityBrands.map(b=>b[1]), backgroundColor:'#F5A623'}]}, options:{indexAxis:'y', plugins:{legend:{display:false}}}});
-  }
   if(showAuditTypeChart){
     CHARTS.auditType = new Chart(document.getElementById('chartAuditType'), {type:'doughnut', data:{labels:Object.keys(auditTypes), datasets:[{data:Object.values(auditTypes), backgroundColor:['#1B7A43','#F5A623','#6B7280']}]}, options:{plugins:{legend:{position:'bottom'}}}});
   }
@@ -1046,22 +1004,18 @@ function renderRetailHistory(){
   const histTo = document.getElementById('histTo').value;
   const rows = ALL_DATA.filter(r=>{
     const hit = !q || [r.outletName,r.city,r.distributor,r.auditor].join(' ').toLowerCase().includes(q);
-    const issuesOk = HIST_FORCED_FILTER!=='issues' || r.aiInvoiceCalcIssue==='Yes';
     const dateOk = (!histFrom || (r.date||'') >= histFrom) && (!histTo || (r.date||'') <= histTo);
-    return hit && (!cf || r.city===cf) && issuesOk && dateOk;
+    return hit && (!cf || r.city===cf) && dateOk;
   });
   const thead = document.querySelector('#histTable thead');
   const tbody = document.querySelector('#histTable tbody');
-  thead.innerHTML = `<tr><th>Date</th><th>Outlet</th><th>City</th><th>Distributor</th><th>Auditor</th><th>Distribution</th><th>POSM</th><th>Invoice GST</th><th>AI Calc Issue</th><th>AI Brand Visible</th><th>AI Priority Brand</th><th>Visibility</th><th>Lat, Long</th><th>Map</th></tr>`;
-  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="14"><div class="empty"><b>No matching audits</b>Try a different search or filter.</div></td></tr>`; return; }
-  tbody.innerHTML = rows.map(r=>`<tr title="${(r.aiInvoiceSummary||'')+' '+(r.aiOutletSummary||'')}">
+  thead.innerHTML = `<tr><th>Date</th><th>Outlet</th><th>City</th><th>Distributor</th><th>Auditor</th><th>Distribution</th><th>POSM</th><th>Invoice GST</th><th>Visibility</th><th>Lat, Long</th><th>Map</th></tr>`;
+  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="11"><div class="empty"><b>No matching audits</b>Try a different search or filter.</div></td></tr>`; return; }
+  tbody.innerHTML = rows.map(r=>`<tr>
     <td class="mono">${r.date||''}</td><td>${r.outletName||''}</td><td>${r.city||''}</td><td>${r.distributor||''}</td><td>${r.auditor||''}</td>
     <td><span class="tag ${r.q1_distribution==='Yes'?'tag-yes':'tag-no'}">${r.q1_distribution||'—'}</span></td>
     <td><span class="tag ${r.q9_posmAvailable==='Yes'?'tag-yes':'tag-no'}">${r.q9_posmAvailable||'—'}</span></td>
     <td><span class="tag ${r.invoiceGSTDetected==='GST'?'tag-yes':'tag-no'}">${r.invoiceGSTDetected||'—'}</span></td>
-    <td><span class="tag ${r.aiInvoiceCalcIssue==='Yes'?'tag-no':(r.aiInvoiceCalcIssue==='No'?'tag-yes':'')}">${r.aiInvoiceCalcIssue||'—'}</span></td>
-    <td><span class="tag ${r.aiBrandVisible==='Yes'?'tag-yes':(r.aiBrandVisible==='No'?'tag-no':'')}">${r.aiBrandVisible||'—'}</span></td>
-    <td>${r.aiPriorityBrand||'—'}</td>
     <td>${r.q8_visibilityRating?r.q8_visibilityRating+'★':'—'}</td>
     <td class="mono">${r.lat&&r.lng?(Number(r.lat).toFixed(5)+', '+Number(r.lng).toFixed(5)):'—'}</td>
     <td>${r.mapsLink?`<a href="${r.mapsLink}" target="_blank">Map ↗</a>`:'—'}</td>
@@ -1083,20 +1037,18 @@ function renderDBHistory(){
   });
   const thead = document.querySelector('#histTable thead');
   const tbody = document.querySelector('#histTable tbody');
-  thead.innerHTML = `<tr><th>Date</th><th>Audit Type</th><th>Source</th><th>DB Code</th><th>DB Name</th><th>City</th><th>SO Name</th><th>ASM Name</th><th>Total Bags</th><th>Total Kgs</th><th>AI Stock Visible</th><th>AI Priority Brand</th><th>Lat, Long</th><th>Map</th></tr>`;
-  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="14"><div class="empty"><b>No matching stock audits</b>Try a different search or filter.</div></td></tr>`; return; }
+  thead.innerHTML = `<tr><th>Date</th><th>Audit Type</th><th>Source</th><th>DB Code</th><th>DB Name</th><th>City</th><th>SO Name</th><th>ASM Name</th><th>Total Bags</th><th>Total Kgs</th><th>Lat, Long</th><th>Map</th></tr>`;
+  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="12"><div class="empty"><b>No matching stock audits</b>Try a different search or filter.</div></td></tr>`; return; }
   const bagFields = ['atta','maida','sooji','sattu','besan','dalia','others','spicesTotal'];
   const kgFields = ['haldi','chili','dhania','jeeraPowder','jeeraWhole','panchForon','methi','ajwain','saunf','sarson','shahiGaramMasala','chickenMasala','meatMasala','kashmiriMirch','kalajeera'];
   const sumRow = (r,fields) => fields.reduce((s,k)=>s+(+r[k]||0),0);
-  tbody.innerHTML = rows.map(r=>`<tr title="${r.aiStockSummary||''}">
+  tbody.innerHTML = rows.map(r=>`<tr>
     <td class="mono">${r.date||''}</td>
     <td><span class="tag ${r.auditType==='3PA'?'tag-no':'tag-yes'}">${r.auditType||'—'}</span></td>
     <td style="font-size:11px; color:var(--slate);">${r.source||'FieldAudit App'}</td>
     <td class="mono">${r.dbCode||''}</td><td>${r.dbName||''}</td><td>${r.dbCity||''}</td><td>${r.soName||''}</td><td>${r.asmName||''}</td>
     <td>${sumRow(r,bagFields)}</td>
     <td>${sumRow(r,kgFields)}</td>
-    <td><span class="tag ${r.aiStockVisible==='Yes'?'tag-yes':(r.aiStockVisible==='No'?'tag-no':'')}">${r.aiStockVisible||'—'}</span></td>
-    <td>${r.aiPriorityBrand||'—'}</td>
     <td class="mono">${r.lat&&r.lng?(Number(r.lat).toFixed(5)+', '+Number(r.lng).toFixed(5)):'—'}</td>
     <td>${r.mapsLink?`<a href="${r.mapsLink}" target="_blank">Map ↗</a>`:'—'}</td>
   </tr>`).join('');
@@ -1196,12 +1148,12 @@ function exportPlainFallback(){
       'ATTA (Bags)','MAIDA (Bags)','SOOJI (Bags)','SATTU (Bags)','BESAN (Bags)','DALIA (Bags)','OTHERS (Bags)','Spices Total (Bags)',
       'Haldi (Kgs)','Chili (Kgs)','Dhania (Kgs)','Jeera Powder (Kgs)','Jeera Whole (Kgs)','Panch Foron (Kgs)','Methi (Kgs)',
       'Ajwain (Kgs)','Saunf (Kgs)','Sarson (Kgs)','Shahi Garam Masala (Kgs)','Chicken Masala (Kgs)','Meat Masala (Kgs)',
-      'Kashmiri Mirch (Kgs)','Kalajeera (Kgs)','AI Stock Visible','AI Placement','AI Priority Brand','Latitude','Longitude','Maps Link'];
+      'Kashmiri Mirch (Kgs)','Kalajeera (Kgs)','Latitude','Longitude','Maps Link'];
     const keyMap = ['date','dbCode','dbName','dbCity','soName','asmName','address',
       'atta','maida','sooji','sattu','besan','dalia','others','spicesTotal',
       'haldi','chili','dhania','jeeraPowder','jeeraWhole','panchForon','methi',
       'ajwain','saunf','sarson','shahiGaramMasala','chickenMasala','meatMasala',
-      'kashmiriMirch','kalajeera','aiStockVisible','aiStockPlacement','aiPriorityBrand','lat','lng','mapsLink'];
+      'kashmiriMirch','kalajeera','lat','lng','mapsLink'];
     const aoa = [headers, ...ALL_DATA.map(r=>keyMap.map(k=>r[k]??''))];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
@@ -1210,8 +1162,8 @@ function exportPlainFallback(){
     XLSX.writeFile(wb, `DB_Stock_Audit_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
     return;
   }
-  const headers = ['Date','Auditor','District','City','Distributor','Route','Outlet Name','Outlet Type','Address','Contact','Distribution (Y/N)','DB Count','Spice Avail (Y/N)','Happy w/ DB (Y/N)','Price Source','Bills Seen','Bill Type','Invoice GST Scan','AI Invoice Type','AI Calc Issue','AI Issue Detail','Visibility (1-5)','POSM (Y/N)','NLB/GSB Brand','AI Brand Visible','AI Placement','AI Priority Brand','Latitude','Longitude','Maps Link'];
-  const keyMap = ['date','auditor','district','city','distributor','route','outletName','outletType','address','contact','q1_distribution','q2_dbCount','q3_spiceAvailable','q4_happyWithDB','q5_priceSource','q6_billsSeen','q7_billType','invoiceGSTDetected','aiInvoiceBillType','aiInvoiceCalcIssue','aiInvoiceIssueDetail','q8_visibilityRating','q9_posmAvailable','q10_nlbGsbBrand','aiBrandVisible','aiBrandPlacement','aiPriorityBrand','lat','lng','mapsLink'];
+  const headers = ['Date','Auditor','District','City','Distributor','Route','Outlet Name','Outlet Type','Address','Owner Name','Retailer Phone','Distribution (Y/N)','DB Count','Spice Avail (Y/N)','Happy w/ DB (Y/N)','Price Source','Bill Type','Invoice GST Scan','Visibility (1-5)','POSM (Y/N)','NLB/GSB Brand','Latitude','Longitude','Maps Link'];
+  const keyMap = ['date','auditor','district','city','distributor','route','outletName','outletType','address','ownerName','retailerPhone','q1_distribution','q2_dbCount','q3_spiceAvailable','q4_happyWithDB','q5_priceSource','q7_billType','invoiceGSTDetected','q8_visibilityRating','q9_posmAvailable','q10_nlbGsbBrand','lat','lng','mapsLink'];
   const aoa = [headers, ...ALL_DATA.map(r=>keyMap.map(k=>r[k]??''))];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
