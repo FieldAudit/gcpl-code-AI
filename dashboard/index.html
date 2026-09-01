@@ -293,7 +293,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.12.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.14.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -535,7 +535,7 @@ function enterApp(){
         const el = document.getElementById('backendVerCheck');
         if(!el) return;
         const backendV = j.version || '?';
-        const frontendV = 'v6.12.0';
+        const frontendV = 'v6.14.0';
         el.textContent = `· backend ${backendV}`;
         el.style.color = (backendV === frontendV) ? '#34C759' : '#FF3B30';
         el.title = (backendV === frontendV) ? 'Backend matches this page.' : `Backend is ${backendV} but this page is ${frontendV} — redeploy Code.gs (Deploy → Manage deployments → New version).`;
@@ -889,6 +889,13 @@ async function loadData(){
     const action = MODULE==='db' ? 'getDBData' : 'getData';
     const res = await callApi({action, token:SESSION.token});
     ALL_DATA = res.rows || [];
+    if(action==='getDBData'){
+      // TEMPORARY diagnostic — visible in the browser console (F12) — shows
+      // exactly what role the server determined for this session's token,
+      // and how many internal vs external rows it decided to include,
+      // removing all guesswork about where a mismatch might be.
+      console.log('[FieldAudit debug] server-side role:', res._debugRole, '| external rows included:', res._debugExternalCount, '| internal DBStockAudit rows:', res._debugInternalCount, '| client-side SESSION.role:', SESSION.role);
+    }
   }catch(e){
     ALL_DATA = [];
   }
