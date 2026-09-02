@@ -295,7 +295,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.21.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.22.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -528,15 +528,20 @@ function enterApp(){
   document.getElementById('whoRole').textContent = SESSION.role || '';
   document.getElementById('masterTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
   document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
-  // The "3PA Audit / GCPL Stock Audit" source toggle only makes sense for
-  // roles that actually see both — Marketing never gets the external GCPL
-  // sheet at all, so for them there's nothing to switch between and the
-  // toggle just stays hidden (their view is implicitly "3PA Audit" only).
+  // Only Admin sees BOTH sources and gets the toggle to switch between them.
+  // Sales is scoped to ONLY "GCPL Stock Audit" (the external sheet, which is
+  // their own submissions from the separate GCPL app) — no "3PA Audit" tab
+  // at all for them. Marketing is scoped to ONLY "3PA Audit" (the
+  // FieldAudit app's own data) — no "GCPL Stock Audit" tab for them.
+  // Neither sees a toggle since each only ever has one source to view.
   const dbBtn = document.getElementById('dbModuleBtn');
   dbBtn.innerHTML = '📦 DB Stock Audit';
-  const canSeeBothSources = (SESSION.role === 'Sales' || SESSION.role === 'Admin');
-  document.getElementById('sourceToggle').style.display = canSeeBothSources ? 'flex' : 'none';
-  SOURCE_FILTER = 'FieldAudit App';
+  document.getElementById('sourceToggle').style.display = SESSION.role === 'Admin' ? 'flex' : 'none';
+  const isSalesOnly = SESSION.role === 'Sales';
+  if(!isSalesOnly){
+    SOURCE_FILTER = 'FieldAudit App';
+    document.getElementById('moduleToggle').style.display = 'flex';
+  }
   // Live check against the ACTUAL running backend — this app's frontend
   // (this HTML file) and backend (Code.gs) deploy through two completely
   // separate processes (GitHub Pages vs. Apps Script), so it's easy to
@@ -550,13 +555,20 @@ function enterApp(){
         const el = document.getElementById('backendVerCheck');
         if(!el) return;
         const backendV = j.version || '?';
-        const frontendV = 'v6.21.0';
+        const frontendV = 'v6.22.0';
         el.textContent = `· backend ${backendV}`;
         el.style.color = (backendV === frontendV) ? '#34C759' : '#FF3B30';
         el.title = (backendV === frontendV) ? 'Backend matches this page.' : `Backend is ${backendV} but this page is ${frontendV} — redeploy Code.gs (Deploy → Manage deployments → New version).`;
       }).catch(()=>{});
   }
-  loadData().then(()=>{ renderDashboard(); });
+  if(isSalesOnly){
+    // Sales is scoped to ONLY "GCPL Stock Audit" — this sets MODULE='db',
+    // SOURCE_FILTER to external, hides the Retail/DB toggle, and does its
+    // own loadData()+render, so the generic load below is skipped for them.
+    switchSourceTab('gcpl');
+  } else {
+    loadData().then(()=>{ renderDashboard(); });
+  }
 }
 
 /* ---- Theme switcher — brand colour only, saved per-browser (localStorage),
