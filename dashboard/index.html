@@ -143,6 +143,14 @@ main{max-width:1080px; margin:0 auto; padding:22px 18px 70px;}
 @media(max-width:640px){.grid2{grid-template-columns:1fr;}}
 
 .scope-banner{background:var(--paper-2); border:1px solid var(--border-2); border-left:4px solid var(--amber); border-radius:6px; padding:10px 14px; font-size:13px; margin-bottom:16px;}
+.insights-card{margin-bottom:16px; background:linear-gradient(135deg, var(--ink) 0%, #1B2140 100%); color:var(--paper);}
+.insights-card h2{color:var(--paper);}
+.insights-list{display:flex; flex-direction:column; gap:10px; margin-top:10px;}
+.insight-row{display:flex; align-items:flex-start; gap:10px; font-size:13.5px; line-height:1.5; padding:8px 10px; background:rgba(255,255,255,.06); border-radius:8px;}
+.insight-row .insight-icon{font-size:16px; flex-shrink:0;}
+.insight-row .insight-text{flex:1;}
+.insight-row .insight-text b{color:var(--amber);}
+.insight-row .info-i{opacity:.6; flex-shrink:0;}
 .kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px;}
 @media(max-width:760px){.kpis{grid-template-columns:repeat(2,1fr);}}
 .kpi{background:var(--ink); color:var(--paper); border-radius:5px; padding:16px;}
@@ -295,7 +303,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.22.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.24.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -555,7 +563,7 @@ function enterApp(){
         const el = document.getElementById('backendVerCheck');
         if(!el) return;
         const backendV = j.version || '?';
-        const frontendV = 'v6.22.0';
+        const frontendV = 'v6.24.0';
         el.textContent = `· backend ${backendV}`;
         el.style.color = (backendV === frontendV) ? '#34C759' : '#FF3B30';
         el.title = (backendV === frontendV) ? 'Backend matches this page.' : `Backend is ${backendV} but this page is ${frontendV} — redeploy Code.gs (Deploy → Manage deployments → New version).`;
@@ -992,6 +1000,7 @@ function pct(n,d){ return d ? Math.round(n/d*100) : 0; }
  *  by that person (e.g. 'auditor' or 'soName'); extraCols is
  *  [{label, calc(rowsForThisPerson)}] for whatever metrics that dashboard
  *  wants shown per person. Sorted by audit count, most active first. */
+let LAST_PERF_TABLE = null; // {nameLabel, headers, rows} — set by userPerformanceTableHtml, read by exportUserPerformanceTable
 function userPerformanceTableHtml(allRows, keyField, nameLabel, extraCols){
   const byPerson = {};
   allRows.forEach(r=>{
@@ -1000,6 +1009,14 @@ function userPerformanceTableHtml(allRows, keyField, nameLabel, extraCols){
   });
   const people = Object.keys(byPerson).map(name=>({name, rows:byPerson[name]}))
     .sort((a,b)=> b.rows.length - a.rows.length);
+  const headers = [nameLabel, 'Audits', ...extraCols.map(c=>c.label), 'Last Active'];
+  LAST_PERF_TABLE = {
+    nameLabel, headers,
+    rows: people.map(p=>{
+      const lastDate = p.rows.map(r=>r.date).filter(Boolean).sort().slice(-1)[0] || '—';
+      return [p.name, p.rows.length, ...extraCols.map(c=>c.calc(p.rows)), lastDate];
+    })
+  };
   if(!people.length) return `<div class="empty" style="padding:20px 0;">No data in this range.</div>`;
   return `<div class="table-wrap"><table class="data">
     <thead><tr><th>${nameLabel}</th><th>Audits</th>${extraCols.map(c=>`<th>${c.label}</th>`).join('')}<th>Last Active</th></tr></thead>
@@ -1008,6 +1025,19 @@ function userPerformanceTableHtml(allRows, keyField, nameLabel, extraCols){
       return `<tr><td>${p.name}</td><td>${p.rows.length}</td>${extraCols.map(c=>`<td>${c.calc(p.rows)}</td>`).join('')}<td class="mono">${lastDate}</td></tr>`;
     }).join('')}</tbody>
   </table></div>`;
+}
+/* Exports whatever User-wise Performance table is currently on screen —
+   works identically for every role, since it's just reading the SAME data
+   already rendered in front of the person, not a separate backend call. */
+function exportUserPerformanceTable(){
+  if(!LAST_PERF_TABLE || !LAST_PERF_TABLE.rows.length){ toast('No performance data to export yet', true); return; }
+  const { headers, rows } = LAST_PERF_TABLE;
+  const aoa = [headers, ...rows];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = headers.map(h=>({wch: Math.max(12, String(h).length+2)}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'User Performance');
+  XLSX.writeFile(wb, `User_Performance_${MODULE}_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 /** Every audit captures GPS at submit time, so "location unavailable" should
  *  never actually happen — the real fix is to stop trusting the STORED
@@ -1076,6 +1106,7 @@ function renderRetailDashboard(){
   const yes = k => ALL_DATA.filter(r=>r[k]==='Yes').length;
   const avgStar = (ALL_DATA.reduce((s,r)=>s+(+r.q8_visibilityRating||0),0)/n).toFixed(1);
   const cities = {}; ALL_DATA.forEach(r=>{cities[r.city]=(cities[r.city]||0)+1;});
+  const retailInsights = generateRetailInsights(ALL_DATA, cities, yes, n);
   el.innerHTML = `
     <div class="kpis">
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${n}</div><div class="l">Audits submitted <span class="info-i" title="Total number of Retail Audit rows in the selected date range.">ⓘ</span></div></div>
@@ -1083,14 +1114,18 @@ function renderRetailDashboard(){
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${pct(yes('q9_posmAvailable'),n)}%</div><div class="l">POSM available <span class="info-i" title="% of audits where POSM (point-of-sale material) was marked available. Same formula as GCPL Distribution, using the POSM question instead.">ⓘ</span></div></div>
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${avgStar}★</div><div class="l">Avg. shelf visibility <span class="info-i" title="Average of the auditor's 1-5 star shelf-visibility rating across all audits in range. Formula: sum of all star ratings ÷ number of audits.">ⓘ</span></div></div>
     </div>
+    <div class="card insights-card">
+      <h2>🔎 Key Insights <span class="info-i" title="Auto-generated from the audits currently in view — updates as you change the date range or filters. Not AI-written; each line is a plain calculation over the visible data, explained on hover.">ⓘ</span></h2>
+      <div class="insights-list">${retailInsights.map(i=>`<div class="insight-row"><span class="insight-icon">${i.icon}</span><span class="insight-text">${i.text}</span><span class="info-i" title="${i.explain.replace(/"/g,'&quot;')}">ⓘ</span></div>`).join('')}</div>
+    </div>
     <div class="grid2">
-      <div class="card chart-card"><h2>Question-wise Yes / No</h2><canvas id="chartYN"></canvas></div>
-      <div class="card chart-card"><h2>Audits by City</h2><canvas id="chartCity"></canvas></div>
-      <div class="card chart-card"><h2>Shelf Visibility Distribution</h2><canvas id="chartStars"></canvas></div>
-      <div class="card chart-card"><h2>Audits Over Time</h2><canvas id="chartTrend"></canvas></div>
+      <div class="card chart-card"><h2>Question-wise Yes / No <span class="info-i" title="Count of Yes vs No answers for each key question, across every audit in range.">ⓘ</span></h2><canvas id="chartYN"></canvas></div>
+      <div class="card chart-card"><h2>Audits by City <span class="info-i" title="Number of audits submitted in each city in range. Click a slice to filter History to that city.">ⓘ</span></h2><canvas id="chartCity"></canvas></div>
+      <div class="card chart-card"><h2>Shelf Visibility Distribution <span class="info-i" title="How many audits gave each 1-5 star shelf-visibility rating.">ⓘ</span></h2><canvas id="chartStars"></canvas></div>
+      <div class="card chart-card"><h2>Audits Over Time <span class="info-i" title="Number of audits submitted each day in range.">ⓘ</span></h2><canvas id="chartTrend"></canvas></div>
     </div>
     <div class="card" style="margin-top:16px;">
-      <h2>User-wise Performance <span class="info-i" title="One row per Auditor. Audits = total rows in range. Avg Visibility = that auditor's average shelf-visibility star rating. Distribution % = share of their own audits answered Yes to GCPL Distribution.">ⓘ</span></h2>
+      <h2 style="display:flex; align-items:center; justify-content:space-between;"><span>User-wise Performance <span class="info-i" title="One row per Auditor. Audits = total rows in range. Avg Visibility = that auditor's average shelf-visibility star rating. Distribution % = share of their own audits answered Yes to GCPL Distribution.">ⓘ</span></span><button class="btn btn-dark" style="font-size:12px; padding:6px 12px;" onclick="exportUserPerformanceTable()">⬇ Export</button></h2>
       ${userPerformanceTableHtml(ALL_DATA, 'auditor', 'Auditor', [
         {label:'Avg. Visibility', calc:rows=>(rows.reduce((s,r)=>s+(+r.q8_visibilityRating||0),0)/rows.length).toFixed(1)+'★'},
         {label:'Distribution %', calc:rows=>pct(rows.filter(r=>r.q1_distribution==='Yes').length, rows.length)+'%'},
@@ -1129,6 +1164,9 @@ function renderDBDashboard(){
   const bagLabels = {atta:'ATTA', maida:'MAIDA', sooji:'SOOJI', sattu:'SATTU', besan:'BESAN', dalia:'DALIA', others:'OTHERS', spicesTotal:'Spices Total'};
   const auditTypes = {}; ALL_DATA.forEach(r=>{ const t=r.auditType||'Unspecified'; auditTypes[t]=(auditTypes[t]||0)+1; });
   const showAuditTypeChart = Object.keys(auditTypes).length > 1; // only meaningful when both types are visible (Admin)
+  const topDistributors = Object.entries(distributors).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const byDatePre = {}; ALL_DATA.forEach(r=>{byDatePre[r.date]=(byDatePre[r.date]||0)+1;});
+  const insights = generateDBInsights(ALL_DATA, distributors, byDatePre, bagFields, kgFields);
   el.innerHTML = `
     <div class="kpis">
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${n}</div><div class="l">Stock audits this period <span class="info-i" title="Total DB Stock Audit rows in the selected date range and role scope.">ⓘ</span></div></div>
@@ -1136,14 +1174,18 @@ function renderDBDashboard(){
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${totalKgs.toLocaleString('en-IN')}</div><div class="l">Total spice Kgs counted <span class="info-i" title="Sum of every individual spice quantity (Haldi, Chili, Dhania, etc., all in Kgs) across all audits in range.">ⓘ</span></div></div>
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${Object.keys(distributors).length}</div><div class="l">Distributors covered <span class="info-i" title="Count of unique DB Names appearing in the audits in range.">ⓘ</span></div></div>
     </div>
+    <div class="card insights-card">
+      <h2>🔎 Key Insights <span class="info-i" title="Auto-generated from the audits currently in view — updates as you change the date range or filters. Not AI-written; each line is a plain calculation over the visible data, explained on hover.">ⓘ</span></h2>
+      <div class="insights-list">${insights.map(i=>`<div class="insight-row"><span class="insight-icon">${i.icon}</span><span class="insight-text">${i.text}</span><span class="info-i" title="${i.explain.replace(/"/g,'&quot;')}">ⓘ</span></div>`).join('')}</div>
+    </div>
     <div class="grid2">
-      <div class="card chart-card"><h2>Bag Quantities by Product</h2><canvas id="chartBags"></canvas></div>
-      <div class="card chart-card"><h2>Audits by Distributor (click a slice)</h2><canvas id="chartDist"></canvas></div>
-      <div class="card chart-card"><h2>Audits Over Time</h2><canvas id="chartDBTrend"></canvas></div>
-      ${showAuditTypeChart ? `<div class="card chart-card"><h2>Audits: GCPL Sales Officer vs 3PA</h2><canvas id="chartAuditType"></canvas></div>` : ''}
+      <div class="card chart-card"><h2>Bag Quantities by Product <span class="info-i" title="Total quantity (bags) counted for each product, summed across every audit in range.">ⓘ</span></h2><canvas id="chartBags"></canvas></div>
+      <div class="card chart-card"><h2>Top 8 Distributors by Audit Count <span class="info-i" title="The 8 distributors with the most stock-audit visits in range. Click a bar to see just that distributor's rows in History.">ⓘ</span></h2><canvas id="chartDist"></canvas></div>
+      <div class="card chart-card"><h2>Audits Over Time <span class="info-i" title="Number of stock audits submitted each day in range — shows activity trend and any gaps.">ⓘ</span></h2><canvas id="chartDBTrend"></canvas></div>
+      ${showAuditTypeChart ? `<div class="card chart-card"><h2>Audits: GCPL Sales Officer vs 3PA <span class="info-i" title="Split of audits by who conducted them — only shown when your role can see both types.">ⓘ</span></h2><canvas id="chartAuditType"></canvas></div>` : ''}
     </div>
     <div class="card" style="margin-top:16px;">
-      <h2>User-wise Performance <span class="info-i" title="One row per SO Name. Audits = total stock-audit rows in range. Total Bags/Kgs = summed across just that SO's own audits.">ⓘ</span></h2>
+      <h2 style="display:flex; align-items:center; justify-content:space-between;"><span>User-wise Performance <span class="info-i" title="One row per SO Name. Audits = total stock-audit rows in range. Total Bags/Kgs = summed across just that SO's own audits.">ⓘ</span></span><button class="btn btn-dark" style="font-size:12px; padding:6px 12px;" onclick="exportUserPerformanceTable()">⬇ Export</button></h2>
       ${userPerformanceTableHtml(ALL_DATA, 'soName', 'SO Name', [
         {label:'Total Bags', calc:rows=>Math.round(rows.reduce((s,r)=>s+bagFields.reduce((s2,k)=>s2+(+r[k]||0),0),0)).toLocaleString('en-IN')},
         {label:'Total Kgs', calc:rows=>Math.round(rows.reduce((s,r)=>s+kgFields.reduce((s2,k)=>s2+(+r[k]||0),0),0)).toLocaleString('en-IN')},
@@ -1152,13 +1194,64 @@ function renderDBDashboard(){
     </div>`;
   Object.values(CHARTS).forEach(c=>c.destroy());
   CHARTS.bags = new Chart(document.getElementById('chartBags'), {type:'bar', data:{labels:bagFields.map(k=>bagLabels[k]), datasets:[{data:bagFields.map(sum), backgroundColor:'#F5A623'}]}, options:{plugins:{legend:{display:false}}}});
-  CHARTS.dist = new Chart(document.getElementById('chartDist'), {type:'doughnut', data:{labels:Object.keys(distributors), datasets:[{data:Object.values(distributors), backgroundColor:['#12172B','#F5A623','#1B7A43','#C0392B','#6B7280','#2A3163']}]}, options:{plugins:{legend:{position:'bottom'}}, onClick:(evt,elements)=>{ if(elements.length){ goToHistory(Object.keys(distributors)[elements[0].index]); } }, onHover:(evt,elements)=>{ evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; }}});
-  const byDate = {}; ALL_DATA.forEach(r=>{byDate[r.date]=(byDate[r.date]||0)+1;});
+  CHARTS.dist = new Chart(document.getElementById('chartDist'), {type:'bar', data:{labels:topDistributors.map(d=>d[0]), datasets:[{data:topDistributors.map(d=>d[1]), backgroundColor:'#12172B'}]}, options:{indexAxis:'y', plugins:{legend:{display:false}}, onClick:(evt,elements)=>{ if(elements.length){ goToHistory(topDistributors[elements[0].index][0]); } }, onHover:(evt,elements)=>{ evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; }}});
+  const byDate = byDatePre;
   const sortedDates = Object.keys(byDate).sort();
   CHARTS.dbTrend = new Chart(document.getElementById('chartDBTrend'), {type:'line', data:{labels:sortedDates, datasets:[{data:sortedDates.map(d=>byDate[d]), borderColor:'#12172B', backgroundColor:'rgba(245,166,35,.25)', fill:true, tension:.3}]}, options:{plugins:{legend:{display:false}}}});
   if(showAuditTypeChart){
     CHARTS.auditType = new Chart(document.getElementById('chartAuditType'), {type:'doughnut', data:{labels:Object.keys(auditTypes), datasets:[{data:Object.values(auditTypes), backgroundColor:['#1B7A43','#F5A623','#6B7280']}]}, options:{plugins:{legend:{position:'bottom'}}}});
   }
+}
+
+/** Plain, non-AI computed highlights over the audits currently in view —
+ *  top distributor, busiest day, week-over-week trend, and the SO with the
+ *  most audits. Each has an explicit "explain" string so the info-i icon
+ *  can say exactly what it computed and why, not just show a number. */
+/** Same idea as generateDBInsights() below, but for Retail Audit. */
+function generateRetailInsights(rows, cities, yes, n){
+  const insights = [];
+  if(!n) return insights;
+  const distPct = pct(yes('q1_distribution'), n);
+  insights.push({icon: distPct>=70?'✅':'⚠️', text:`GCPL distribution confirmed in <b>${distPct}%</b> of audits — ${distPct>=70?'a healthy majority':'worth a closer look at the rest'}.`, explain:'Share of audits where the "GCPL Distribution" question was answered Yes.'});
+  const topCity = Object.entries(cities).sort((a,b)=>b[1]-a[1])[0];
+  if(topCity) insights.push({icon:'📍', text:`<b>${topCity[0]}</b> had the most audits (${topCity[1]}) in range.`, explain:'Groups audits by City and shows the one with the most rows.'});
+  const byDate = {}; rows.forEach(r=>{ if(r.date) byDate[r.date]=(byDate[r.date]||0)+1; });
+  const dateEntries = Object.entries(byDate);
+  if(dateEntries.length){
+    const busiest = dateEntries.sort((a,b)=>b[1]-a[1])[0];
+    insights.push({icon:'📅', text:`Busiest day was <b>${busiest[0]}</b> with ${busiest[1]} audit${busiest[1]===1?'':'s'}.`, explain:'Groups audits by date and finds the date with the most rows.'});
+  }
+  const lowStars = rows.filter(r=>(+r.q8_visibilityRating||0) <= 2).length;
+  if(lowStars) insights.push({icon:'⭐', text:`<b>${lowStars}</b> audit${lowStars===1?'':'s'} rated shelf visibility 2★ or below — may need a follow-up visit.`, explain:'Counts audits where the shelf-visibility question was answered 1 or 2 stars.'});
+  const byAuditor = {}; rows.forEach(r=>{ if(r.auditor) byAuditor[r.auditor]=(byAuditor[r.auditor]||0)+1; });
+  const topAuditor = Object.entries(byAuditor).sort((a,b)=>b[1]-a[1])[0];
+  if(topAuditor) insights.push({icon:'👤', text:`<b>${topAuditor[0]}</b> submitted the most audits (${topAuditor[1]}) in range.`, explain:'Counts audits per Auditor and shows the highest.'});
+  return insights;
+}
+function generateDBInsights(rows, distributors, byDate, bagFields, kgFields){
+  const insights = [];
+  const topDist = Object.entries(distributors).sort((a,b)=>b[1]-a[1])[0];
+  if(topDist) insights.push({icon:'🏆', text:`<b>${topDist[0]}</b> is the most-audited distributor (${topDist[1]} visit${topDist[1]===1?'':'s'} in range).`, explain:'Counts how many stock-audit rows each DB Name has, and shows the highest.'});
+  const dateEntries = Object.entries(byDate);
+  if(dateEntries.length){
+    const busiest = dateEntries.sort((a,b)=>b[1]-a[1])[0];
+    insights.push({icon:'📅', text:`Busiest day was <b>${busiest[0]}</b> with ${busiest[1]} audit${busiest[1]===1?'':'s'} submitted.`, explain:'Groups all audits by date and finds the date with the most rows.'});
+  }
+  const sortedDates = dateEntries.map(e=>e[0]).sort();
+  if(sortedDates.length >= 8){
+    const last7 = sortedDates.slice(-7).reduce((s,d)=>s+byDate[d],0);
+    const prev7 = sortedDates.slice(-14,-7).reduce((s,d)=>s+(byDate[d]||0),0);
+    if(prev7 > 0){
+      const change = Math.round(((last7-prev7)/prev7)*100);
+      insights.push({icon: change>=0?'📈':'📉', text:`Audits are <b>${change>=0?'up':'down'} ${Math.abs(change)}%</b> vs. the previous 7 days (${last7} vs ${prev7}).`, explain:'Compares the count of audits in the last 7 days of range against the 7 days before that.'});
+    }
+  }
+  const bySO = {}; rows.forEach(r=>{ if(r.soName) bySO[r.soName]=(bySO[r.soName]||0)+1; });
+  const topSO = Object.entries(bySO).sort((a,b)=>b[1]-a[1])[0];
+  if(topSO) insights.push({icon:'👤', text:`<b>${topSO[0]}</b> submitted the most audits (${topSO[1]}) among all SOs in range.`, explain:'Counts audits per SO Name and shows the highest.'});
+  const avgBagsPerAudit = rows.length ? (rows.reduce((s,r)=>s+bagFields.reduce((s2,k)=>s2+(+r[k]||0),0),0) / rows.length).toFixed(1) : 0;
+  insights.push({icon:'📦', text:`Average of <b>${avgBagsPerAudit} bags</b> counted per audit across all distributors in range.`, explain:'Total bags (all products) ÷ number of audits.'});
+  return insights;
 }
 
 function renderHistory(){
