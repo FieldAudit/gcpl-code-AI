@@ -233,6 +233,10 @@ table.data tr:hover td{background:var(--paper-2);}
 .photo-card .view-map-link{font-size:11px; color:var(--amber); text-decoration:none; font-weight:700;}
 .photo-card .view-map-link:hover{text-decoration:underline;}
 
+.photos-loading{padding:50px 20px !important;}
+.mini-progress-track{width:100%; max-width:320px; height:8px; background:var(--border-2); border-radius:20px; overflow:hidden; margin:0 auto 12px;}
+.mini-progress-fill{height:100%; width:0%; background:linear-gradient(90deg, var(--amber, #F5A623), #FFD08A); border-radius:20px; transition:width .18s ease;}
+.mini-progress-label{text-align:center; font-size:13px; font-weight:600; color:var(--slate);}
 .load-progress-overlay{position:fixed; inset:0; background:rgba(18,23,43,.92); display:none; align-items:center; justify-content:center; z-index:500; backdrop-filter:blur(3px);}
 .load-progress-overlay.show{display:flex;}
 .load-progress-box{display:flex; flex-direction:column; align-items:center; gap:16px;}
@@ -335,7 +339,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.33.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.34.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -425,7 +429,7 @@ table.data tr:hover td{background:var(--paper-2);}
           <button class="btn btn-dark" onclick="exportPhotosZip()">📦 Download ZIP <span id="zipScopeLabel">(by date range)</span></button>
         </div>
       </div>
-      <div id="photosContent"><div class="empty"><b>Loading photos…</b>Fetching photo records from both modules.</div></div>
+      <div id="photosContent"><div class="empty photos-loading"><div class="mini-progress-track"><div class="mini-progress-fill" id="photosProgressFill"></div></div><div class="mini-progress-label" id="photosProgressLabel">Fetching photo records… 0%</div></div></div>
     </section>
 
     <section id="tab-master" style="display:none;">
@@ -701,7 +705,7 @@ function enterApp(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.33.0';
+const FRONTEND_VERSION = 'v6.34.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1116,6 +1120,19 @@ let PHOTO_DB_DATA = [];
 let PHOTOS_LOADED = false;
 async function loadPhotosData(){
   if(!configured()) return;
+  // Real backend progress isn't observable mid-fetch (it's one request/
+  // response, not a stream), so this simulates a smooth, honest-feeling
+  // climb instead of a static "Loading…" that gives no sense of motion —
+  // ticks up gradually, capped short of 100% until the data actually
+  // arrives, then snaps to 100% for real.
+  let simPct = 0;
+  const fillEl = ()=>document.getElementById('photosProgressFill');
+  const labelEl = ()=>document.getElementById('photosProgressLabel');
+  const tick = setInterval(()=>{
+    simPct = Math.min(88, simPct + (88-simPct)*0.15 + 2);
+    if(fillEl()) fillEl().style.width = simPct+'%';
+    if(labelEl()) labelEl().textContent = `Fetching photo records… ${Math.round(simPct)}%`;
+  }, 180);
   try{
     const [retailRes, dbRes] = await Promise.all([
       callApi({action:'getData', token:SESSION.token}),
@@ -1126,6 +1143,10 @@ async function loadPhotosData(){
     PHOTOS_LOADED = true;
   }catch(e){
     PHOTO_RETAIL_DATA = []; PHOTO_DB_DATA = [];
+  }finally{
+    clearInterval(tick);
+    if(fillEl()){ fillEl().style.width = '100%'; }
+    if(labelEl()){ labelEl().textContent = 'Fetching photo records… 100%'; }
   }
 }
 
@@ -1769,7 +1790,7 @@ let SELECTED_PHOTO_KEYS = new Set(); // keyed by "type|url" so selection survive
 function photoKey(p){ return p.type + '|' + (p.url || (p.urls && p.urls[0])); }
 function renderPhotos(){
   const el = document.getElementById('photosContent');
-  if(!PHOTOS_LOADED){ el.innerHTML = `<div class="empty"><b>Loading photos…</b>Fetching photo records from both modules.</div>`; return; }
+  if(!PHOTOS_LOADED){ el.innerHTML = `<div class="empty photos-loading"><div class="mini-progress-track"><div class="mini-progress-fill" id="photosProgressFill"></div></div><div class="mini-progress-label" id="photosProgressLabel">Fetching photo records… 0%</div></div>`; return; }
   const q = document.getElementById('photoSearch').value.toLowerCase();
   const typeFilter = document.getElementById('photoTypeFilter').value;
   const sourceFilter = document.getElementById('photoSourceFilter').value;
@@ -1931,7 +1952,7 @@ function photoCardHtml(p, idx){
   const mediaHtml = p.isPdf
     ? `<div class="thumb pdf-thumb" data-photo-idx="${idx}" style="cursor:pointer;">
          <svg class="pdf-thumb-icon" viewBox="0 0 24 24" width="40" height="40"><path fill="#C0392B" d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6z"/><path fill="#E8877A" d="M14 2v5a1 1 0 0 0 1 1h5z"/><text x="12" y="17" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="Arial">PDF</text></svg>
-         <span class="pdf-thumb-label">${p.billCount ? p.billCount+' bill'+(p.billCount>1?'s':'')+' merged into this PDF' : 'Bills merged into one PDF'}</span>
+         <span class="pdf-thumb-label">${/^\d+$/.test(String(p.billCount||'')) && Number(p.billCount)>0 ? `${p.billCount} bill${Number(p.billCount)>1?'s':''} merged into this PDF` : 'Bills merged into one PDF'}</span>
          <span class="pdf-thumb-open">Open PDF ↗</span>
        </div>`
     : `<div class="thumb-gallery" data-photo-idx="${idx}">
