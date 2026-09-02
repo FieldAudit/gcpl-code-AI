@@ -303,10 +303,14 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.24.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.27.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
+  <div id="updateBanner" style="display:none; background:#1B7A43; color:#fff; padding:10px 20px; font-size:13px; align-items:center; justify-content:center; gap:14px;">
+    <span>🔄 A new version of this dashboard is available.</span>
+    <button onclick="location.reload()" style="background:#fff; color:#1B7A43; border:none; border-radius:6px; padding:6px 14px; font-weight:700; font-size:12px; cursor:pointer;">Update now</button>
+  </div>
   <div class="theme-panel" id="themePanel">
     <div class="ttl">Theme</div>
     <div id="themeSwatchList"></div>
@@ -553,20 +557,21 @@ function enterApp(){
   // Live check against the ACTUAL running backend — this app's frontend
   // (this HTML file) and backend (Code.gs) deploy through two completely
   // separate processes (GitHub Pages vs. Apps Script), so it's easy to
-  // update one and forget the other. Showing the real backend version
-  // right in the header makes that mismatch impossible to miss, instead
-  // of needing to manually check a URL every time something looks wrong.
+  // update one and forget the other. This just shows the real backend
+  // version quietly next to this page's own version — useful to glance at
+  // if something seems broken, but NOT a red alarm for its own sake: a
+  // backend that's a version or two behind this page is completely normal
+  // day-to-day (most updates only touch one file, not both), and doesn't
+  // mean anything is actually wrong.
   if(configured()){
     fetch(`${SCRIPT_URL}?action=version&_t=${Date.now()}`, {cache:'no-store'})
       .then(r=>r.json())
       .then(j=>{
         const el = document.getElementById('backendVerCheck');
         if(!el) return;
-        const backendV = j.version || '?';
-        const frontendV = 'v6.24.0';
-        el.textContent = `· backend ${backendV}`;
-        el.style.color = (backendV === frontendV) ? '#34C759' : '#FF3B30';
-        el.title = (backendV === frontendV) ? 'Backend matches this page.' : `Backend is ${backendV} but this page is ${frontendV} — redeploy Code.gs (Deploy → Manage deployments → New version).`;
+        el.textContent = `· backend ${j.version || '?'}`;
+        el.style.color = '';
+        el.title = 'Live backend version — for reference only, a mismatch with this page\'s own version is normal.';
       }).catch(()=>{});
   }
   if(isSalesOnly){
@@ -577,6 +582,33 @@ function enterApp(){
   } else {
     loadData().then(()=>{ renderDashboard(); });
   }
+  startVersionWatcher();
+}
+
+/* Detects when a NEWER dashboard.html has been deployed to GitHub Pages
+   while this page is still open — fetches this page's own URL (not the
+   backend) periodically, pulls out the "vX.Y.Z" version string it finds,
+   and compares against this running page's own FRONTEND_VERSION. If they
+   differ, shows a small "Update now" banner instead of leaving the person
+   silently on stale code until they happen to hard-refresh. */
+const FRONTEND_VERSION = 'v6.27.0';
+let _versionWatcherTimer = null;
+function startVersionWatcher(){
+  if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
+  const check = async ()=>{
+    try{
+      const r = await fetch(location.href.split('?')[0], {cache:'no-store'});
+      const html = await r.text();
+      const m = html.match(/Management\s*·\s*(v[\d.]+)/);
+      if(m && m[1] && m[1] !== FRONTEND_VERSION){
+        const banner = document.getElementById('updateBanner');
+        if(banner) banner.style.display = 'flex';
+      }
+    }catch(_e){ /* offline or blocked — silently skip this check */ }
+  };
+  check(); // also check once shortly after login, not just every few minutes
+  _versionWatcherTimer = setInterval(check, 3 * 60 * 1000); // every 3 minutes
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) check(); }); // and whenever they come back to this tab
 }
 
 /* ---- Theme switcher — brand colour only, saved per-browser (localStorage),
@@ -1155,7 +1187,7 @@ function renderDBDashboard(){
     return;
   }
   const n = ALL_DATA.length;
-  const bagFields = ['atta','maida','sooji','sattu','besan','dalia','others','spicesTotal'];
+  const bagFields = ['atta','maida','sooji','sattu','besan','dalia','others']; // spices are tracked in Kgs (kgFields), never as a bag count
   const kgFields = ['haldi','chili','dhania','jeeraPowder','jeeraWhole','panchForon','methi','ajwain','saunf','sarson','shahiGaramMasala','chickenMasala','meatMasala','kashmiriMirch','kalajeera'];
   const sum = k => ALL_DATA.reduce((s,r)=>s+(+r[k]||0),0);
   const totalBags = bagFields.reduce((s,k)=>s+sum(k),0);
@@ -1182,7 +1214,9 @@ function renderDBDashboard(){
       <div class="card chart-card"><h2>Bag Quantities by Product <span class="info-i" title="Total quantity (bags) counted for each product, summed across every audit in range.">ⓘ</span></h2><canvas id="chartBags"></canvas></div>
       <div class="card chart-card"><h2>Top 8 Distributors by Audit Count <span class="info-i" title="The 8 distributors with the most stock-audit visits in range. Click a bar to see just that distributor's rows in History.">ⓘ</span></h2><canvas id="chartDist"></canvas></div>
       <div class="card chart-card"><h2>Audits Over Time <span class="info-i" title="Number of stock audits submitted each day in range — shows activity trend and any gaps.">ⓘ</span></h2><canvas id="chartDBTrend"></canvas></div>
-      ${showAuditTypeChart ? `<div class="card chart-card"><h2>Audits: GCPL Sales Officer vs 3PA <span class="info-i" title="Split of audits by who conducted them — only shown when your role can see both types.">ⓘ</span></h2><canvas id="chartAuditType"></canvas></div>` : ''}
+      ${showAuditTypeChart
+        ? `<div class="card chart-card"><h2>Audits: GCPL Sales Officer vs 3PA <span class="info-i" title="Split of audits by who conducted them — only shown when your role can see both types.">ⓘ</span></h2><canvas id="chartAuditType"></canvas></div>`
+        : `<div class="card chart-card"><h2>Spice Quantities by Type (Kgs) <span class="info-i" title="Total Kgs counted for each individual spice, summed across every audit in range. Spices are tracked in Kgs, not bags.">ⓘ</span></h2><canvas id="chartSpiceKgs"></canvas></div>`}
     </div>
     <div class="card" style="margin-top:16px;">
       <h2 style="display:flex; align-items:center; justify-content:space-between;"><span>User-wise Performance <span class="info-i" title="One row per SO Name. Audits = total stock-audit rows in range. Total Bags/Kgs = summed across just that SO's own audits.">ⓘ</span></span><button class="btn btn-dark" style="font-size:12px; padding:6px 12px;" onclick="exportUserPerformanceTable()">⬇ Export</button></h2>
@@ -1200,6 +1234,12 @@ function renderDBDashboard(){
   CHARTS.dbTrend = new Chart(document.getElementById('chartDBTrend'), {type:'line', data:{labels:sortedDates, datasets:[{data:sortedDates.map(d=>byDate[d]), borderColor:'#12172B', backgroundColor:'rgba(245,166,35,.25)', fill:true, tension:.3}]}, options:{plugins:{legend:{display:false}}}});
   if(showAuditTypeChart){
     CHARTS.auditType = new Chart(document.getElementById('chartAuditType'), {type:'doughnut', data:{labels:Object.keys(auditTypes), datasets:[{data:Object.values(auditTypes), backgroundColor:['#1B7A43','#F5A623','#6B7280']}]}, options:{plugins:{legend:{position:'bottom'}}}});
+  } else {
+    const kgLabels = {haldi:'Haldi', chili:'Chili', dhania:'Dhania', jeeraPowder:'Jeera Powder', jeeraWhole:'Jeera Whole', panchForon:'Panch Foron', methi:'Methi', ajwain:'Ajwain', saunf:'Saunf', sarson:'Sarson', shahiGaramMasala:'Shahi Garam Masala', chickenMasala:'Chicken Masala', meatMasala:'Meat Masala', kashmiriMirch:'Kashmiri Mirch', kalajeera:'Kalajeera'};
+    const kgSums = kgFields.map(k=>sum(k));
+    // Only the top 8 spices by volume, so the chart stays legible instead of cramming all 15.
+    const topSpices = kgFields.map((k,i)=>[kgLabels[k], kgSums[i]]).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    CHARTS.spiceKgs = new Chart(document.getElementById('chartSpiceKgs'), {type:'bar', data:{labels:topSpices.map(s=>s[0]), datasets:[{data:topSpices.map(s=>s[1]), backgroundColor:'#1B7A43'}]}, options:{plugins:{legend:{display:false}}}});
   }
 }
 
@@ -1304,7 +1344,7 @@ function renderDBHistory(){
   const tbody = document.querySelector('#histTable tbody');
   thead.innerHTML = `<tr><th>Date</th><th>Audit Type</th><th>Source</th><th>DB Code</th><th>DB Name</th><th>City</th><th>SO Name</th><th>ASM Name</th><th>Total Bags</th><th>Total Kgs</th><th>Lat, Long</th><th>Map</th></tr>`;
   if(!rows.length){ tbody.innerHTML = `<tr><td colspan="12"><div class="empty"><b>No matching stock audits</b>Try a different search or filter.</div></td></tr>`; return; }
-  const bagFields = ['atta','maida','sooji','sattu','besan','dalia','others','spicesTotal'];
+  const bagFields = ['atta','maida','sooji','sattu','besan','dalia','others']; // spices are tracked in Kgs (kgFields), never as a bag count
   const kgFields = ['haldi','chili','dhania','jeeraPowder','jeeraWhole','panchForon','methi','ajwain','saunf','sarson','shahiGaramMasala','chickenMasala','meatMasala','kashmiriMirch','kalajeera'];
   const sumRow = (r,fields) => fields.reduce((s,k)=>s+(+r[k]||0),0);
   tbody.innerHTML = rows.map(r=>`<tr>
