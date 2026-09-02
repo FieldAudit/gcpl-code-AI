@@ -136,6 +136,8 @@ main{max-width:720px; margin:0 auto; padding:16px 14px 110px;}
 .field:last-child{margin-bottom:0;}
 .field label{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--slate); margin-bottom:6px; font-weight:600;}
 .req-mark{color:var(--red);}
+.q-info{display:inline-block; opacity:.55; font-size:12px; cursor:help; margin-left:4px; text-transform:none; font-weight:400;}
+.q-info:hover{opacity:1;}
 .addr-note{font-size:12px; color:var(--slate); margin-top:6px;}
 .addr-note.warn{color:var(--red); font-weight:600;}
 .field input.invalid, .field select.invalid, .field textarea.invalid{border-color:var(--red); background:var(--red-bg);}
@@ -144,14 +146,18 @@ main{max-width:720px; margin:0 auto; padding:16px 14px 110px;}
 .photo-box.invalid{border-color:var(--red); border-style:solid; background:var(--red-bg);}
 .field input:focus, .field select:focus, .field textarea:focus{border-color:var(--ink);}
 
-.yn{display:flex; gap:8px;}
-.yn button{flex:1; padding:12px; border-radius:4px; border:1.5px solid var(--border-2); background:var(--card); font-weight:600; font-size:14px; color:var(--slate);}
-.yn button.sel-yes{background:var(--green-bg); border-color:var(--green); color:var(--green);}
-.yn button.sel-no{background:var(--red-bg); border-color:var(--red); color:var(--red);}
+.yn{display:flex; gap:10px;}
+.yn button{flex:1; padding:13px; border-radius:11px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:14px; color:var(--slate); cursor:pointer; transition:transform .12s cubic-bezier(.34,1.56,.64,1), box-shadow .15s, background .15s, border-color .15s, color .15s;}
+.yn button:active{transform:scale(.94);}
+.yn button:hover{box-shadow:0 3px 10px rgba(18,23,43,.08);}
+.yn button.sel-yes{background:var(--green-bg); border-color:var(--green); color:var(--green); box-shadow:0 3px 12px color-mix(in srgb, var(--green) 25%, transparent); transform:scale(1.02);}
+.yn button.sel-no{background:var(--red-bg); border-color:var(--red); color:var(--red); box-shadow:0 3px 12px color-mix(in srgb, var(--red) 25%, transparent); transform:scale(1.02);}
 
-.stars{display:flex; gap:6px;}
-.stars button{width:42px; height:42px; border-radius:4px; border:1.5px solid var(--border-2); background:var(--card); font-size:16px; color:var(--border-2);}
-.stars button.on{background:var(--amber); border-color:var(--amber-dark); color:var(--ink);}
+.stars{display:flex; gap:8px;}
+.stars button{width:46px; height:46px; border-radius:11px; border:1.5px solid var(--border-2); background:var(--card); font-size:17px; font-weight:700; color:var(--border-2); cursor:pointer; transition:transform .12s cubic-bezier(.34,1.56,.64,1), box-shadow .15s, background .15s, border-color .15s, color .15s;}
+.stars button:active{transform:scale(.9);}
+.stars button:hover{box-shadow:0 3px 10px rgba(18,23,43,.08);}
+.stars button.on{background:linear-gradient(135deg, var(--amber), var(--amber-dark)); border-color:var(--amber-dark); color:#fff; box-shadow:0 3px 14px color-mix(in srgb, var(--amber) 40%, transparent); transform:scale(1.05);}
 
 /* ---- Location: most important section, styled to stand out ---- */
 .geo-card{border:2px solid var(--red); background:var(--red-bg);}
@@ -171,6 +177,12 @@ main{max-width:720px; margin:0 auto; padding:16px 14px 110px;}
 .photo-box img{max-width:100%; max-height:220px; border-radius:4px; margin-top:10px; display:none;}
 .photo-locked{opacity:.5;}
 .lock-note{font-size:12px; color:var(--red); margin-top:8px; font-weight:600;}
+
+.bill-thumb-card{position:relative; width:88px; border-radius:10px; overflow:hidden; box-shadow:0 2px 8px rgba(18,23,43,.12); border:1px solid var(--border-2); background:#fff;}
+.bill-thumb-card img{width:88px; height:88px; object-fit:cover; display:block; margin:0 !important; max-height:none !important; border-radius:0 !important;}
+.bill-thumb-num{display:block; font-size:10px; font-weight:700; text-align:center; padding:3px 0; background:var(--ink, #12172B); color:#fff; letter-spacing:.02em;}
+.bill-thumb-remove{position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; background:rgba(18,23,43,.75); color:#fff; border:none; font-size:12px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .12s, transform .12s;}
+.bill-thumb-remove:hover{background:var(--red, #C0392B); transform:scale(1.08);}
 
 .scan-result{margin-top:12px; padding:10px 12px; border-radius:4px; font-size:13px; display:none;}
 .scan-result.gst{background:var(--green-bg); color:var(--green); display:block;}
@@ -194,6 +206,15 @@ main{max-width:720px; margin:0 auto; padding:16px 14px 110px;}
 .submit-bar .req{font-size:11px; color:var(--red); text-align:center; margin-top:6px; display:none;}
 .submit-bar .req.show{display:block;}
 
+.submit-progress-overlay{position:fixed; inset:0; background:rgba(18,23,43,.85); display:none; align-items:center; justify-content:center; z-index:300; backdrop-filter:blur(3px);}
+.submit-progress-overlay.show{display:flex;}
+.submit-progress-box{display:flex; flex-direction:column; align-items:center; gap:16px;}
+.submit-progress-ring{position:relative; width:120px; height:120px;}
+.submit-progress-ring svg{width:100%; height:100%; transform:rotate(-90deg);}
+.submit-progress-ring .track{fill:none; stroke:rgba(255,255,255,.15); stroke-width:8;}
+.submit-progress-ring .bar{fill:none; stroke:var(--amber, #F5A623); stroke-width:8; stroke-linecap:round; stroke-dasharray:283; stroke-dashoffset:283; transition:stroke-dashoffset .3s ease;}
+.submit-progress-pct{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; font-weight:700;}
+.submit-progress-label{color:#fff; font-size:14px; font-weight:600; letter-spacing:.02em;}
 .stamp-wrap{position:fixed; inset:0; background:rgba(18,23,43,.72); display:none; align-items:center; justify-content:center; z-index:200;}
 .stamp{width:220px; height:220px; border-radius:50%; border:6px solid var(--amber); display:flex; align-items:center; justify-content:center; flex-direction:column; color:var(--amber); transform:rotate(-14deg) scale(0); font-family:'Oswald'; text-transform:uppercase; text-align:center; background:rgba(245,166,35,.06);}
 .stamp.show{animation:stampIn .5s cubic-bezier(.2,1.4,.4,1) forwards;}
@@ -302,7 +323,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.18.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.22.0</div></div>
   </div>
 </header>
 
@@ -344,7 +365,7 @@ window.onerror = function(msg, url, line, col, err){
   <div class="card">
     <h2><span class="n">1</span>Visit &amp; Auditor Details</h2>
     <div class="grid3" style="margin-top:14px;">
-      <div class="field"><label>Date of Visit</label><input type="date" id="f_date"></div>
+      <div class="field"><label>Date of Visit</label><input type="text" id="f_date" readonly></div>
       <div class="field"><label>Auditor Name</label><input type="text" id="f_auditor" placeholder="Your name"></div>
       <div class="field">
         <label>District</label>
@@ -392,15 +413,15 @@ window.onerror = function(msg, url, line, col, err){
   </div>
 
   <div class="card">
-    <h2><span class="n">4</span>Product Availability &amp; NPD</h2>
+    <h2><span class="n">4</span>Product Availability &amp; NPD <span class="q-info" title="NPD = New Product Development — newly launched items being tracked for early availability and uptake.">ⓘ NPD</span></h2>
     <div class="grid2" style="margin-top:14px;">
       <div class="field">
-        <label>GCPL Availability — Distribution by distributor?</label>
+        <label>GCPL Availability — Distribution by distributor? <span class="q-info" title="Confirms whether GCPL products are currently being supplied to this outlet by any distributor.">ⓘ</span></label>
         <div class="yn" id="yn_q1"><button onclick="setYN('q1','Yes',this)">Yes</button><button onclick="setYN('q1','No',this)">No</button></div>
       </div>
-      <div class="field"><label>How many DBs are supplying</label><input type="number" min="0" id="f_q2"></div>
+      <div class="field"><label>How many DBs are supplying <span class="q-info" title="DB = Distributor. Number of distinct distributors currently supplying this outlet.">ⓘ</span></label><input type="number" min="0" id="f_q2"></div>
       <div class="field">
-        <label>NPD — Spice available or not?</label>
+        <label>NPD — Spice available or not? <span class="q-info" title="Whether newly-launched (New Product Development) spice items are stocked at this outlet.">ⓘ</span></label>
         <div class="yn" id="yn_q3"><button onclick="setYN('q3','Yes',this)">Yes</button><button onclick="setYN('q3','No',this)">No</button></div>
       </div>
     </div>
@@ -410,11 +431,11 @@ window.onerror = function(msg, url, line, col, err){
     <h2><span class="n">5</span>Satisfaction, Price &amp; DB Bills</h2>
     <div class="grid2" style="margin-top:14px;">
       <div class="field">
-        <label>Happy with DB or not?</label>
+        <label>Happy with DB or not? <span class="q-info" title="Whether the outlet is satisfied with their current Distributor's service (delivery, stock, support).">ⓘ</span></label>
         <div class="yn" id="yn_q4"><button onclick="setYN('q4','Yes',this)">Yes</button><button onclick="setYN('q4','No',this)">No</button></div>
       </div>
       <div class="field">
-        <label>How does the outlet receive GCPL price updates?</label>
+        <label>How does the outlet receive GCPL price updates? <span class="q-info" title="How the retailer usually finds out about new GCPL prices — helps spot outlets that might be missing timely updates.">ⓘ</span></label>
         <select id="f_q5">
           <option value="">Select</option>
           <option>Distributor</option>
@@ -425,7 +446,7 @@ window.onerror = function(msg, url, line, col, err){
         </select>
       </div>
       <div class="field">
-        <label>Bill type</label>
+        <label>Bill type <span class="q-info" title="Whether the outlet's purchase bills show GST or not — tracks formal vs informal billing from the distributor.">ⓘ</span></label>
         <select id="f_q7"><option value="">Select (or scan invoice below)</option><option>GST</option><option>Non-GST</option><option>Mixed</option></select>
       </div>
     </div>
@@ -455,26 +476,32 @@ window.onerror = function(msg, url, line, col, err){
     <h2><span class="n">7</span>Visibility</h2>
     <div class="grid2" style="margin-top:14px;">
       <div class="field">
-        <label>GCPL visibility on shelf (1–5)</label>
+        <label>GCPL visibility on shelf (1–5) <span class="q-info" title="How prominently GCPL products are displayed — 1 = hidden/poor placement, 5 = front-and-centre, excellent visibility.">ⓘ</span></label>
         <div class="stars" id="star_q8">
           <button onclick="setStar(1,this)">1</button><button onclick="setStar(2,this)">2</button><button onclick="setStar(3,this)">3</button><button onclick="setStar(4,this)">4</button><button onclick="setStar(5,this)">5</button>
         </div>
       </div>
       <div class="field">
-        <label>POSM available?</label>
+        <label>POSM available? <span class="q-info" title="POSM = Point of Sale Machine — branded display items like danglers, posters, or standees provided to promote GCPL products in-store.">ⓘ POSM</span></label>
         <div class="yn" id="yn_q9"><button onclick="setYN('q9','Yes',this)">Yes</button><button onclick="setYN('q9','No',this)">No</button></div>
       </div>
-      <div class="field"><label>Any NLB / GSB — which brand</label><input type="text" id="f_q10" placeholder="Brand name, if any"></div>
+      <div class="field"><label>Any NLB / GSB — which brand <span class="q-info" title="NLB/GSB refers to competing brands being stocked alongside GCPL — note the brand name if present.">ⓘ</span></label><input type="text" id="f_q10" placeholder="Brand name, if any"></div>
     </div>
   </div>
 
   <div class="card">
     <h2><span class="n">8</span>Outlet Photo</h2>
     <div class="photo-box" id="photoBox" style="margin-top:14px;">
-      <button class="btn btn-outline" onclick="tryOpenCamera('photoInput')" id="photoBtn">📷 Capture outlet photo</button>
+      <label style="font-size:12px; font-weight:700; color:var(--slate); text-transform:uppercase; letter-spacing:.03em;">Photo 1 <span class="req-mark">*</span> required</label>
+      <button class="btn btn-outline" onclick="tryOpenCamera('photoInput')" id="photoBtn" style="margin-top:6px;">📷 Capture outlet photo</button>
       <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none" onchange="onPhoto(event)">
       <img id="photoPreview">
       <div class="lock-note" id="photoLock">Capture GPS location first — every photo is watermarked with it</div>
+      <hr style="border:none; border-top:1px dashed var(--border-2); margin:16px 0;">
+      <label style="font-size:12px; font-weight:700; color:var(--slate); text-transform:uppercase; letter-spacing:.03em;">Photo 2 <span style="text-transform:none; font-weight:400;">(optional — a different angle if useful)</span></label>
+      <button class="btn btn-outline" onclick="tryOpenCamera('photoInput2')" id="photoBtn2" style="margin-top:6px;">📷 Capture second photo (optional)</button>
+      <input type="file" id="photoInput2" accept="image/*" capture="environment" style="display:none" onchange="onPhoto2(event)">
+      <img id="photoPreview2">
     </div>
   </div>
   </div> <!-- /retailModule -->
@@ -525,8 +552,9 @@ window.onerror = function(msg, url, line, col, err){
         <div class="addr-note" id="dbCodeError"></div>
       </div>
       <div class="field">
-        <label>DB Name <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(auto-filled from DB Code)</span></label>
-        <input type="text" id="db_dbName" placeholder="Enter DB Code first" readonly>
+        <label>DB Name <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(type to search, or auto-fills from DB Code)</span></label>
+        <input type="text" id="db_dbName" list="dbNameList" placeholder="Enter DB Code first, or start typing a name…" autocomplete="off" oninput="onDbNameInput(this)">
+        <datalist id="dbNameList"></datalist>
       </div>
       <div class="field">
         <label>DB City / Town <span style="text-transform:none; font-weight:400;">(auto-filled from DB Code)</span></label>
@@ -612,6 +640,15 @@ window.onerror = function(msg, url, line, col, err){
   <div class="req" id="submitReq">Capture GPS location before submitting</div>
 </div>
 
+<div class="submit-progress-overlay" id="submitProgressOverlay">
+  <div class="submit-progress-box">
+    <div class="submit-progress-ring">
+      <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" class="track"/><circle cx="50" cy="50" r="45" class="bar" id="submitProgressBar"/></svg>
+      <div class="submit-progress-pct" id="submitProgressPct">0%</div>
+    </div>
+    <div class="submit-progress-label" id="submitProgressLabel">Starting…</div>
+  </div>
+</div>
 <div class="stamp-wrap" id="stampWrap">
   <div>
     <div class="stamp" id="stampEl"><b>Audited</b><span id="stampId">—</span></div>
@@ -641,6 +678,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHB
 
 let FORM = {};
 let PHOTO_BASE64 = null;
+let PHOTO_BASE64_2 = null;
 let INVOICE_BASE64 = null; // the first captured bill — drives the OCR scan button
 let INVOICE_PHOTOS = []; // every captured bill (at least 1 required, 5 recommended) — combined into one PDF at submit time
 let GEO = null;
@@ -804,6 +842,14 @@ function onPhoto(e){
     prev.src = dataUrl; prev.style.display='block';
   });
 }
+function onPhoto2(e){
+  const file = e.target.files[0]; if(!file) return;
+  downscale(file, (dataUrl)=>{
+    PHOTO_BASE64_2 = dataUrl;
+    const prev = document.getElementById('photoPreview2');
+    prev.src = dataUrl; prev.style.display='block';
+  });
+}
 function onInvoicePhoto(e){
   const file = e.target.files[0]; if(!file) return;
   document.getElementById('invoiceBox').classList.remove('invalid');
@@ -817,15 +863,16 @@ function onInvoicePhoto(e){
 function renderInvoiceThumbs(){
   const wrap = document.getElementById('invoiceThumbs');
   wrap.innerHTML = INVOICE_PHOTOS.map((b64,i)=>`
-    <div style="position:relative;">
-      <img src="${b64}" style="width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid var(--border-2); display:block;">
-      <button type="button" onclick="removeInvoicePhoto(${i})" style="position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; background:var(--red); color:#fff; border:none; font-size:12px; line-height:1; cursor:pointer;">✕</button>
+    <div class="bill-thumb-card">
+      <img src="${b64}">
+      <span class="bill-thumb-num">Bill ${i+1}</span>
+      <button type="button" onclick="removeInvoicePhoto(${i})" class="bill-thumb-remove" title="Remove this bill">✕</button>
     </div>
   `).join('');
   const note = document.getElementById('invoiceCountNote');
   const n = INVOICE_PHOTOS.length;
   note.className = n >= 1 ? 'addr-note' : 'addr-note warn';
-  note.textContent = n === 0 ? 'No bills captured yet — at least 1 required, 5 recommended' : (n < 5 ? `✅ ${n} bill${n>1?'s':''} captured (5 recommended)` : `✅ ${n} bills captured — ready to combine into one PDF`);
+  note.textContent = n === 0 ? 'No bills captured yet — at least 1 required, 5 recommended' : (n < 5 ? `✅ ${n} bill${n>1?'s':''} captured (5 recommended) — tap "Capture bill photo" to add more` : `✅ ${n} bills captured — all will merge into one PDF on submit`);
   document.getElementById('scanBtnWrap').style.display = n ? 'block' : 'none';
 }
 function removeInvoicePhoto(i){
@@ -909,10 +956,8 @@ function onDbCodeInput(el){
   const errEl = document.getElementById('dbCodeError');
   errEl.className = valid ? 'addr-note' : 'addr-note warn';
   errEl.textContent = valid ? '' : dbCodeErrorMessage(el.value);
-  const nameEl = document.getElementById('db_dbName');
   const cityEl = document.getElementById('db_dbCity');
   if(!valid || !el.value){
-    nameEl.readOnly = true; nameEl.value=''; nameEl.placeholder='Enter DB Code first';
     cityEl.readOnly = true; cityEl.value=''; cityEl.placeholder='Enter DB Code first';
     return;
   }
@@ -922,32 +967,87 @@ function onDbCodeInput(el){
 let dbLookupTimer;
 function lookupDBMaster(dbCode){
   clearTimeout(dbLookupTimer);
+  // Instant path — the cached master list (see loadDBMasterCache below) is
+  // usually already in memory, so a DB Code lookup can resolve immediately
+  // without waiting on a network round-trip at all.
+  const cached = DB_MASTER_CACHE.find(d=>d.code===dbCode);
+  if(cached){
+    document.getElementById('db_dbName').value = cached.name;
+    document.getElementById('db_dbCity').value = cached.city; document.getElementById('db_dbCity').readOnly = true;
+    document.getElementById('dbCodeError').className='addr-note';
+    document.getElementById('dbCodeError').textContent = '✅ Found in master list';
+    return;
+  }
   dbLookupTimer = setTimeout(async ()=>{
     const nameEl = document.getElementById('db_dbName');
     const cityEl = document.getElementById('db_dbCity');
-    nameEl.readOnly = true; nameEl.value=''; nameEl.placeholder='Looking up…';
     cityEl.readOnly = true; cityEl.value=''; cityEl.placeholder='Looking up…';
     try{
       if(!configured()) throw new Error('__NOCFG__');
       const r = await fetchWithTimeout(`${SCRIPT_URL}?action=lookupDB&dbCode=${encodeURIComponent(dbCode)}`, {}, 8000);
       const j = await r.json();
       if(j.success){
-        nameEl.value = j.dbName || ''; nameEl.readOnly = true;
+        nameEl.value = j.dbName || '';
         cityEl.value = j.dbCity || ''; cityEl.readOnly = true;
         document.getElementById('dbCodeError').className='addr-note';
         document.getElementById('dbCodeError').textContent = j.dbName ? '✅ Found in master list' : '';
       } else {
         // Not in the master list — don't block the audit, let the SO type it manually.
-        nameEl.readOnly = false; nameEl.placeholder='Not in master — type DB name'; nameEl.value='';
+        nameEl.placeholder='Not in master — type DB name'; nameEl.value='';
         cityEl.readOnly = false; cityEl.placeholder='Type DB city/town'; cityEl.value='';
         document.getElementById('dbCodeError').className='addr-note warn';
         document.getElementById('dbCodeError').textContent = '⚠️ DB Code not found in master list — enter DB Name/City manually.';
       }
     }catch(_e){
-      nameEl.readOnly = false; nameEl.placeholder='Type DB name'; 
+      nameEl.placeholder='Type DB name';
       cityEl.readOnly = false; cityEl.placeholder='Type DB city/town';
     }
   }, 400);
+}
+
+/* Client-side searchable DB Name — the whole DBMaster list is fetched ONCE
+   and cached in localStorage (with a timestamp), so search-as-you-type is
+   instant and works even on a slow connection after the first load. Picking
+   (or typing an exact match of) a name auto-fills DB Code + City, same as
+   the DB Code → Name direction already did. Cache refreshes itself once a
+   day, or immediately if it's empty. */
+let DB_MASTER_CACHE = [];
+const DB_MASTER_CACHE_KEY = 'fieldaudit_dbmaster_cache_v1';
+async function loadDBMasterCache(){
+  try{
+    const raw = localStorage.getItem(DB_MASTER_CACHE_KEY);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      DB_MASTER_CACHE = parsed.list || [];
+      populateDBNameDatalist();
+      const ageMs = Date.now() - (parsed.savedAt || 0);
+      if(ageMs < 24*60*60*1000) return; // fresh enough, skip refetch
+    }
+  }catch(_e){}
+  try{
+    if(!configured()) return;
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=getAllDBMaster`, {}, 12000);
+    const j = await r.json();
+    if(j.success && Array.isArray(j.list)){
+      DB_MASTER_CACHE = j.list;
+      populateDBNameDatalist();
+      try{ localStorage.setItem(DB_MASTER_CACHE_KEY, JSON.stringify({savedAt: Date.now(), list: j.list})); }catch(_e){}
+    }
+  }catch(_e){ /* offline first load with no cache yet — DB Code lookup still works via network */ }
+}
+function populateDBNameDatalist(){
+  const list = document.getElementById('dbNameList');
+  if(!list) return;
+  list.innerHTML = DB_MASTER_CACHE.map(d=>`<option value="${d.name.replace(/"/g,'&quot;')}">`).join('');
+}
+function onDbNameInput(el){
+  const match = DB_MASTER_CACHE.find(d=>d.name.toLowerCase() === el.value.trim().toLowerCase());
+  if(match){
+    document.getElementById('db_dbCode').value = match.code;
+    document.getElementById('db_dbCity').value = match.city; document.getElementById('db_dbCity').readOnly = true;
+    document.getElementById('dbCodeError').className='addr-note';
+    document.getElementById('dbCodeError').textContent = '✅ Found in master list';
+  }
 }
 
 /* SO identity is looked up by phone number from a master list managed by
@@ -1187,17 +1287,7 @@ async function startIdentityScan(prefix){
   }
 }
 
-/* GPS is captured automatically the moment identity is confirmed (not a
-   separate manual button) — tied to a real event (login/registration),
-   not something that could be typed in later from anywhere. */
-function captureGPSForCheckin(prefix){
-  if(!navigator.geolocation) return;
-  navigator.geolocation.getCurrentPosition((pos)=>{
-    CHECKIN_GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude};
-    CHECKIN_GEO.link = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${CHECKIN_GEO.lat},${CHECKIN_GEO.lng}`;
-    if(document.getElementById(ckIds(prefix).submitBtn)) updateCheckinSubmitEnabled(prefix);
-  }, ()=>{ /* silent — the manual "Capture GPS" fallback button stays available if this fails */ }, {enableHighAccuracy:true, timeout:15000});
-}
+
 
 function showManualPhoneEntry(prefix){
   const ids = ckIds(prefix);
@@ -1277,37 +1367,18 @@ function renderCheckinCapture(prefix){
   const ids = ckIds(prefix);
   const cardEl = document.getElementById(ids.card);
   cardEl.className = 'card geo-card';
-  // If the camera scan already matched a face, GPS + a selfie snapshot are
-  // already sitting in CHECKIN_GEO / CHECKIN_PHOTO_BASE64 — show a "ready to
-  // go" confirmation instead of asking to tap the same two buttons again.
-  const alreadyCaptured = !!(CHECKIN_GEO && CHECKIN_PHOTO_BASE64);
   document.getElementById(ids.content).innerHTML = `
     <div class="field">
       <label>Your Phone Number <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(10 digits)</span></label>
-      <input type="text" id="${ids.phone}" inputmode="numeric" maxlength="10" value="${CHECKIN_PHONE}" placeholder="e.g. 9830012345" oninput="onCheckinPhoneInput(this,'${prefix}')" ${alreadyCaptured?'readonly':''}>
+      <input type="text" id="${ids.phone}" inputmode="numeric" maxlength="10" value="${CHECKIN_PHONE}" placeholder="e.g. 9830012345" oninput="onCheckinPhoneInput(this,'${prefix}')">
       <div class="addr-note" id="${ids.status}">✅ ${CHECKIN_NAME}</div>
     </div>
     <div class="geo-status pending" style="margin-top:6px;">Not checked in today yet — required once before you can submit any audit today</div>
-    ${alreadyCaptured ? `
-      <div class="geo-status got" style="margin-top:10px;">✅ Location and selfie already captured from your scan</div>
-      <img src="${CHECKIN_PHOTO_BASE64}" style="max-width:200px; border-radius:4px; margin-top:10px;">
-    ` : `
-      <div class="grid2" style="margin-top:10px;">
-        <button class="btn btn-primary geo-btn-big" onclick="captureCheckinLocation('${prefix}')" id="${ids.geoBtn}">${PIN_SVG}Capture GPS location</button>
-        <button class="btn btn-outline" onclick="tryOpenCheckinCamera('${prefix}')" id="${ids.photoBtn}" disabled>🤳 Take selfie</button>
-      </div>
-      <input type="file" id="${ids.photoInput}" accept="image/*" capture="user" style="display:none" onchange="onCheckinPhoto(event,'${prefix}')">
-      <img id="${ids.photoPreview}" style="max-width:200px; border-radius:4px; margin-top:10px; display:none;">
-      <div class="geo-readout" id="${ids.geoReadout}" style="display:none; margin-top:10px;">
-        <div class="coords" id="${ids.geoCoords}">—</div>
-      </div>
-    `}
-    <button class="btn btn-dark btn-block" style="margin-top:12px;" onclick="doSubmitCheckin('${prefix}')" id="${ids.submitBtn}" ${alreadyCaptured?'':'disabled'}>Submit check-in</button>
+    <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="document.getElementById('${ids.photoInput}').click()" id="${ids.photoBtn}">🤳 Take selfie to check in</button>
+    <input type="file" id="${ids.photoInput}" accept="image/*" capture="user" style="display:none" onchange="onCheckinPhoto(event,'${prefix}')">
+    <img id="${ids.photoPreview}" style="max-width:200px; border-radius:4px; margin-top:10px; display:none;">
+    <button class="btn btn-dark btn-block" style="margin-top:12px;" onclick="doSubmitCheckin('${prefix}')" id="${ids.submitBtn}" disabled>Submit check-in</button>
   `;
-}
-function tryOpenCheckinCamera(prefix){
-  if(!CHECKIN_GEO){ toast('Capture GPS location first', true); return; }
-  document.getElementById(ckIds(prefix).photoInput).click();
 }
 function onCheckinPhoto(e, prefix){
   const file = e.target.files[0]; if(!file) return;
@@ -1321,28 +1392,10 @@ function onCheckinPhoto(e, prefix){
 }
 function updateCheckinSubmitEnabled(prefix){
   const btn = document.getElementById(ckIds(prefix).submitBtn);
-  if(btn) btn.disabled = !(CHECKIN_GEO && CHECKIN_PHOTO_BASE64);
-}
-function captureCheckinLocation(prefix){
-  if(!navigator.geolocation){ toast('Geolocation not supported on this device', true); return; }
-  const ids = ckIds(prefix);
-  const btn = document.getElementById(ids.geoBtn);
-  setBtnBusy(btn, 'Locating…');
-  navigator.geolocation.getCurrentPosition((pos)=>{
-    CHECKIN_GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude};
-    CHECKIN_GEO.link = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${CHECKIN_GEO.lat},${CHECKIN_GEO.lng}`;
-    document.getElementById(ids.geoReadout).style.display='block';
-    document.getElementById(ids.geoCoords).textContent = `${CHECKIN_GEO.lat.toFixed(6)}, ${CHECKIN_GEO.lng.toFixed(6)}`;
-    setBtnIdle(btn, PIN_SVG + 'Re-capture location');
-    document.getElementById(ids.photoBtn).disabled = false;
-    updateCheckinSubmitEnabled(prefix);
-  }, (err)=>{
-    toast('Could not get location: '+err.message, true);
-    setBtnIdle(btn, PIN_SVG + 'Capture GPS location');
-  }, {enableHighAccuracy:true, timeout:15000});
+  if(btn) btn.disabled = !CHECKIN_PHOTO_BASE64;
 }
 async function doSubmitCheckin(prefix){
-  if(!CHECKIN_GEO || !CHECKIN_PHOTO_BASE64){ toast('Capture GPS location and take a selfie first', true); return; }
+  if(!CHECKIN_PHOTO_BASE64){ toast('Take a selfie first', true); return; }
   const ids = ckIds(prefix);
   const btn = document.getElementById(ids.submitBtn);
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Checking fingerprint/Face unlock…';
@@ -1382,8 +1435,8 @@ async function doSubmitCheckin(prefix){
   btn.innerHTML = '<span class="spin"></span> Stamping selfie…';
   const today = new Date().toISOString().slice(0,10);
   const lines = [
-    `${today}  •  ${CHECKIN_GEO.lat.toFixed(6)}, ${CHECKIN_GEO.lng.toFixed(6)}`,
-    `SO: ${CHECKIN_NAME || CHECKIN_PHONE}   Daily Check-in`
+    `${today}  •  Daily Check-in`,
+    `SO: ${CHECKIN_NAME || CHECKIN_PHONE}`
   ];
   let stamped = CHECKIN_PHOTO_BASE64;
   try{ stamped = await stampPhoto(CHECKIN_PHOTO_BASE64, lines); }catch(_e){}
@@ -1395,12 +1448,11 @@ async function doSubmitCheckin(prefix){
       // SOMaster on the backend.
       await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify({
         action:'enrollBiometric', phone: CHECKIN_PHONE, name: CHECKIN_NAME, credentialId: bioResult.credentialId,
-        facePhoto: stamped, lat: CHECKIN_GEO.lat, lng: CHECKIN_GEO.lng
+        facePhoto: stamped
       })}).catch(()=>{});
     }
     const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify({
-      action:'submitCheckin', date: today, soPhone: CHECKIN_PHONE, soName: CHECKIN_NAME,
-      lat: CHECKIN_GEO.lat, lng: CHECKIN_GEO.lng, photo: stamped
+      action:'submitCheckin', date: today, soPhone: CHECKIN_PHONE, soName: CHECKIN_NAME, photo: stamped
     })});
     const res = await r.json();
     if(!res.success) throw new Error(res.message || 'Check-in failed');
@@ -2127,6 +2179,21 @@ async function r9yMnTm4NSzvG9rrwjM2ec8xZgh1cafXH8(){
   }
 }
 
+/* Circular percentage progress shown WHILE the core submit is in flight —
+   biometric check → stamping → network call are sequential and each takes
+   real time, so instead of a spinner with no sense of how far along it is,
+   this gives an honest, moving percentage through each real stage. */
+function showSubmitProgress(pct, label){
+  const overlay = document.getElementById('submitProgressOverlay');
+  overlay.classList.add('show');
+  const circumference = 283;
+  document.getElementById('submitProgressBar').style.strokeDashoffset = circumference - (circumference * pct / 100);
+  document.getElementById('submitProgressPct').textContent = Math.round(pct) + '%';
+  document.getElementById('submitProgressLabel').textContent = label;
+}
+function hideSubmitProgress(){
+  document.getElementById('submitProgressOverlay').classList.remove('show');
+}
 async function submitAudit(){
   const missing = validateForm();
   if(missing.length){
@@ -2138,17 +2205,19 @@ async function submitAudit(){
     return;
   }
   const submitBtnEl = document.getElementById('submitBtn');
-  submitBtnEl.disabled = true; submitBtnEl.innerHTML = '<span class="spin"></span> Verifying fingerprint/Face…';
+  submitBtnEl.disabled = true; submitBtnEl.innerHTML = 'Submitting…';
+  showSubmitProgress(8, 'Verifying fingerprint/Face…');
   const bioOk = await r9yMnTm4NSzvG9rrwjM2ec8xZgh1cafXH8();
-  if(!bioOk){ submitBtnEl.disabled = false; submitBtnEl.innerHTML = 'Submit audit'; return; }
+  if(!bioOk){ submitBtnEl.disabled = false; submitBtnEl.innerHTML = 'Submit audit'; hideSubmitProgress(); return; }
   document.getElementById('submitReq').classList.remove('show');
   const btn = document.getElementById('submitBtn');
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Stamping photo…';
+  showSubmitProgress(35, 'Stamping photo…');
   const lines = watermarkLines();
-  let stampedOutlet = '';
+  let stampedOutlet = '', stampedOutlet2 = '';
   try{
     if(PHOTO_BASE64) stampedOutlet = await stampPhoto(PHOTO_BASE64, lines);
-  }catch(_e){ stampedOutlet = PHOTO_BASE64 || ''; }
+    if(PHOTO_BASE64_2) stampedOutlet2 = await stampPhoto(PHOTO_BASE64_2, lines);
+  }catch(_e){ stampedOutlet = PHOTO_BASE64 || ''; stampedOutlet2 = PHOTO_BASE64_2 || ''; }
 
   // ---- FAST core submit — only text fields + the single outlet photo.
   // Bill photos, the combined PDF, and everything else heavier all happen
@@ -2156,7 +2225,7 @@ async function submitAudit(){
   // to the person as fast as the network genuinely allows — this is the
   // actual fix for "submit still slow": it wasn't AI anymore, it was the
   // PDF-building and bill-photo work sitting in front of the network call.
-  btn.innerHTML = '<span class="spin"></span> Submitting…';
+  showSubmitProgress(55, 'Submitting…');
   const formSnapshot = {
     auditor: document.getElementById('f_auditor').value,
     date: document.getElementById('f_date').value,
@@ -2191,7 +2260,7 @@ async function submitAudit(){
     q5_priceSource: formSnapshot.q5_priceSource, q7_billType: formSnapshot.q7_billType,
     invoiceGSTDetected: formSnapshot.invoiceGSTDetected, q8_visibilityRating: formSnapshot.q8_visibilityRating,
     q9_posmAvailable: formSnapshot.q9_posmAvailable, q10_nlbGsbBrand: formSnapshot.q10_nlbGsbBrand,
-    photo: stampedOutlet, billCount: INVOICE_PHOTOS.length,
+    photo: stampedOutlet, photo2: stampedOutlet2, billCount: INVOICE_PHOTOS.length,
     lat: formSnapshot.geoLat, lng: formSnapshot.geoLng, accuracy: formSnapshot.geoAccuracy,
     mapsLink: formSnapshot.geoLink, geoAddress: formSnapshot.geoAddress
   };
@@ -2199,10 +2268,12 @@ async function submitAudit(){
   try{
     if(!configured()) throw new Error('__NOCFG__');
     const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)});
+    showSubmitProgress(90, 'Almost done…');
     const res = await r.json();
     if(!res.success) throw new Error(res.message || 'Submit failed');
     auditId = res.auditId || 'OK';
   }catch(e){
+    hideSubmitProgress();
     if(e.message==='__NOCFG__'){
       auditId = 'DEMO';
     } else {
@@ -2213,6 +2284,8 @@ async function submitAudit(){
   }
 
   // Audit is confirmed saved at this point — show success right away.
+  showSubmitProgress(100, 'Done!');
+  setTimeout(hideSubmitProgress, 400);
   showStamp(auditId, null, null);
   resetForm();
   btn.disabled = false; btn.innerHTML = 'Submit audit';
@@ -2300,8 +2373,9 @@ function resetForm(){
   FORM = {};
   document.querySelectorAll('#retailModule .yn button').forEach(b=>b.classList.remove('sel-yes','sel-no'));
   document.querySelectorAll('.stars button').forEach(b=>b.classList.remove('on'));
-  PHOTO_BASE64 = null; INVOICE_BASE64 = null; INVOICE_PHOTOS = []; GEO = null;
+  PHOTO_BASE64 = null; PHOTO_BASE64_2 = null; INVOICE_BASE64 = null; INVOICE_PHOTOS = []; GEO = null;
   document.getElementById('photoPreview').style.display='none';
+  document.getElementById('photoPreview2').style.display='none';
   renderInvoiceThumbs();
   document.getElementById('scanBtnWrap').style.display='none';
   document.getElementById('scanResult').className='scan-result';
@@ -2333,11 +2407,12 @@ async function submitDBStockAudit(){
     return;
   }
   const submitBtnEl2 = document.getElementById('submitBtn');
-  submitBtnEl2.disabled = true; submitBtnEl2.innerHTML = '<span class="spin"></span> Verifying fingerprint/Face…';
+  submitBtnEl2.disabled = true; submitBtnEl2.innerHTML = 'Submitting…';
+  showSubmitProgress(8, 'Verifying fingerprint/Face…');
   const bioOk2 = await r9yMnTm4NSzvG9rrwjM2ec8xZgh1cafXH8();
-  if(!bioOk2){ submitBtnEl2.disabled = false; submitBtnEl2.innerHTML = 'Submit stock audit'; return; }
+  if(!bioOk2){ submitBtnEl2.disabled = false; submitBtnEl2.innerHTML = 'Submit stock audit'; hideSubmitProgress(); return; }
   const btn = document.getElementById('submitBtn');
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Stamping photos…';
+  showSubmitProgress(30, 'Stamping photos…');
   const lines = dbWatermarkLines();
   let stampedWide = '', stampedRack = '';
   try{
@@ -2347,7 +2422,7 @@ async function submitDBStockAudit(){
 
   // ---- FAST core submit — text fields + both photos (small, unlike the
   // retail module there's no bills-PDF here), PDF-building happens AFTER.
-  btn.innerHTML = '<span class="spin"></span> Submitting…';
+  showSubmitProgress(55, 'Submitting…');
   const dbSnapshot = {
     date: document.getElementById('db_date').value, auditType: DB_FORM.auditType || '',
     dbCode: document.getElementById('db_dbCode').value, dbName: document.getElementById('db_dbName').value,
@@ -2376,10 +2451,12 @@ async function submitDBStockAudit(){
   try{
     if(!configured()) throw new Error('__NOCFG__');
     const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)});
+    showSubmitProgress(90, 'Almost done…');
     const res = await r.json();
     if(!res.success) throw new Error(res.message || 'Submit failed');
     auditId = res.auditId || 'OK';
   }catch(e){
+    hideSubmitProgress();
     if(e.message==='__NOCFG__'){
       auditId = 'DEMO';
     } else {
@@ -2389,6 +2466,8 @@ async function submitDBStockAudit(){
     }
   }
 
+  showSubmitProgress(100, 'Done!');
+  setTimeout(hideSubmitProgress, 400);
   showStamp(auditId, null, null);
   resetDBForm();
   btn.disabled = false; btn.innerHTML = 'Submit stock audit';
@@ -2430,7 +2509,7 @@ function resetDBForm(){
    'db_haldi','db_chili','db_dhania','db_jeeraPowder','db_jeeraWhole','db_panchForon','db_methi',
    'db_ajwain','db_saunf','db_sarson','db_shahiGaramMasala','db_chickenMasala','db_meatMasala',
    'db_kashmiriMirch','db_kalajeera'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('db_dbName').readOnly = true; document.getElementById('db_dbName').placeholder='Enter DB Code first';
+  document.getElementById('db_dbName').placeholder='Enter DB Code first, or start typing a name…';
   document.getElementById('db_dbCity').readOnly = true; document.getElementById('db_dbCity').placeholder='Enter DB Code first';
   document.getElementById('dbCodeError').textContent='';
   DB_FORM = {auditType:'3PA'}; // reset back to the 3PA default for the next audit
@@ -2455,6 +2534,7 @@ function resetDBForm(){
 document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
 document.getElementById('db_date').value = new Date().toISOString().slice(0,10);
 if(!configured()) document.getElementById('cfgWarning').style.display='block';
+loadDBMasterCache();
 </script>
 </body>
 </html>
