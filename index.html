@@ -176,6 +176,8 @@ main{max-width:720px; margin:0 auto; padding:16px 14px 110px;}
 .photo-box{border:1.5px dashed var(--border-2); border-radius:5px; padding:16px; text-align:center;}
 .photo-box img{max-width:100%; max-height:220px; border-radius:4px; margin-top:10px; display:none;}
 .photo-locked{opacity:.5;}
+.locked-until-address{position:relative; opacity:.4; pointer-events:none; user-select:none; transition:opacity .3s;}
+.locked-until-address::after{content:'🔒 Get your address above first'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.5); font-size:13px; font-weight:700; color:var(--slate); border-radius:inherit; text-align:center; padding:20px;}
 .lock-note{font-size:12px; color:var(--red); margin-top:8px; font-weight:600;}
 
 .bill-thumb-card{position:relative; width:88px; border-radius:10px; overflow:hidden; box-shadow:0 2px 8px rgba(18,23,43,.12); border:1px solid var(--border-2); background:#fff;}
@@ -206,6 +208,18 @@ main{max-width:720px; margin:0 auto; padding:16px 14px 110px;}
 .submit-bar .req{font-size:11px; color:var(--red); text-align:center; margin-top:6px; display:none;}
 .submit-bar .req.show{display:block;}
 
+.info-popup-overlay{position:fixed; inset:0; background:rgba(18,23,43,.55); display:none; align-items:flex-end; justify-content:center; z-index:400;}
+.info-popup-overlay.show{display:flex;}
+.info-popup-box{background:var(--card, #fff); width:100%; max-width:480px; border-radius:18px 18px 0 0; padding:22px 20px calc(20px + env(safe-area-inset-bottom,0px)); box-shadow:0 -8px 30px rgba(18,23,43,.25);}
+.info-popup-text{font-size:15px; line-height:1.55; color:var(--ink, #12172B); margin-bottom:16px;}
+.info-popup-close{width:100%; padding:13px; border-radius:11px; border:none; background:var(--amber, #F5A623); color:#fff; font-weight:700; font-size:14px; cursor:pointer;}
+.selfie-cam-overlay{position:fixed; inset:0; background:#000; display:none; flex-direction:column; z-index:350;}
+.selfie-cam-overlay.show{display:flex;}
+.selfie-cam-overlay video{flex:1; width:100%; object-fit:cover; transform:scaleX(-1);}
+.selfie-cam-controls{display:flex; align-items:center; justify-content:space-between; padding:20px 24px calc(20px + env(safe-area-inset-bottom,0px)); background:#000;}
+.selfie-cam-shutter{width:70px; height:70px; border-radius:50%; background:#fff; border:4px solid rgba(255,255,255,.4); cursor:pointer; transition:transform .12s;}
+.selfie-cam-shutter:active{transform:scale(.9);}
+.selfie-cam-cancel{background:none; border:none; color:#fff; font-size:14px; font-weight:600; cursor:pointer; padding:10px; width:70px;}
 .submit-progress-overlay{position:fixed; inset:0; background:rgba(18,23,43,.85); display:none; align-items:center; justify-content:center; z-index:300; backdrop-filter:blur(3px);}
 .submit-progress-overlay.show{display:flex;}
 .submit-progress-box{display:flex; flex-direction:column; align-items:center; gap:16px;}
@@ -323,7 +337,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.22.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.25.0</div></div>
   </div>
 </header>
 
@@ -362,7 +376,26 @@ window.onerror = function(msg, url, line, col, err){
     </div>
   </div>
 
-  <div class="card">
+  <!-- ============ LOCATION — captured ONCE right after check-in; everything
+       below stays locked until this succeeds, and this can't be re-run
+       afterwards (prevents repeated GPS/geocoding API calls). ============ -->
+  <div class="card geo-card" id="geoCard">
+    <h2><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-3px;display:inline-block;margin-right:4px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Location &amp; Address <span class="req-mark">*</span></h2>
+    <div class="geo-status pending" id="geoStatus" style="margin-top:10px;">Not captured yet — required before the rest of the form unlocks</div>
+    <button class="btn btn-primary geo-btn-big" onclick="captureLocation(this)" id="geoBtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;display:inline-block;margin-right:5px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Get Address (current location)</button>
+    <div class="geo-readout" id="geoReadout" style="display:none;">
+      <div class="coords" id="geoCoords">—</div>
+      <div class="meta" id="geoMeta"></div>
+      <div class="meta" id="geoAddrDetail" style="margin-top:6px;"></div>
+    </div>
+    <div class="field" style="margin-top:14px;">
+      <label>Address <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(auto-filled above, edit if needed)</span></label>
+      <textarea id="f_address" rows="3" placeholder="Captured automatically once you tap the button above" disabled></textarea>
+      <div class="addr-note" id="addrNote"></div>
+    </div>
+  </div>
+
+  <div class="card locked-until-address" id="card_visitDetails">
     <h2><span class="n">1</span>Visit &amp; Auditor Details</h2>
     <div class="grid3" style="margin-top:14px;">
       <div class="field"><label>Date of Visit</label><input type="text" id="f_date" readonly></div>
@@ -378,18 +411,12 @@ window.onerror = function(msg, url, line, col, err){
     </div>
   </div>
 
-  <div class="card">
+  <div class="card locked-until-address" id="card_outletDetails">
     <h2><span class="n">2</span>Outlet Details</h2>
     <div class="grid2" style="margin-top:14px;">
       <div class="field"><label>Outlet / Retailer Name</label><input type="text" id="f_outletName"></div>
       <div class="field"><label>Outlet Type</label>
         <select id="f_outletType"><option value="">Select</option><option>General Trade</option><option>Modern Trade</option><option>Wholesale</option><option>Kirana</option><option>Other</option></select>
-      </div>
-      <div class="field" style="grid-column:1/-1;">
-        <label>Address <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(street, landmark, city, pincode — auto-filled, edit if needed)</span></label>
-        <textarea id="f_address" rows="3" placeholder="Tap 'Get Address' below — it pulls your current location's address automatically"></textarea>
-        <button class="btn btn-outline btn-block" style="margin-top:8px;" onclick="captureLocation(this)" id="getAddrBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;display:inline-block;margin-right:5px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Get Address (current location)</button>
-        <div class="addr-note" id="addrNote"></div>
       </div>
       <div class="field"><label>Outlet Owner Name</label><input type="text" id="f_ownerName" placeholder="Owner's full name"></div>
       <div class="field">
@@ -400,42 +427,30 @@ window.onerror = function(msg, url, line, col, err){
     </div>
   </div>
 
-  <!-- ============ LOCATION — most important, captured before any photo ============ -->
-  <div class="card geo-card" id="geoCard">
-    <h2><span class="n">3</span><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-3px;display:inline-block;margin-right:4px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Location (required)</h2>
-    <div class="geo-status pending" id="geoStatus" style="margin-top:10px;">Not captured yet — required before photos &amp; submit</div>
-    <button class="btn btn-primary geo-btn-big" onclick="captureLocation(this)" id="geoBtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;display:inline-block;margin-right:5px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Capture GPS location</button>
-    <div class="geo-readout" id="geoReadout" style="display:none;">
-      <div class="coords" id="geoCoords">—</div>
-      <div class="meta" id="geoMeta"></div>
-      <div class="meta" id="geoAddrDetail" style="margin-top:6px;"></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2><span class="n">4</span>Product Availability &amp; NPD <span class="q-info" title="NPD = New Product Development — newly launched items being tracked for early availability and uptake.">ⓘ NPD</span></h2>
+  <div class="card locked-until-address" id="card_npd">
+    <h2><span class="n">4</span>Product Availability &amp; NPD <span class="q-info" title="NPD = New Product Development — newly launched items being tracked for early availability and uptake." onclick="showInfoPopup(this)">ⓘ NPD</span></h2>
     <div class="grid2" style="margin-top:14px;">
       <div class="field">
-        <label>GCPL Availability — Distribution by distributor? <span class="q-info" title="Confirms whether GCPL products are currently being supplied to this outlet by any distributor.">ⓘ</span></label>
+        <label>GCPL Availability — Distribution by distributor? <span class="q-info" title="Confirms whether GCPL products are currently being supplied to this outlet by any distributor." onclick="showInfoPopup(this)">ⓘ</span></label>
         <div class="yn" id="yn_q1"><button onclick="setYN('q1','Yes',this)">Yes</button><button onclick="setYN('q1','No',this)">No</button></div>
       </div>
-      <div class="field"><label>How many DBs are supplying <span class="q-info" title="DB = Distributor. Number of distinct distributors currently supplying this outlet.">ⓘ</span></label><input type="number" min="0" id="f_q2"></div>
+      <div class="field"><label>How many DBs are supplying <span class="q-info" title="DB = Distributor. Number of distinct distributors currently supplying this outlet." onclick="showInfoPopup(this)">ⓘ</span></label><input type="number" min="0" id="f_q2"></div>
       <div class="field">
-        <label>NPD — Spice available or not? <span class="q-info" title="Whether newly-launched (New Product Development) spice items are stocked at this outlet.">ⓘ</span></label>
+        <label>NPD — Spice available or not? <span class="q-info" title="Whether newly-launched (New Product Development) spice items are stocked at this outlet." onclick="showInfoPopup(this)">ⓘ</span></label>
         <div class="yn" id="yn_q3"><button onclick="setYN('q3','Yes',this)">Yes</button><button onclick="setYN('q3','No',this)">No</button></div>
       </div>
     </div>
   </div>
 
-  <div class="card">
+  <div class="card locked-until-address">
     <h2><span class="n">5</span>Satisfaction, Price &amp; DB Bills</h2>
     <div class="grid2" style="margin-top:14px;">
       <div class="field">
-        <label>Happy with DB or not? <span class="q-info" title="Whether the outlet is satisfied with their current Distributor's service (delivery, stock, support).">ⓘ</span></label>
+        <label>Happy with DB or not? <span class="q-info" title="Whether the outlet is satisfied with their current Distributor's service (delivery, stock, support)." onclick="showInfoPopup(this)">ⓘ</span></label>
         <div class="yn" id="yn_q4"><button onclick="setYN('q4','Yes',this)">Yes</button><button onclick="setYN('q4','No',this)">No</button></div>
       </div>
       <div class="field">
-        <label>How does the outlet receive GCPL price updates? <span class="q-info" title="How the retailer usually finds out about new GCPL prices — helps spot outlets that might be missing timely updates.">ⓘ</span></label>
+        <label>How does the outlet receive GCPL price updates? <span class="q-info" title="How the retailer usually finds out about new GCPL prices — helps spot outlets that might be missing timely updates." onclick="showInfoPopup(this)">ⓘ</span></label>
         <select id="f_q5">
           <option value="">Select</option>
           <option>Distributor</option>
@@ -446,50 +461,42 @@ window.onerror = function(msg, url, line, col, err){
         </select>
       </div>
       <div class="field">
-        <label>Bill type <span class="q-info" title="Whether the outlet's purchase bills show GST or not — tracks formal vs informal billing from the distributor.">ⓘ</span></label>
-        <select id="f_q7"><option value="">Select (or scan invoice below)</option><option>GST</option><option>Non-GST</option><option>Mixed</option></select>
+        <label>Bill type <span class="q-info" title="Whether the outlet's purchase bills show GST or not — tracks formal vs informal billing from the distributor." onclick="showInfoPopup(this)">ⓘ</span></label>
+        <select id="f_q7"><option value="">Select</option><option>GST</option><option>Non-GST</option><option>Mixed</option></select>
       </div>
     </div>
   </div>
 
-  <!-- ============ INVOICE PHOTOS (min 5) → combined into ONE PDF + GST scan ============ -->
-  <div class="card">
+  <!-- ============ INVOICE PHOTOS (min 5) → combined into ONE PDF ============ -->
+  <div class="card locked-until-address">
     <h2><span class="n">6</span>Invoice / Bill Photos — DB Bill Check <span style="text-transform:none; font-weight:400; font-size:12px; color:var(--slate);">(at least 1 required, 5 recommended)</span></h2>
     <div class="photo-box" id="invoiceBox" style="margin-top:14px;">
       <button class="btn btn-outline" onclick="tryOpenCamera('invoiceInput')" id="invoiceBtn">📷 Capture bill photo</button>
       <input type="file" id="invoiceInput" accept="image/*" capture="environment" style="display:none" onchange="onInvoicePhoto(event)">
       <div id="invoiceThumbs" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; justify-content:center;"></div>
       <div class="addr-note warn" id="invoiceCountNote" style="margin-top:8px;">0 of 5 minimum bills captured</div>
-      <div id="scanBtnWrap" style="display:none; margin-top:10px;">
-        <button class="btn btn-outline btn-block" onclick="scanInvoice()" id="scanBtn">🔍 Scan first bill for GSTIN</button>
-      </div>
-      <div class="scan-result" id="scanResult"></div>
-      <div class="scan-override" id="scanOverride" style="display:none;">
-        <button onclick="setInvoiceType('GST',this)">Confirm GST</button>
-        <button onclick="setInvoiceType('Non-GST',this)">Confirm Non-GST</button>
-      </div>
       <div class="lock-note" id="invoiceLock">Capture GPS location first — every photo is watermarked with it</div>
     </div>
   </div>
 
-  <div class="card">
+  <div class="card locked-until-address">
     <h2><span class="n">7</span>Visibility</h2>
     <div class="grid2" style="margin-top:14px;">
       <div class="field">
-        <label>GCPL visibility on shelf (1–5) <span class="q-info" title="How prominently GCPL products are displayed — 1 = hidden/poor placement, 5 = front-and-centre, excellent visibility.">ⓘ</span></label>
+        <label>GCPL visibility on shelf (1–5) <span class="q-info" title="How prominently GCPL products are displayed — 1 = hidden/poor placement, 5 = front-and-centre, excellent visibility." onclick="showInfoPopup(this)">ⓘ</span></label>
         <div class="stars" id="star_q8">
           <button onclick="setStar(1,this)">1</button><button onclick="setStar(2,this)">2</button><button onclick="setStar(3,this)">3</button><button onclick="setStar(4,this)">4</button><button onclick="setStar(5,this)">5</button>
         </div>
       </div>
       <div class="field">
-        <label>POSM available? <span class="q-info" title="POSM = Point of Sale Machine — branded display items like danglers, posters, or standees provided to promote GCPL products in-store.">ⓘ POSM</span></label>
+        <label>POSM available? <span class="q-info" title="POSM = Point of Sale Machine — branded display items like danglers, posters, or standees provided to promote GCPL products in-store." onclick="showInfoPopup(this)">ⓘ POSM</span></label>
         <div class="yn" id="yn_q9"><button onclick="setYN('q9','Yes',this)">Yes</button><button onclick="setYN('q9','No',this)">No</button></div>
       </div>
-      <div class="field"><label>Any NLB / GSB — which brand <span class="q-info" title="NLB/GSB refers to competing brands being stocked alongside GCPL — note the brand name if present.">ⓘ</span></label><input type="text" id="f_q10" placeholder="Brand name, if any"></div>
+      <div class="field"><label>Any NLB / GSB — which brand <span class="q-info" title="NLB/GSB refers to competing brands being stocked alongside GCPL — note the brand name if present." onclick="showInfoPopup(this)">ⓘ</span></label><input type="text" id="f_q10" placeholder="Brand name, if any"></div>
     </div>
   </div>
 
-  <div class="card">
+  <div class="card locked-until-address">
     <h2><span class="n">8</span>Outlet Photo</h2>
     <div class="photo-box" id="photoBox" style="margin-top:14px;">
       <label style="font-size:12px; font-weight:700; color:var(--slate); text-transform:uppercase; letter-spacing:.03em;">Photo 1 <span class="req-mark">*</span> required</label>
@@ -640,6 +647,21 @@ window.onerror = function(msg, url, line, col, err){
   <div class="req" id="submitReq">Capture GPS location before submitting</div>
 </div>
 
+<div class="info-popup-overlay" id="infoPopupOverlay" onclick="if(event.target===this) closeInfoPopup()">
+  <div class="info-popup-box">
+    <div class="info-popup-text" id="infoPopupText"></div>
+    <button class="info-popup-close" onclick="closeInfoPopup()">Got it</button>
+  </div>
+</div>
+<div class="selfie-cam-overlay" id="selfieCamOverlay">
+  <video id="selfieCamVideo" autoplay playsinline muted></video>
+  <canvas id="selfieCamCanvas" style="display:none;"></canvas>
+  <div class="selfie-cam-controls">
+    <button class="selfie-cam-cancel" onclick="closeSelfieCam()">✕ Cancel</button>
+    <button class="selfie-cam-shutter" onclick="captureSelfieCam()" aria-label="Capture"></button>
+    <span style="width:70px;"></span>
+  </div>
+</div>
 <div class="submit-progress-overlay" id="submitProgressOverlay">
   <div class="submit-progress-box">
     <div class="submit-progress-ring">
@@ -779,6 +801,21 @@ function toast(msg, isErr){
   t.textContent = msg; t.className = 'toast' + (isErr?' err':''); t.style.display='block';
   clearTimeout(t._h); t._h = setTimeout(()=>t.style.display='none', 3200);
 }
+/* The "ⓘ" info spans use a `title` attribute for desktop hover, but touch
+   devices have no hover state at all — title never shows on mobile no
+   matter how long you tap. This reads that same title text and shows it
+   in an actual on-screen popup instead, so tapping (not just hovering)
+   genuinely works, which is where this app is used the vast majority of
+   the time. */
+function showInfoPopup(el){
+  const text = el.getAttribute('title');
+  if(!text) return;
+  document.getElementById('infoPopupText').textContent = text;
+  document.getElementById('infoPopupOverlay').classList.add('show');
+}
+function closeInfoPopup(){
+  document.getElementById('infoPopupOverlay').classList.remove('show');
+}
 function configured(){ return SCRIPT_URL && SCRIPT_URL.indexOf('PASTE_YOUR') === -1; }
 
 /* ---- Module selector ---- */
@@ -873,16 +910,10 @@ function renderInvoiceThumbs(){
   const n = INVOICE_PHOTOS.length;
   note.className = n >= 1 ? 'addr-note' : 'addr-note warn';
   note.textContent = n === 0 ? 'No bills captured yet — at least 1 required, 5 recommended' : (n < 5 ? `✅ ${n} bill${n>1?'s':''} captured (5 recommended) — tap "Capture bill photo" to add more` : `✅ ${n} bills captured — all will merge into one PDF on submit`);
-  document.getElementById('scanBtnWrap').style.display = n ? 'block' : 'none';
 }
 function removeInvoicePhoto(i){
   INVOICE_PHOTOS.splice(i,1);
   INVOICE_BASE64 = INVOICE_PHOTOS[0] || null;
-  if(!INVOICE_PHOTOS.length){
-    document.getElementById('scanResult').className = 'scan-result';
-    document.getElementById('scanOverride').style.display = 'none';
-    FORM.invoiceGST = '';
-  }
   renderInvoiceThumbs();
 }
 function onDBPhoto(e){
@@ -1374,11 +1405,70 @@ function renderCheckinCapture(prefix){
       <div class="addr-note" id="${ids.status}">✅ ${CHECKIN_NAME}</div>
     </div>
     <div class="geo-status pending" style="margin-top:6px;">Not checked in today yet — required once before you can submit any audit today</div>
-    <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="document.getElementById('${ids.photoInput}').click()" id="${ids.photoBtn}">🤳 Take selfie to check in</button>
+    <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="openSelfieCam('${prefix}')" id="${ids.photoBtn}">🤳 Take selfie to check in</button>
     <input type="file" id="${ids.photoInput}" accept="image/*" capture="user" style="display:none" onchange="onCheckinPhoto(event,'${prefix}')">
     <img id="${ids.photoPreview}" style="max-width:200px; border-radius:4px; margin-top:10px; display:none;">
     <button class="btn btn-dark btn-block" style="margin-top:12px;" onclick="doSubmitCheckin('${prefix}')" id="${ids.submitBtn}" disabled>Submit check-in</button>
   `;
+}
+/* Custom front-camera capture for the check-in selfie — the standard
+   <input capture="user"> approach SHOULD force the front camera, but a
+   number of Android browsers (some OEM WebViews especially) don't honour
+   the "user" vs "environment" distinction reliably and open the back
+   camera anyway. getUserMedia with an explicit facingMode constraint is
+   much more reliable at actually getting the front lens. Falls back to
+   the plain file input (whatever camera the device/browser defaults to)
+   if getUserMedia isn't available or permission is denied, so check-in
+   never gets fully blocked by this. */
+let _selfieCamStream = null;
+let _selfieCamPrefix = null;
+async function openSelfieCam(prefix){
+  _selfieCamPrefix = prefix;
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    document.getElementById(ckIds(prefix).photoInput).click(); // old devices/browsers with no getUserMedia at all
+    return;
+  }
+  try{
+    _selfieCamStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}, audio:false});
+    const video = document.getElementById('selfieCamVideo');
+    video.srcObject = _selfieCamStream;
+    document.getElementById('selfieCamOverlay').classList.add('show');
+  }catch(_e){
+    // Permission denied, no camera, or some other failure — fall back to
+    // the native file-input capture rather than leaving check-in stuck.
+    document.getElementById(ckIds(prefix).photoInput).click();
+  }
+}
+function closeSelfieCam(){
+  if(_selfieCamStream){ _selfieCamStream.getTracks().forEach(t=>t.stop()); _selfieCamStream = null; }
+  document.getElementById('selfieCamOverlay').classList.remove('show');
+}
+function captureSelfieCam(){
+  const video = document.getElementById('selfieCamVideo');
+  const canvas = document.getElementById('selfieCamCanvas');
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  // Mirror horizontally to match what the person saw in the live preview
+  // (the video itself is CSS-mirrored for a natural selfie feel; the
+  // saved photo should match that, not come out flipped/backwards).
+  ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  closeSelfieCam();
+  const prefix = _selfieCamPrefix;
+  // Reuse the exact same downscale pipeline as the file-input path, by
+  // converting this canvas data URL into a File the same downscale()
+  // function can consume, so both paths behave identically after this.
+  fetch(dataUrl).then(r=>r.blob()).then(blob=>{
+    const file = new File([blob], 'selfie.jpg', {type:'image/jpeg'});
+    downscale(file, (finalDataUrl)=>{
+      CHECKIN_PHOTO_BASE64 = finalDataUrl;
+      const ids = ckIds(prefix);
+      const prev = document.getElementById(ids.photoPreview);
+      prev.src = finalDataUrl; prev.style.display='block';
+      updateCheckinSubmitEnabled(prefix);
+    });
+  });
 }
 function onCheckinPhoto(e, prefix){
   const file = e.target.files[0]; if(!file) return;
@@ -1487,70 +1577,6 @@ function downscale(file, cb){
     img.src = ev.target.result;
   };
   reader.readAsDataURL(file);
-}
-
-/* ---- Free client-side OCR (Tesseract.js) to tell GST vs Non-GST invoices ----
-   Tesseract is a heavy WASM-based OCR engine (50-100+MB once running) — it
-   used to load unconditionally for EVERY visitor on page load, which was a
-   real contributor to "low memory" crashes on budget Android phones even
-   for people who never touched the GST-scan feature at all. It's now only
-   fetched the FIRST time someone actually taps "Scan Invoice", and cached
-   after that (the loader promise is reused, so tapping the button twice
-   doesn't reload the library twice). */
-let _tesseractLoadPromise = null;
-function loadTesseract(){
-  if(window.Tesseract) return Promise.resolve();
-  if(_tesseractLoadPromise) return _tesseractLoadPromise;
-  _tesseractLoadPromise = new Promise((resolve, reject)=>{
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-    s.crossOrigin = 'anonymous';
-    s.onload = resolve;
-    s.onerror = ()=>{ _tesseractLoadPromise = null; reject(new Error('Could not load the scanning library — check your connection.')); };
-    document.head.appendChild(s);
-  });
-  return _tesseractLoadPromise;
-}
-async function scanInvoice(){
-  if(!INVOICE_BASE64){ toast('Capture the invoice photo first', true); return; }
-  const btn = document.getElementById('scanBtn');
-  const orig = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Loading scanner…';
-  try{
-    await loadTesseract();
-    btn.innerHTML = '<span class="spin"></span> Scanning invoice…';
-    const { data:{ text } } = await Tesseract.recognize(INVOICE_BASE64, 'eng');
-    const gstinPattern = /\b\d{2}[A-Z]{5}\d{4}[A-Z]\d[Z][A-Z0-9]\b/i;
-    const hasGstin = gstinPattern.test(text) || /GSTIN/i.test(text) || /GST\s*NO/i.test(text);
-    const result = document.getElementById('scanResult');
-    if(hasGstin){
-      FORM.invoiceGST = 'GST';
-      document.getElementById('f_q7').value = 'GST';
-      result.className = 'scan-result gst';
-      result.textContent = '✅ GSTIN found — marked as GST invoice. Not correct? Use the buttons below to override.';
-    } else {
-      FORM.invoiceGST = 'Non-GST';
-      document.getElementById('f_q7').value = 'Non-GST';
-      result.className = 'scan-result nongst';
-      result.textContent = '⚠️ No GSTIN detected — marked as Non-GST invoice. Not correct? Use the buttons below to override.';
-    }
-    document.getElementById('scanOverride').style.display='flex';
-    highlightOverride();
-  }catch(err){
-    toast('Scan failed — you can set Bill type manually', true);
-  }finally{
-    btn.disabled = false; btn.innerHTML = orig;
-  }
-}
-function setInvoiceType(val, btn){
-  FORM.invoiceGST = val;
-  document.getElementById('f_q7').value = val;
-  highlightOverride();
-}
-function highlightOverride(){
-  document.querySelectorAll('#scanOverride button').forEach(b=>{
-    b.classList.toggle('sel', b.textContent.includes(FORM.invoiceGST));
-  });
 }
 
 /* ---- Address lookup: detailed reverse geocoding, free, no API key ----
@@ -1837,12 +1863,15 @@ function setBtnIdle(btn, idleText){
    Callable from either the Address card's "Get Address" button or the Location
    card's own button — both do the exact same full capture, so whichever one the
    auditor taps, GPS + address + photo-unlock all happen together. ---- */
+function unlockFormAfterAddress(){
+  document.querySelectorAll('#retailModule .locked-until-address').forEach(card=>{
+    card.classList.remove('locked-until-address');
+  });
+}
 function captureLocation(callerBtn){
   if(!navigator.geolocation){ toast('Geolocation not supported on this device', true); return; }
   const geoBtn = document.getElementById('geoBtn');
-  const addrBtn = document.getElementById('getAddrBtn');
   setBtnBusy(geoBtn, 'Locating…');
-  setBtnBusy(addrBtn, 'Locating…');
   navigator.geolocation.getCurrentPosition(async (pos)=>{
     GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy};
     const link = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${GEO.lat},${GEO.lng}`;
@@ -1854,10 +1883,15 @@ function captureLocation(callerBtn){
     document.getElementById('geoCoords').textContent = `${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)}`;
     document.getElementById('geoMeta').innerHTML = `±${Math.round(GEO.accuracy)}m accuracy &middot; <a href="${link}" target="_blank">Open in Google Maps</a>`;
     document.getElementById('geoAddrDetail').textContent = 'Looking up detailed address…';
-    setBtnIdle(geoBtn, PIN_SVG + 'Re-capture location');
-    setBtnIdle(addrBtn, PIN_SVG + 'Re-fetch address');
+    // Deliberately disabled (not just relabelled) — captured once per audit
+    // and can't be re-triggered, so re-tapping can't spam the geocoding
+    // APIs. District/City stay freely editable text fields either way.
+    geoBtn.disabled = true;
+    geoBtn.innerHTML = '✅ Location captured';
+    document.getElementById('f_address').disabled = false;
     document.getElementById('photoLock').style.display='none';
     document.getElementById('invoiceLock').style.display='none';
+    unlockFormAfterAddress();
 
     const addrNote = document.getElementById('addrNote');
     addrNote.className = 'addr-note'; addrNote.textContent = 'Fetching address from GPS…';
@@ -1897,8 +1931,7 @@ function captureLocation(callerBtn){
     }
   }, (err)=>{
     toast('Could not get location: '+err.message, true);
-    setBtnIdle(geoBtn, PIN_SVG + 'Capture GPS location');
-    setBtnIdle(addrBtn, PIN_SVG + 'Get Address (current location)');
+    setBtnIdle(geoBtn, PIN_SVG + 'Get Address (current location)');
   }, {enableHighAccuracy:true, timeout:15000});
 }
 
@@ -2377,20 +2410,24 @@ function resetForm(){
   document.getElementById('photoPreview').style.display='none';
   document.getElementById('photoPreview2').style.display='none';
   renderInvoiceThumbs();
-  document.getElementById('scanBtnWrap').style.display='none';
-  document.getElementById('scanResult').className='scan-result';
-  document.getElementById('scanOverride').style.display='none';
   document.getElementById('geoCard').classList.remove('got');
   document.getElementById('geoStatus').className = 'geo-status pending';
-  document.getElementById('geoStatus').textContent = 'Not captured yet — required before photos & submit';
+  document.getElementById('geoStatus').textContent = 'Not captured yet — required before the rest of the form unlocks';
   document.getElementById('geoReadout').style.display='none';
   document.getElementById('geoAddrDetail').textContent='';
   document.getElementById('addrNote').className='addr-note';
   document.getElementById('addrNote').textContent='';
-  setBtnIdle(document.getElementById('getAddrBtn'), PIN_SVG + 'Get Address (current location)');
-  setBtnIdle(document.getElementById('geoBtn'), PIN_SVG + 'Capture GPS location');
+  const geoBtn2 = document.getElementById('geoBtn');
+  geoBtn2.disabled = false;
+  setBtnIdle(geoBtn2, PIN_SVG + 'Get Address (current location)');
+  document.getElementById('f_address').disabled = true;
   document.getElementById('photoLock').style.display='block';
   document.getElementById('invoiceLock').style.display='block';
+  // Re-lock everything for the NEXT audit — a fresh location capture is
+  // required per outlet visit, so the whole gate resets each time.
+  document.querySelectorAll('#retailModule .card').forEach(card=>{
+    if(card.id !== 'geoCard' && card.id !== 'r_checkinCard') card.classList.add('locked-until-address');
+  });
   document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
   if(CHECKIN_NAME) document.getElementById('f_auditor').value = CHECKIN_NAME; // re-fill after clearing above — same SO, no need to retype
   window.scrollTo({top:0, behavior:'smooth'});
