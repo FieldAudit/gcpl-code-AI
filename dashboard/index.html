@@ -303,7 +303,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.27.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.28.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -371,6 +371,7 @@ table.data tr:hover td{background:var(--paper-2);}
           <select id="photoTypeFilter" onchange="renderPhotos()">
             <option value="">All photo types</option>
             <option value="Outlet Photo">Outlet Photo</option>
+            <option value="Outlet Photo 2">Outlet Photo 2</option>
             <option value="Godown Photo">Godown Photo</option>
             <option value="Product Rack Photo">Product Rack Photo</option>
           </select>
@@ -591,7 +592,7 @@ function enterApp(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.27.0';
+const FRONTEND_VERSION = 'v6.28.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1512,6 +1513,16 @@ function buildPhotoList(){
   PHOTO_RETAIL_DATA.forEach(r=>{
     if(r.photoUrl) list.push({
       date:r.date, type:'Outlet Photo', typeClass:'type-outlet', url:r.photoUrl, mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink),
+      name:r.outletName||'—', source:'FieldAudit App',
+      details:[
+        r.ownerName?['Owner', r.ownerName]:null,
+        r.retailerPhone?['Phone', r.retailerPhone]:null,
+        r.distributor?['Distributor', r.distributor]:null,
+        r.auditor?['Auditor', r.auditor]:null
+      ].filter(Boolean)
+    });
+    if(r.photoUrl2) list.push({
+      date:r.date, type:'Outlet Photo 2', typeClass:'type-outlet', url:r.photoUrl2, mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink),
       name:r.outletName||'—', source:'FieldAudit App',
       details:[
         r.ownerName?['Owner', r.ownerName]:null,
