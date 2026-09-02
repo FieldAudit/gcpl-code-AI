@@ -15,6 +15,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <style>
 :root{
   /* "Ultimate" tech-gradient palette — matches survey app's default look */
@@ -232,12 +233,36 @@ table.data tr:hover td{background:var(--paper-2);}
 .photo-card .view-map-link{font-size:11px; color:var(--amber); text-decoration:none; font-weight:700;}
 .photo-card .view-map-link:hover{text-decoration:underline;}
 
+.load-progress-overlay{position:fixed; inset:0; background:rgba(18,23,43,.92); display:none; align-items:center; justify-content:center; z-index:500; backdrop-filter:blur(3px);}
+.load-progress-overlay.show{display:flex;}
+.load-progress-box{display:flex; flex-direction:column; align-items:center; gap:16px;}
+.load-progress-ring{position:relative; width:120px; height:120px;}
+.load-progress-ring svg{width:100%; height:100%; transform:rotate(-90deg);}
+.load-progress-ring .track{fill:none; stroke:rgba(255,255,255,.15); stroke-width:8;}
+.load-progress-ring .bar{fill:none; stroke:var(--amber, #F5A623); stroke-width:8; stroke-linecap:round; stroke-dasharray:283; stroke-dashoffset:283; transition:stroke-dashoffset .3s ease;}
+.load-progress-pct{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; font-weight:700;}
+.load-progress-label{color:#fff; font-size:14px; font-weight:600; letter-spacing:.02em;}
 .photo-lightbox{position:fixed; inset:0; background:rgba(18,23,43,.9); z-index:400; display:none; align-items:center; justify-content:center; padding:30px;}
 .photo-lightbox.show{display:flex;}
 .photo-lightbox-inner{position:relative; max-width:90vw; max-height:90vh; display:flex; flex-direction:column; align-items:center;}
-.photo-lightbox-inner img{max-width:90vw; max-height:78vh; border-radius:6px; object-fit:contain;}
+.lightbox-img-wrap{position:relative; overflow:hidden; max-width:90vw; max-height:70vh; display:flex; align-items:center; justify-content:center;}
+.photo-lightbox-inner img{max-width:90vw; max-height:70vh; border-radius:6px; object-fit:contain; transition:transform .2s;}
+.lightbox-nav{position:absolute; inset:0; display:flex; align-items:center; justify-content:space-between; pointer-events:none;}
+.lightbox-nav button{pointer-events:auto; background:rgba(18,23,43,.55); color:#fff; border:none; width:38px; height:38px; border-radius:50%; font-size:22px; cursor:pointer; margin:0 6px;}
+.lightbox-nav span{position:absolute; bottom:8px; left:50%; transform:translateX(-50%); background:rgba(18,23,43,.6); color:#fff; font-size:11px; padding:3px 10px; border-radius:20px; pointer-events:none;}
+.lightbox-zoom-controls{display:flex; gap:8px; margin-top:10px;}
+.lightbox-zoom-controls button{width:34px; height:34px; border-radius:50%; border:none; background:rgba(255,255,255,.15); color:#fff; font-size:16px; cursor:pointer;}
 .photo-lightbox-caption{color:var(--paper); font-size:13px; margin-top:12px; text-align:center; max-width:600px;}
 .photo-lightbox-close{position:absolute; top:-16px; right:-16px; width:34px; height:34px; border-radius:50%; background:var(--paper); border:none; font-size:16px; cursor:pointer;}
+
+.thumb-gallery{position:relative;}
+.gallery-nav{position:absolute; top:50%; transform:translateY(-50%); background:rgba(18,23,43,.55); color:#fff; border:none; width:26px; height:26px; border-radius:50%; font-size:16px; cursor:pointer; z-index:2;}
+.gallery-nav.prev{left:6px;} .gallery-nav.next{right:6px;}
+.gallery-count{position:absolute; bottom:6px; right:6px; background:rgba(18,23,43,.6); color:#fff; font-size:10px; padding:2px 7px; border-radius:20px;}
+.pdf-thumb{width:100%; aspect-ratio:4/3; background:linear-gradient(135deg,#FFF5F3,#FFEFE0); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:10px; text-align:center;}
+.pdf-thumb-icon{filter:drop-shadow(0 2px 4px rgba(192,57,43,.25));}
+.pdf-thumb-label{font-size:11.5px; font-weight:700; color:var(--ink); line-height:1.3; max-width:90%;}
+.pdf-thumb-open{font-size:11px; font-weight:700; color:var(--amber, #F5A623); border:1.5px solid var(--amber, #F5A623); border-radius:20px; padding:4px 12px; margin-top:2px;}
 
 /* ---- Master Data tab ---- */
 .hint{font-size:12.5px; color:var(--slate); margin-bottom:12px; line-height:1.5;}
@@ -280,7 +305,14 @@ table.data tr:hover td{background:var(--paper-2);}
     <div class="login-body">
       <div class="login-error" id="loginError"></div>
       <div class="field"><label>User ID</label><input id="loginUser" type="text" placeholder="e.g. admin" autocomplete="username"></div>
-      <div class="field"><label>Password</label><input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+      <div class="field">
+        <label>Password</label>
+        <div style="position:relative;">
+          <input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password" style="padding-right:44px;">
+          <button type="button" onclick="togglePasswordVisibility()" id="pwToggleBtn" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px; padding:6px; color:var(--slate);">👁️</button>
+        </div>
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin:2px 0 4px; cursor:pointer;"><input type="checkbox" id="rememberMeBox"> Remember me on this device</label>
       <button class="btn btn-primary btn-block" id="loginBtn" onclick="doLogin()">Sign in</button>
       <div class="login-foot">Field auditors don't need this login — they use the survey link directly.</div>
     </div>
@@ -303,9 +335,9 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.28.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.33.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
-    <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
+    <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
   <div id="updateBanner" style="display:none; background:#1B7A43; color:#fff; padding:10px 20px; font-size:13px; align-items:center; justify-content:center; gap:14px;">
     <span>🔄 A new version of this dashboard is available.</span>
@@ -346,6 +378,7 @@ table.data tr:hover td{background:var(--paper-2);}
             <option value="90">Last 90 days</option>
             <option value="all" selected>All time</option>
           </select>
+          <button class="btn btn-dark" onclick="exportAnalyticsPPT()" id="pptExportBtn">📊 Export PPT Report</button>
         </div>
       </div>
       <div id="dashContent"><div class="empty"><b>Loading analytics…</b>Fetching audit data from the sheet.</div></div>
@@ -371,9 +404,8 @@ table.data tr:hover td{background:var(--paper-2);}
           <select id="photoTypeFilter" onchange="renderPhotos()">
             <option value="">All photo types</option>
             <option value="Outlet Photo">Outlet Photo</option>
-            <option value="Outlet Photo 2">Outlet Photo 2</option>
-            <option value="Godown Photo">Godown Photo</option>
-            <option value="Product Rack Photo">Product Rack Photo</option>
+            <option value="Invoice / Bill Photos — DB Bill Check">Invoice / Bill Photos</option>
+            <option value="Godown Photos">Godown Photos</option>
           </select>
           <select id="photoSourceFilter" onchange="renderPhotos()">
             <option value="">All sources</option>
@@ -446,9 +478,29 @@ table.data tr:hover td{background:var(--paper-2);}
     <div class="export-status" id="exportStatus">Preparing report…</div>
   </div>
 </div>
+<div class="load-progress-overlay" id="loadProgressOverlay">
+  <div class="load-progress-box">
+    <div class="load-progress-ring">
+      <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" class="track"/><circle cx="50" cy="50" r="45" class="bar" id="loadProgressBar"/></svg>
+      <div class="load-progress-pct" id="loadProgressPct">0%</div>
+    </div>
+    <div class="load-progress-label" id="loadProgressLabel">Starting…</div>
+  </div>
+</div>
 <div class="photo-lightbox" id="photoLightbox" onclick="closeLightbox(event)">
-  <div class="photo-lightbox-inner">
-    <img id="lightboxImg" src="">
+  <div class="photo-lightbox-inner" onclick="event.stopPropagation()">
+    <div class="lightbox-img-wrap">
+      <img id="lightboxImg" src="">
+      <div class="lightbox-nav" id="lightboxNav" style="display:none;">
+        <button onclick="lightboxNav(-1)">‹</button>
+        <span id="lightboxCounter"></span>
+        <button onclick="lightboxNav(1)">›</button>
+      </div>
+    </div>
+    <div class="lightbox-zoom-controls">
+      <button onclick="lightboxZoom(-0.5)">－</button>
+      <button onclick="lightboxZoom(0.5)">＋</button>
+    </div>
     <div class="photo-lightbox-caption" id="lightboxCaption"></div>
     <button class="photo-lightbox-close" onclick="closeLightbox(event)">✕</button>
   </div>
@@ -471,6 +523,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHB
 const GOOGLE_MAPS_JS_KEY = "AIzaSyBTrdfFw6LNdlTbytFC6o1bLnr5PJDk0E0";
 
 let SESSION = null;
+let LAST_ANALYTICS_SNAPSHOT = null; // set by renderRetailDashboard/renderDBDashboard, read by exportAnalyticsPPT
 let ALL_DATA = [];
 let CHARTS = {};
 let MODULE = 'retail'; // 'retail' | 'db'
@@ -499,23 +552,73 @@ function downloadBase64File(base64, filename, mime){
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
 }
 
+/* Manual "clear cache and get the latest" button — every callApi() call
+   already sends cache:'no-store' with a cache-busting timestamp, so this
+   isn't fighting stale HTTP caching; it's for the person who just wants a
+   clear, obvious way to force a full reload of everything currently on
+   screen (data + photos) without doing a hard browser refresh themselves. */
+async function syncNow(){
+  const btn = document.getElementById('syncBtn');
+  const orig = btn.textContent;
+  btn.textContent = '⏳'; btn.disabled = true;
+  try{
+    PHOTOS_LOADED = false;
+    await loadData();
+    const activeTab = document.querySelector('nav.tabs button.active');
+    const name = activeTab ? activeTab.dataset.tab : 'dash';
+    if(name==='dash') renderDashboard();
+    else if(name==='history') renderHistory();
+    else if(name==='photos'){ await loadPhotosData(); renderPhotos(); }
+    toast('Refreshed — showing the latest data');
+  }catch(_e){
+    toast('Could not refresh — check your connection', true);
+  }finally{
+    btn.textContent = orig; btn.disabled = false;
+  }
+}
+function togglePasswordVisibility(){
+  const input = document.getElementById('loginPass');
+  const btn = document.getElementById('pwToggleBtn');
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  btn.textContent = show ? '🙈' : '👁️';
+}
+const SESSION_STORAGE_KEY = 'fieldaudit_dashboard_session_v1';
+function showLoadProgress(pct, label){
+  const overlay = document.getElementById('loadProgressOverlay');
+  overlay.classList.add('show');
+  const circumference = 283;
+  document.getElementById('loadProgressBar').style.strokeDashoffset = circumference - (circumference * pct / 100);
+  document.getElementById('loadProgressPct').textContent = Math.round(pct) + '%';
+  document.getElementById('loadProgressLabel').textContent = label;
+}
+function hideLoadProgress(){
+  document.getElementById('loadProgressOverlay').classList.remove('show');
+}
 async function doLogin(){
   const user = document.getElementById('loginUser').value.trim();
   const pass = document.getElementById('loginPass').value;
+  const remember = document.getElementById('rememberMeBox').checked;
   const err = document.getElementById('loginError');
   err.style.display='none';
   if(!user || !pass){ err.textContent='Enter your user ID and password.'; err.style.display='block'; return; }
   const btn = document.getElementById('loginBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Signing in…';
+  showLoadProgress(15, 'Signing in…');
   try{
     if(!configured()) throw new Error('__NOCFG__');
     const qs = new URLSearchParams({action:'login', userId:user, password:pass}).toString();
     const r = await fetch(`${SCRIPT_URL}?${qs}`);
+    showLoadProgress(40, 'Checking credentials…');
     const res = await r.json();
     if(!res.success) throw new Error(res.message || 'Invalid credentials');
     SESSION = {userId:user, name:res.name || user, role:res.role || 'Manager', token:res.token};
-    enterApp();
+    if(remember){
+      try{ localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(SESSION)); }catch(_e){}
+    }
+    enterApp(); // takes over the progress ring itself, through to 100%
   }catch(e){
+    hideLoadProgress();
     if(e.message === '__NOCFG__'){
       SESSION = {userId:user, name:user, role:'Manager', token:'demo'};
       document.getElementById('cfgWarning').style.display='block';
@@ -530,6 +633,7 @@ async function doLogin(){
 }
 function logout(){
   SESSION = null;
+  try{ localStorage.removeItem(SESSION_STORAGE_KEY); }catch(_e){}
   document.getElementById('screen-app').style.display='none';
   document.getElementById('screen-login').style.display='flex';
   document.getElementById('loginUser').value=''; document.getElementById('loginPass').value='';
@@ -537,6 +641,7 @@ function logout(){
 function enterApp(){
   document.getElementById('screen-login').style.display='none';
   document.getElementById('screen-app').style.display='block';
+  showLoadProgress(55, 'Loading your dashboard…');
   document.getElementById('whoName').textContent = SESSION.name;
   document.getElementById('whoRole').textContent = SESSION.role || '';
   document.getElementById('masterTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
@@ -575,13 +680,17 @@ function enterApp(){
         el.title = 'Live backend version — for reference only, a mismatch with this page\'s own version is normal.';
       }).catch(()=>{});
   }
+  showLoadProgress(75, 'Fetching latest audit data…');
+  const finish = ()=>{ showLoadProgress(100, 'Ready!'); setTimeout(hideLoadProgress, 350); };
   if(isSalesOnly){
     // Sales is scoped to ONLY "GCPL Stock Audit" — this sets MODULE='db',
     // SOURCE_FILTER to external, hides the Retail/DB toggle, and does its
-    // own loadData()+render, so the generic load below is skipped for them.
+    // own loadData()+render internally; just give it a moment to land
+    // before closing out the progress ring.
     switchSourceTab('gcpl');
+    setTimeout(finish, 400);
   } else {
-    loadData().then(()=>{ renderDashboard(); });
+    loadData().then(()=>{ renderDashboard(); finish(); });
   }
   startVersionWatcher();
 }
@@ -592,7 +701,7 @@ function enterApp(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.28.0';
+const FRONTEND_VERSION = 'v6.33.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -993,13 +1102,6 @@ async function loadData(){
     const action = MODULE==='db' ? 'getDBData' : 'getData';
     const res = await callApi({action, token:SESSION.token});
     ALL_DATA = res.rows || [];
-    if(action==='getDBData'){
-      // TEMPORARY diagnostic — visible in the browser console (F12) — shows
-      // exactly what role the server determined for this session's token,
-      // and how many internal vs external rows it decided to include,
-      // removing all guesswork about where a mismatch might be.
-      console.log('[FieldAudit debug] server-side role:', res._debugRole, '| external rows included:', res._debugExternalCount, '| internal DBStockAudit rows:', res._debugInternalCount, '| client-side SESSION.role:', SESSION.role);
-    }
   }catch(e){
     ALL_DATA = [];
   }
@@ -1072,6 +1174,91 @@ function exportUserPerformanceTable(){
   XLSX.utils.book_append_sheet(wb, ws, 'User Performance');
   XLSX.writeFile(wb, `User_Performance_${MODULE}_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
+
+/** Builds a full, presentable slide deck straight from whatever's on
+ *  screen right now — title, big KPI cards, the Key Insights bullets,
+ *  every chart currently rendered (captured as a real image from its own
+ *  canvas, not redrawn), and the User-wise Performance table. Available to
+ *  every role since it just reads the SAME data-scoped view that role
+ *  already sees (Marketing's PPT only ever has Marketing's own data, same
+ *  as everywhere else in the app). */
+async function exportAnalyticsPPT(){
+  const btn = document.getElementById('pptExportBtn');
+  const orig = btn.innerHTML;
+  if(!LAST_ANALYTICS_SNAPSHOT){ toast('Analytics not loaded yet — open the Dashboard tab first', true); return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Building presentation…';
+  try{
+    const snap = LAST_ANALYTICS_SNAPSHOT;
+    const pptx = new PptxGenJS();
+    pptx.defineLayout({name:'FA', width:13.33, height:7.5});
+    pptx.layout = 'FA';
+    const BRAND='12172B', ACCENT='F5A623', PAPER='FAF8F1';
+
+    // ---- Title slide ----
+    let s = pptx.addSlide();
+    s.background = {color:BRAND};
+    s.addText('FieldAudit', {x:0.6, y:2.5, w:9, h:1, fontSize:44, bold:true, color:'FFFFFF', fontFace:'Arial'});
+    s.addText(snap.module==='db' ? 'DB Stock Audit — Analytics Report' : 'Retail Outlet Audit — Analytics Report', {x:0.6, y:3.45, w:11, h:0.6, fontSize:20, color:ACCENT, fontFace:'Arial'});
+    s.addText(`Generated ${new Date().toLocaleString('en-IN')}  ·  ${SESSION.role} — ${SESSION.name}`, {x:0.6, y:4.15, w:11, h:0.4, fontSize:12, color:'AAAAAA', fontFace:'Arial'});
+
+    // ---- KPI overview ----
+    s = pptx.addSlide();
+    s.background = {color:PAPER};
+    s.addText('Overview', {x:0.5, y:0.35, w:8, h:0.6, fontSize:26, bold:true, color:BRAND, fontFace:'Arial'});
+    const kpiW = 2.9, gap = 0.28;
+    snap.kpis.forEach((k,i)=>{
+      const x = 0.5 + i*(kpiW+gap);
+      s.addShape(pptx.ShapeType.roundRect, {x, y:1.3, w:kpiW, h:1.7, fill:{color:BRAND}, rectRadius:0.08});
+      s.addText(String(k.value), {x, y:1.42, w:kpiW, h:0.95, align:'center', valign:'middle', fontSize:30, bold:true, color:ACCENT, fontFace:'Arial'});
+      s.addText(k.label, {x, y:2.35, w:kpiW, h:0.55, align:'center', fontSize:11, color:'FFFFFF', fontFace:'Arial'});
+    });
+
+    // ---- Key Insights ----
+    s = pptx.addSlide();
+    s.background = {color:PAPER};
+    s.addText('Key Insights', {x:0.5, y:0.35, w:9, h:0.6, fontSize:26, bold:true, color:BRAND, fontFace:'Arial'});
+    s.addText('Auto-generated from the audits currently in view — plain calculations, not AI commentary.', {x:0.5, y:0.98, w:12, h:0.35, fontSize:11, italic:true, color:'888888', fontFace:'Arial'});
+    if(snap.insights.length){
+      const insightLines = snap.insights.map(txt=>({text:txt, options:{bullet:{code:'25CF'}, fontSize:14, color:BRAND, breakLine:true, paraSpaceAfter:16}}));
+      s.addText(insightLines, {x:0.6, y:1.7, w:12, h:5, fontFace:'Arial'});
+    }
+
+    // ---- Every chart currently rendered, captured as a real image ----
+    for(const chartId of snap.chartIds){
+      const canvas = document.getElementById(chartId);
+      if(!canvas) continue;
+      let imgData;
+      try{ imgData = canvas.toDataURL('image/png', 1.0); }catch(_e){ continue; }
+      let title = chartId;
+      try{ title = canvas.closest('.chart-card').querySelector('h2').childNodes[0].textContent.trim(); }catch(_e){}
+      s = pptx.addSlide();
+      s.background = {color:'FFFFFF'};
+      s.addText(title, {x:0.5, y:0.3, w:12, h:0.55, fontSize:20, bold:true, color:BRAND, fontFace:'Arial'});
+      s.addImage({data:imgData, x:1.2, y:1.1, w:10.9, h:5.6, sizing:{type:'contain', w:10.9, h:5.6}});
+    }
+
+    // ---- User-wise Performance table ----
+    if(LAST_PERF_TABLE && LAST_PERF_TABLE.rows.length){
+      s = pptx.addSlide();
+      s.background = {color:PAPER};
+      s.addText('User-wise Performance', {x:0.5, y:0.3, w:9, h:0.55, fontSize:22, bold:true, color:BRAND, fontFace:'Arial'});
+      const tableRows = [LAST_PERF_TABLE.headers.map(h=>({text:h, options:{bold:true, color:'FFFFFF', fill:{color:BRAND}, fontSize:10}}))]
+        .concat(LAST_PERF_TABLE.rows.slice(0,15).map(r=>r.map(v=>({text:String(v), options:{fontSize:10, color:BRAND}}))));
+      s.addTable(tableRows, {x:0.4, y:1.0, w:12.5, border:{type:'solid', color:'DDDDDD', pt:0.5}, autoPage:false});
+      if(LAST_PERF_TABLE.rows.length > 15){
+        s.addText(`+ ${LAST_PERF_TABLE.rows.length-15} more — see the full list in the app or the Excel export.`, {x:0.5, y:6.9, w:10, h:0.3, fontSize:10, italic:true, color:'888888', fontFace:'Arial'});
+      }
+    }
+
+    await pptx.writeFile({fileName:`FieldAudit_${snap.module}_Report_${new Date().toISOString().slice(0,10)}.pptx`});
+    toast('Presentation downloaded');
+  }catch(e){
+    console.error(e);
+    toast('Could not build the presentation — try again', true);
+  }finally{
+    btn.disabled = false; btn.innerHTML = orig;
+  }
+}
 /** Every audit captures GPS at submit time, so "location unavailable" should
  *  never actually happen — the real fix is to stop trusting the STORED
  *  MapsLink text (which for some old rows is stale placeholder text, not a
@@ -1140,6 +1327,16 @@ function renderRetailDashboard(){
   const avgStar = (ALL_DATA.reduce((s,r)=>s+(+r.q8_visibilityRating||0),0)/n).toFixed(1);
   const cities = {}; ALL_DATA.forEach(r=>{cities[r.city]=(cities[r.city]||0)+1;});
   const retailInsights = generateRetailInsights(ALL_DATA, cities, yes, n);
+  LAST_ANALYTICS_SNAPSHOT = {
+    module:'retail', chartIds:['chartYN','chartCity','chartStars','chartTrend'],
+    kpis:[
+      {label:'Audits submitted', value:n},
+      {label:'GCPL distribution', value:pct(yes('q1_distribution'),n)+'%'},
+      {label:'POSM available', value:pct(yes('q9_posmAvailable'),n)+'%'},
+      {label:'Avg. shelf visibility', value:avgStar+'★'}
+    ],
+    insights: retailInsights.map(i=>i.text.replace(/<\/?b>/g,''))
+  };
   el.innerHTML = `
     <div class="kpis">
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${n}</div><div class="l">Audits submitted <span class="info-i" title="Total number of Retail Audit rows in the selected date range.">ⓘ</span></div></div>
@@ -1200,6 +1397,16 @@ function renderDBDashboard(){
   const topDistributors = Object.entries(distributors).sort((a,b)=>b[1]-a[1]).slice(0,8);
   const byDatePre = {}; ALL_DATA.forEach(r=>{byDatePre[r.date]=(byDatePre[r.date]||0)+1;});
   const insights = generateDBInsights(ALL_DATA, distributors, byDatePre, bagFields, kgFields);
+  LAST_ANALYTICS_SNAPSHOT = {
+    module:'db', chartIds: ['chartBags','chartDist','chartDBTrend', showAuditTypeChart?'chartAuditType':'chartSpiceKgs'],
+    kpis:[
+      {label:'Stock audits this period', value:n},
+      {label:'Total bags counted', value:totalBags.toLocaleString('en-IN')},
+      {label:'Total spice Kgs counted', value:totalKgs.toLocaleString('en-IN')},
+      {label:'Distributors covered', value:Object.keys(distributors).length}
+    ],
+    insights: insights.map(i=>i.text.replace(/<\/?b>/g,''))
+  };
   el.innerHTML = `
     <div class="kpis">
       <div class="kpi kpi-click" onclick="goToHistory('')"><div class="v">${n}</div><div class="l">Stock audits this period <span class="info-i" title="Total DB Stock Audit rows in the selected date range and role scope.">ⓘ</span></div></div>
@@ -1443,11 +1650,21 @@ async function exportPhotosZip(){
     if(!configured()) throw new Error('__NOCFG__');
     let res;
     if(selected.length){
-      // Selected-photos mode — export exactly what's checked, regardless of date range.
-      const items = selected.map(p=>{
-        const safe = s => String(s||'').replace(/[^a-z0-9]/gi,'_').replace(/_+/g,'_').slice(0,40) || 'unknown';
-        const filename = `${p.date}_${safe(p.name)}_${safe(p.type)}.jpg`;
-        return {url:p.url, filename, row:[p.date, p.type, p.name, p.source, ...(p.details||[]).map(d=>d[1])]};
+      // Selected-photos mode — export exactly what's checked, regardless of
+      // date range. A card can now represent MULTIPLE images (the 2-photo
+      // outlet gallery) or a single PDF, so this expands each selected
+      // card into one zip item per actual file, not one item per card.
+      const items = [];
+      const safe = s => String(s||'').replace(/[^a-z0-9]/gi,'_').replace(/_+/g,'_').slice(0,40) || 'unknown';
+      selected.forEach(p=>{
+        const row = [p.date, p.type, p.name, p.source, ...(p.details||[]).map(d=>d[1])];
+        if(p.isPdf){
+          items.push({url:p.url, filename:`${p.date}_${safe(p.name)}_Bills.pdf`, row});
+        } else {
+          (p.urls||[]).forEach((u,i)=>{
+            items.push({url:u, filename:`${p.date}_${safe(p.name)}_${safe(p.type)}${p.urls.length>1?'_'+(i+1):''}.jpg`, row});
+          });
+        }
       });
       const manifestHeader = ['Filename','Date','Type','Name','Source', ...(selected[0].details||[]).map(d=>d[0])];
       res = await callApi({action:'exportSelectedPhotosZip', token:SESSION.token, items, manifestHeader}, true);
@@ -1511,48 +1728,37 @@ function exportPlainFallback(){
 function buildPhotoList(){
   const list = [];
   PHOTO_RETAIL_DATA.forEach(r=>{
-    if(r.photoUrl) list.push({
-      date:r.date, type:'Outlet Photo', typeClass:'type-outlet', url:r.photoUrl, mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink),
-      name:r.outletName||'—', source:'FieldAudit App',
-      details:[
-        r.ownerName?['Owner', r.ownerName]:null,
-        r.retailerPhone?['Phone', r.retailerPhone]:null,
-        r.distributor?['Distributor', r.distributor]:null,
-        r.auditor?['Auditor', r.auditor]:null
-      ].filter(Boolean)
+    const details = [
+      r.ownerName?['Owner', r.ownerName]:null,
+      r.retailerPhone?['Phone', r.retailerPhone]:null,
+      r.distributor?['Distributor', r.distributor]:null,
+      r.auditor?['Auditor', r.auditor]:null
+    ].filter(Boolean);
+    // Outlet Photo 1 + 2 (when both exist) become ONE card with a mini
+    // gallery inside it, instead of two separate cards for the same visit.
+    const outletImgs = [r.photoUrl, r.photoUrl2].filter(Boolean);
+    if(outletImgs.length) list.push({
+      date:r.date, type:'Outlet Photo', typeClass:'type-outlet', urls:outletImgs, mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink),
+      name:r.outletName||'—', source:'FieldAudit App', details
     });
-    if(r.photoUrl2) list.push({
-      date:r.date, type:'Outlet Photo 2', typeClass:'type-outlet', url:r.photoUrl2, mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink),
-      name:r.outletName||'—', source:'FieldAudit App',
-      details:[
-        r.ownerName?['Owner', r.ownerName]:null,
-        r.retailerPhone?['Phone', r.retailerPhone]:null,
-        r.distributor?['Distributor', r.distributor]:null,
-        r.auditor?['Auditor', r.auditor]:null
-      ].filter(Boolean)
+    if(r.invoicePdfUrl) list.push({
+      date:r.date, type:'Invoice / Bill Photos — DB Bill Check', typeClass:'type-invoice', isPdf:true, url:r.invoicePdfUrl,
+      billCount:r.billCount, mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink),
+      name:r.outletName||'—', source:'FieldAudit App', details
     });
   });
   PHOTO_DB_DATA.forEach(r=>{
     const src = r.source || 'FieldAudit App';
-    if(r.photoUrlWide) list.push({
-      date:r.date, type:'Godown Photo', typeClass:'type-godown', url:r.photoUrlWide, mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink),
-      name:r.dbName||'—', source:src,
-      details:[
-        r.dbCode?['DB Code', r.dbCode]:null,
-        r.auditType?['Conducted By', r.auditType]:null,
-        r.soName?['SO Name', r.soName]:null,
-        r.soPhone?['SO Phone', r.soPhone]:null
-      ].filter(Boolean)
-    });
-    if(r.photoUrlRack) list.push({
-      date:r.date, type:'Product Rack Photo', typeClass:'type-rack', url:r.photoUrlRack, mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink),
-      name:r.dbName||'—', source:src,
-      details:[
-        r.dbCode?['DB Code', r.dbCode]:null,
-        r.auditType?['Conducted By', r.auditType]:null,
-        r.soName?['SO Name', r.soName]:null,
-        r.soPhone?['SO Phone', r.soPhone]:null
-      ].filter(Boolean)
+    const details = [
+      r.dbCode?['DB Code', r.dbCode]:null,
+      r.auditType?['Conducted By', r.auditType]:null,
+      r.soName?['SO Name', r.soName]:null,
+      r.soPhone?['SO Phone', r.soPhone]:null
+    ].filter(Boolean);
+    const godownImgs = [r.photoUrlWide, r.photoUrlRack].filter(Boolean);
+    if(godownImgs.length) list.push({
+      date:r.date, type:'Godown Photos', typeClass:'type-godown', urls:godownImgs, mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink),
+      name:r.dbName||'—', source:src, details
     });
   });
   return list.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
@@ -1560,7 +1766,7 @@ function buildPhotoList(){
 
 let CURRENT_PHOTO_LIST = [];
 let SELECTED_PHOTO_KEYS = new Set(); // keyed by "type|url" so selection survives re-renders/re-filters
-function photoKey(p){ return p.type + '|' + p.url; }
+function photoKey(p){ return p.type + '|' + (p.url || (p.urls && p.urls[0])); }
 function renderPhotos(){
   const el = document.getElementById('photosContent');
   if(!PHOTOS_LOADED){ el.innerHTML = `<div class="empty"><b>Loading photos…</b>Fetching photo records from both modules.</div>`; return; }
@@ -1604,14 +1810,18 @@ function renderPhotos(){
   // risk of a name/AI-summary containing a character that breaks HTML
   // attribute escaping and silently kills the click handler (this was a
   // real, confirmed cause of "photo shows but click does nothing").
-  el.querySelectorAll('.thumb').forEach(imgEl=>{
+  el.querySelectorAll('.thumb-gallery .thumb').forEach(imgEl=>{
     imgEl.addEventListener('click', function(){
+      const gallery = this.closest('.thumb-gallery');
+      const photoIdx = Number(gallery.dataset.photoIdx);
+      const imgIdx = Number(this.dataset.imgIdx || 0);
+      openLightbox(photoIdx, imgIdx);
+    });
+  });
+  el.querySelectorAll('.pdf-thumb').forEach(div=>{
+    div.addEventListener('click', function(){
       const p = CURRENT_PHOTO_LIST[Number(this.dataset.photoIdx)];
-      if(!p) return;
-      const caption = `${p.type} — ${p.name}${(p.details||[]).map(d=>' · '+d[0]+': '+d[1]).join('')}`;
-      document.getElementById('lightboxImg').src = this.src;
-      document.getElementById('lightboxCaption').textContent = caption;
-      document.getElementById('photoLightbox').classList.add('show');
+      if(p && p.url) window.open(p.url, '_blank');
     });
   });
   el.querySelectorAll('.thumb-fallback').forEach(div=>{
@@ -1620,6 +1830,45 @@ function renderPhotos(){
       if(p && p.url) window.open(p.url, '_blank');
     });
   });
+}
+
+/* Lightbox now supports: multiple images per card (next/prev, same as the
+   thumbnail's own mini-gallery but full-screen), and zoom in/out via
+   buttons or the scroll wheel/pinch. LIGHTBOX_STATE tracks which card and
+   which image within it is showing, so Next/Prev can move between BOTH
+   images within one card if there are 2, or across the whole date/audit
+   group if there's only 1 — whichever makes sense for that card. */
+let LIGHTBOX_STATE = {photoIdx:0, imgIdx:0, zoom:1};
+function openLightbox(photoIdx, imgIdx){
+  const p = CURRENT_PHOTO_LIST[photoIdx];
+  if(!p || !p.urls) return;
+  LIGHTBOX_STATE = {photoIdx, imgIdx: imgIdx||0, zoom:1};
+  renderLightboxImage();
+  document.getElementById('photoLightbox').classList.add('show');
+}
+function renderLightboxImage(){
+  const p = CURRENT_PHOTO_LIST[LIGHTBOX_STATE.photoIdx];
+  if(!p) return;
+  const img = document.getElementById('lightboxImg');
+  img.src = p.urls[LIGHTBOX_STATE.imgIdx];
+  img.style.transform = `scale(${LIGHTBOX_STATE.zoom})`;
+  const caption = `${p.type} — ${p.name}${(p.details||[]).map(d=>' · '+d[0]+': '+d[1]).join('')}`;
+  document.getElementById('lightboxCaption').textContent = caption;
+  const nav = document.getElementById('lightboxNav');
+  if(nav) nav.style.display = p.urls.length > 1 ? 'flex' : 'none';
+  const counter = document.getElementById('lightboxCounter');
+  if(counter) counter.textContent = p.urls.length > 1 ? `${LIGHTBOX_STATE.imgIdx+1} / ${p.urls.length}` : '';
+}
+function lightboxNav(dir){
+  const p = CURRENT_PHOTO_LIST[LIGHTBOX_STATE.photoIdx];
+  if(!p || !p.urls) return;
+  LIGHTBOX_STATE.imgIdx = (LIGHTBOX_STATE.imgIdx + dir + p.urls.length) % p.urls.length;
+  LIGHTBOX_STATE.zoom = 1;
+  renderLightboxImage();
+}
+function lightboxZoom(delta){
+  LIGHTBOX_STATE.zoom = Math.min(4, Math.max(1, LIGHTBOX_STATE.zoom + delta));
+  document.getElementById('lightboxImg').style.transform = `scale(${LIGHTBOX_STATE.zoom})`;
 }
 
 /* Drive-hosted images can be hotlinked several different ways, and Google
@@ -1679,9 +1928,23 @@ function photoCardHtml(p, idx){
   const detailRows = (p.details||[]).map(([label,val])=>`<div class="detail-row"><span class="detail-label">${label}</span><span class="detail-val">${val}</span></div>`).join('');
   const validMapsLink = p.mapsLink && /^https?:\/\//i.test(p.mapsLink) ? p.mapsLink : null;
   const checked = SELECTED_PHOTO_KEYS.has(photoKey(p)) ? 'checked' : '';
+  const mediaHtml = p.isPdf
+    ? `<div class="thumb pdf-thumb" data-photo-idx="${idx}" style="cursor:pointer;">
+         <svg class="pdf-thumb-icon" viewBox="0 0 24 24" width="40" height="40"><path fill="#C0392B" d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6z"/><path fill="#E8877A" d="M14 2v5a1 1 0 0 0 1 1h5z"/><text x="12" y="17" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="Arial">PDF</text></svg>
+         <span class="pdf-thumb-label">${p.billCount ? p.billCount+' bill'+(p.billCount>1?'s':'')+' merged into this PDF' : 'Bills merged into one PDF'}</span>
+         <span class="pdf-thumb-open">Open PDF ↗</span>
+       </div>`
+    : `<div class="thumb-gallery" data-photo-idx="${idx}">
+         <img class="thumb" data-img-idx="0" src="${p.urls[0]}" loading="lazy" onerror="tryPhotoFallback(this)" style="cursor:pointer;">
+         ${p.urls.length>1 ? `
+           <button class="gallery-nav prev" onclick="event.stopPropagation(); shiftGalleryThumb(this,-1)">‹</button>
+           <button class="gallery-nav next" onclick="event.stopPropagation(); shiftGalleryThumb(this,1)">›</button>
+           <span class="gallery-count">1/${p.urls.length}</span>
+         ` : ''}
+       </div>`;
   return `<div class="photo-card">
     <label class="photo-select-wrap"><input type="checkbox" class="photo-select-cb" data-photo-idx="${idx}" ${checked}></label>
-    <img class="thumb" data-photo-idx="${idx}" src="${p.url}" loading="lazy" onerror="tryPhotoFallback(this)" style="cursor:pointer;">
+    ${mediaHtml}
     <div class="meta">
       <span class="type-tag ${p.typeClass}">${p.type}</span>
       ${p.source==='External (GCPL app)' ? '<span class="type-tag" style="background:#FBEAE8; color:#C0392B;">External Sheet</span>' : ''}
@@ -1694,6 +1957,20 @@ function photoCardHtml(p, idx){
     </div>
   </div>`;
 }
+/* Clicking the ‹ › arrows on a multi-photo card just swaps which image the
+   thumbnail shows (and updates the "1/2" counter) — doesn't open anything,
+   so browsing Photo 1 vs Photo 2 before deciding to zoom in is instant. */
+function shiftGalleryThumb(btn, dir){
+  const gallery = btn.closest('.thumb-gallery');
+  const idx = Number(gallery.dataset.photoIdx);
+  const p = CURRENT_PHOTO_LIST[idx];
+  if(!p || !p.urls) return;
+  const img = gallery.querySelector('.thumb');
+  let imgIdx = (Number(img.dataset.imgIdx) + dir + p.urls.length) % p.urls.length;
+  img.dataset.imgIdx = imgIdx;
+  img.src = p.urls[imgIdx];
+  gallery.querySelector('.gallery-count').textContent = `${imgIdx+1}/${p.urls.length}`;
+}
 
 function closeLightbox(e){
   if(e.target.id==='photoLightbox' || e.target.classList.contains('photo-lightbox-close')){
@@ -1702,6 +1979,17 @@ function closeLightbox(e){
 }
 
 if(!configured()) document.getElementById('cfgWarning').style.display='block';
+// "Remember me" restore — if a session was saved, skip the login screen
+// entirely and go straight into the app on page load/refresh.
+(function restoreSession(){
+  try{
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if(raw){
+      SESSION = JSON.parse(raw);
+      if(SESSION && SESSION.token) enterApp();
+    }
+  }catch(_e){}
+})();
 </script>
 </body>
 </html>
