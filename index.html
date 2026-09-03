@@ -337,7 +337,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.25.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.26.0</div></div>
   </div>
 </header>
 
@@ -357,6 +357,11 @@ window.onerror = function(msg, url, line, col, err){
       <div class="icon">📦</div>
       <div class="title">DB Stock Audit</div>
       <div class="desc">Distributor warehouse stock count, discrepancy, expiry/FIFO check — done once a month per distributor.</div>
+    </button>
+    <button class="module-card" onclick="selectModule('smartmeasure')">
+      <div class="icon">📐</div>
+      <div class="title">SmartMeasure</div>
+      <div class="desc">Outdoor ad (billboard, hoarding, wall painting) site measurement — before and after installation, with photo-based measurement.</div>
     </button>
   </div>
 
@@ -640,6 +645,16 @@ window.onerror = function(msg, url, line, col, err){
     </div>
   </div>
   </div> <!-- /dbModule -->
+
+  <!-- ============ SMARTMEASURE MODULE — Outdoor Ad (OOH) Site Audit ============ -->
+  <div id="smartmeasureModule" style="display:none;">
+  <button class="module-back" onclick="backToModuleSelect()">← Change module</button>
+  <div class="card geo-card" id="sm_checkinCard">
+    <h2>Daily Selfie Check-in <span class="req-mark">*</span></h2>
+    <div id="sm_checkinContent" style="margin-top:14px;"></div>
+  </div>
+  <div id="smWrap"></div>
+  </div> <!-- /smartmeasureModule -->
 </main>
 
 <div class="submit-bar" id="submitBar" style="display:none;">
@@ -697,6 +712,10 @@ window.onerror = function(msg, url, line, col, err){
    page, dashboard.html) is the one that's password-protected.
 */
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHBfP9GR5QOC-AsVtYZqbcqyOVX1T4TiTo4ktHXcmbXF9S9_A6/exec";
+// SmartMeasure is a separate Apps Script project + Google Sheet — its own
+// backend, reached from this SAME app now that it's a third module here.
+const BETAVERSE_SCRIPT_URL = "PASTE_YOUR_BETAVERSE_APPS_SCRIPT_URL_HERE";
+function smConfigured(){ return BETAVERSE_SCRIPT_URL && BETAVERSE_SCRIPT_URL.indexOf('PASTE_YOUR') === -1; }
 
 let FORM = {};
 let PHOTO_BASE64 = null;
@@ -824,9 +843,14 @@ function selectModule(mod){
   document.getElementById('moduleSelect').style.display = 'none';
   document.getElementById('retailModule').style.display = mod==='retail' ? 'block' : 'none';
   document.getElementById('dbModule').style.display = mod==='db' ? 'block' : 'none';
-  document.getElementById('submitBar').style.display = 'block';
+  document.getElementById('smartmeasureModule').style.display = mod==='smartmeasure' ? 'block' : 'none';
+  // SmartMeasure is a step-by-step wizard (category → location → photo →
+  // submit) with its own submit button at each step, not one long
+  // scrollable form — the shared fixed bottom bar doesn't apply to it.
+  document.getElementById('submitBar').style.display = mod==='smartmeasure' ? 'none' : 'block';
   document.getElementById('submitBtn').textContent = mod==='db' ? 'Submit stock audit' : 'Submit audit';
-  startIdentityScan(mod==='db' ? 'd' : 'r');
+  if(mod==='smartmeasure'){ startIdentityScan('sm'); renderSmMainMenu(); }
+  else startIdentityScan(mod==='db' ? 'd' : 'r');
   window.scrollTo({top:0, behavior:'smooth'});
 }
 function backToModuleSelect(){
@@ -834,6 +858,7 @@ function backToModuleSelect(){
   document.getElementById('moduleSelect').style.display = 'block';
   document.getElementById('retailModule').style.display = 'none';
   document.getElementById('dbModule').style.display = 'none';
+  document.getElementById('smartmeasureModule').style.display = 'none';
   document.getElementById('submitBar').style.display = 'none';
   window.scrollTo({top:0, behavior:'smooth'});
 }
@@ -1383,7 +1408,7 @@ function onCheckinIdentityKnown(){
 }
 
 function renderCheckinDoneAll(){
-  ['d','r'].forEach(p=>{
+  ['d','r','sm'].forEach(p=>{
     const ids = ckIds(p);
     const cardEl = document.getElementById(ids.card);
     const contentEl = document.getElementById(ids.content);
@@ -2572,6 +2597,440 @@ document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
 document.getElementById('db_date').value = new Date().toISOString().slice(0,10);
 if(!configured()) document.getElementById('cfgWarning').style.display='block';
 loadDBMasterCache();
+
+/* ============================================================
+   SMARTMEASURE MODULE — Outdoor Ad (OOH) Site Audit.
+   Reuses this app's own check-in (CHECKIN_PHONE/CHECKIN_NAME/
+   CHECKIN_DONE), camera-capture, downscale, and watermark utilities.
+   Submits to its OWN backend (BETAVERSE_SCRIPT_URL), a separate
+   Apps Script project + Sheet from FieldAudit's own data.
+   ============================================================ */
+function smRequireCheckin(){
+  if(!CHECKIN_DONE){ toast('Complete the daily check-in above first', true); return false; }
+  return true;
+}
+function renderSmMainMenu(){
+  document.getElementById('smWrap').innerHTML = `
+    <div class="menu-choice" onclick="smStartPreAudit()">
+      <h3>📐 New Site Measurement</h3>
+      <p>Measure a billboard, hoarding, wall painting, or wall ad site BEFORE the ad goes up — creates a new Submission ID.</p>
+    </div>
+    <div class="menu-choice" onclick="smStartVerify()">
+      <h3>✅ Verify Installation</h3>
+      <p>After the ad has been put up, confirm how much of the submitted site actually got the ad and the approved cost — linked to an existing Submission ID.</p>
+    </div>
+    <div class="menu-choice" onclick="smStartMySubmissions()">
+      <h3>📋 My Submissions</h3>
+      <p>Browse your own past site measurements — handy if you don't remember a Submission ID by heart.</p>
+    </div>
+  `;
+}
+
+/* ---- Measurement tool: reference-object calibration + manual fallback ---- */
+const SM_REFERENCE_OBJECTS = [
+  {label:'A4 sheet — long edge (29.7 cm)', cm:29.7},
+  {label:'A4 sheet — short edge (21 cm)', cm:21},
+  {label:'₹100 note — long edge (15.8 cm)', cm:15.8},
+  {label:'1 metre tape/rod', cm:100},
+  {label:'Custom length…', cm:null}
+];
+let SM_MEASURE = null;
+function smRenderMeasureTool(containerId, photoDataUrl, onDone){
+  SM_MEASURE = {photo:photoDataUrl, points:[], stage:'ref', refCm:null, pxPerCm:null, widthCm:null, heightCm:null, onDone};
+  const c = document.getElementById(containerId);
+  c.innerHTML = `
+    <div class="tab-toggle" style="display:flex; gap:8px; margin-top:14px;">
+      <button class="active" id="smTabCalibrate" onclick="smSwitchMeasureTab('calibrate')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">📷 Measure from Photo</button>
+      <button id="smTabManual" onclick="smSwitchMeasureTab('manual')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">✏️ Enter Manually</button>
+    </div>
+    <div id="smMeasureCalibrateView"></div>
+    <div id="smMeasureManualView" style="display:none;"></div>
+  `;
+  smRenderCalibrateView();
+  smRenderManualView();
+}
+function smSwitchMeasureTab(tab){
+  document.getElementById('smTabCalibrate').style.background = tab==='calibrate' ? 'var(--ink)' : 'var(--card)';
+  document.getElementById('smTabCalibrate').style.color = tab==='calibrate' ? '#fff' : 'var(--ink)';
+  document.getElementById('smTabManual').style.background = tab==='manual' ? 'var(--ink)' : 'var(--card)';
+  document.getElementById('smTabManual').style.color = tab==='manual' ? '#fff' : 'var(--ink)';
+  document.getElementById('smMeasureCalibrateView').style.display = tab==='calibrate' ? 'block' : 'none';
+  document.getElementById('smMeasureManualView').style.display = tab==='manual' ? 'block' : 'none';
+}
+function smRenderManualView(){
+  document.getElementById('smMeasureManualView').innerHTML = `
+    <div class="field"><label>Width (feet)</label><input type="number" step="0.1" id="smManualWidth" oninput="smUpdateManualArea()"></div>
+    <div class="field"><label>Height (feet)</label><input type="number" step="0.1" id="smManualHeight" oninput="smUpdateManualArea()"></div>
+    <div class="addr-note" id="smManualAreaResult" style="font-size:16px; font-weight:700;">0 sq ft</div>
+    <button class="btn btn-dark btn-block" style="margin-top:12px;" onclick="smConfirmManualMeasurement()">Use this measurement</button>
+  `;
+}
+function smUpdateManualArea(){
+  const w = Number(document.getElementById('smManualWidth').value)||0;
+  const h = Number(document.getElementById('smManualHeight').value)||0;
+  document.getElementById('smManualAreaResult').textContent = (w*h).toFixed(1) + ' sq ft';
+}
+function smConfirmManualMeasurement(){
+  const w = Number(document.getElementById('smManualWidth').value)||0;
+  const h = Number(document.getElementById('smManualHeight').value)||0;
+  if(!w || !h){ toast('Enter both width and height', true); return; }
+  SM_MEASURE.onDone({area:(w*h).toFixed(1), method:'Manual entry', width:w, height:h});
+}
+function smRenderCalibrateView(){
+  const refOptions = SM_REFERENCE_OBJECTS.map((r,i)=>`<option value="${i}">${r.label}</option>`).join('');
+  document.getElementById('smMeasureCalibrateView').innerHTML = `
+    <div class="field"><label>What are you using as a size reference?</label>
+      <select id="smRefObjectSelect" onchange="smOnRefObjectChange()">${refOptions}</select>
+    </div>
+    <div class="field" id="smCustomCmField" style="display:none;"><label>Reference length (cm)</label><input type="number" id="smCustomCm" step="0.1"></div>
+    <div class="addr-note" id="smMeasureInstruction">Step 1 of 3 — Tap the TWO ENDS of your reference object in the photo below.</div>
+    <div style="position:relative; width:100%; margin-top:10px; touch-action:none;">
+      <canvas id="smMeasureCanvas" style="width:100%; border-radius:8px; display:block;"></canvas>
+    </div>
+    <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="smResetMeasurePoints()">↺ Restart points</button>
+    <div id="smMeasureResultArea"></div>
+  `;
+  const img = new Image();
+  img.onload = ()=>{
+    const canvas = document.getElementById('smMeasureCanvas');
+    canvas.width = img.width; canvas.height = img.height;
+    canvas.getContext('2d').drawImage(img,0,0);
+    canvas._img = img;
+    canvas.addEventListener('click', smOnCanvasTap);
+  };
+  img.src = SM_MEASURE.photo;
+}
+function smOnRefObjectChange(){
+  const idx = Number(document.getElementById('smRefObjectSelect').value);
+  document.getElementById('smCustomCmField').style.display = SM_REFERENCE_OBJECTS[idx].cm===null ? 'block' : 'none';
+}
+function smResetMeasurePoints(){
+  SM_MEASURE.points = []; SM_MEASURE.stage='ref';
+  const canvas = document.getElementById('smMeasureCanvas');
+  canvas.getContext('2d').drawImage(canvas._img,0,0);
+  document.getElementById('smMeasureInstruction').textContent = 'Step 1 of 3 — Tap the TWO ENDS of your reference object in the photo below.';
+  document.getElementById('smMeasureResultArea').innerHTML = '';
+}
+function smOnCanvasTap(e){
+  const canvas = e.target;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
+  const x = (e.clientX-rect.left)*scaleX, y = (e.clientY-rect.top)*scaleY;
+  SM_MEASURE.points.push({x,y});
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = SM_MEASURE.stage==='ref' ? '#F5A623' : '#1B7A43';
+  ctx.beginPath(); ctx.arc(x,y,10,0,7); ctx.fill();
+  const n = SM_MEASURE.points.length;
+  const drawLine=(p1,p2,color)=>{ ctx.strokeStyle=color; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke(); };
+  if(SM_MEASURE.stage==='ref' && n===2){
+    drawLine(SM_MEASURE.points[0], SM_MEASURE.points[1], '#F5A623');
+    const idx = Number(document.getElementById('smRefObjectSelect').value);
+    const refCm = SM_REFERENCE_OBJECTS[idx].cm !== null ? SM_REFERENCE_OBJECTS[idx].cm : Number(document.getElementById('smCustomCm').value);
+    if(!refCm){ toast('Enter the custom reference length first', true); SM_MEASURE.points=[]; return; }
+    const pxDist = Math.hypot(SM_MEASURE.points[1].x-SM_MEASURE.points[0].x, SM_MEASURE.points[1].y-SM_MEASURE.points[0].y);
+    SM_MEASURE.refCm = refCm; SM_MEASURE.pxPerCm = pxDist/refCm; SM_MEASURE.points = []; SM_MEASURE.stage = 'width';
+    document.getElementById('smMeasureInstruction').textContent = "Step 2 of 3 — Tap the TWO ENDS of the target's WIDTH.";
+  } else if(SM_MEASURE.stage==='width' && n===2){
+    drawLine(SM_MEASURE.points[0], SM_MEASURE.points[1], '#1B7A43');
+    const pxDist = Math.hypot(SM_MEASURE.points[1].x-SM_MEASURE.points[0].x, SM_MEASURE.points[1].y-SM_MEASURE.points[0].y);
+    SM_MEASURE.widthCm = pxDist/SM_MEASURE.pxPerCm; SM_MEASURE.points = []; SM_MEASURE.stage = 'height';
+    document.getElementById('smMeasureInstruction').textContent = "Step 3 of 3 — Tap the TWO ENDS of the target's HEIGHT.";
+  } else if(SM_MEASURE.stage==='height' && n===2){
+    drawLine(SM_MEASURE.points[0], SM_MEASURE.points[1], '#1B7A43');
+    const pxDist = Math.hypot(SM_MEASURE.points[1].x-SM_MEASURE.points[0].x, SM_MEASURE.points[1].y-SM_MEASURE.points[0].y);
+    SM_MEASURE.heightCm = pxDist/SM_MEASURE.pxPerCm; SM_MEASURE.stage = 'done';
+    const widthFt = SM_MEASURE.widthCm/30.48, heightFt = SM_MEASURE.heightCm/30.48;
+    const areaSqFt = (widthFt*heightFt).toFixed(1);
+    document.getElementById('smMeasureInstruction').textContent = '✅ Measurement complete.';
+    document.getElementById('smMeasureResultArea').innerHTML = `
+      <div class="addr-note" style="font-size:16px; font-weight:700; margin-top:10px;">${areaSqFt} sq ft <span style="font-size:12px; font-weight:400;">(${widthFt.toFixed(1)} ft × ${heightFt.toFixed(1)} ft)</span></div>
+      <button class="btn btn-dark btn-block" style="margin-top:10px;" onclick="smConfirmCalibratedMeasurement(${areaSqFt}, ${widthFt.toFixed(2)}, ${heightFt.toFixed(2)})">Use this measurement</button>
+    `;
+  }
+}
+function smConfirmCalibratedMeasurement(area, width, height){
+  SM_MEASURE.onDone({area, method:'Photo reference measurement', width, height});
+}
+
+/* ---- Pre-installation flow ---- */
+let SM_PRE = {};
+function smStartPreAudit(){
+  if(!smRequireCheckin()) return;
+  SM_PRE = {category:'', geo:null, photoRaw:null, measurement:null};
+  const wrap = document.getElementById('smWrap');
+  wrap.innerHTML = `
+    <div class="card">
+      <h2>1. Site Category <span class="req-mark">*</span></h2>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px;" id="smCategoryGrid">
+        ${['Billboard / Hoarding','Wall Painting','Hand-painted / Localized Wall Ad'].map(c=>`
+          <div onclick="smSelectCategory('${c}', this)" style="border:1.5px solid var(--border-2); border-radius:12px; padding:16px 10px; text-align:center; cursor:pointer;"><div style="font-size:26px;">${c.includes('Billboard')?'🛑':c.includes('Painting')?'🎨':'🏚️'}</div><div style="font-size:12px; font-weight:700; margin-top:6px;">${c}</div></div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <h2>2. Location <span class="req-mark">*</span></h2>
+      <div class="geo-status pending" id="smPreGeoStatus" style="margin-top:12px;">Not captured yet</div>
+      <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="smCapturePreLocation()" id="smPreGeoBtn">📍 Get Current Location</button>
+      <div class="field"><label>Address</label><textarea id="sm_pre_address" rows="2" placeholder="Auto-filled, edit if needed"></textarea></div>
+      <div class="field"><label>City</label><input type="text" id="sm_pre_city"></div>
+    </div>
+    <div class="card locked-until-address" id="smPrePhotoCard">
+      <h2>3. Site Photo &amp; Measurement <span class="req-mark">*</span></h2>
+      <p style="font-size:12px; color:var(--slate); margin:12px 0 10px;">Frame the target AND your reference object (A4 sheet, note, tape) together in one photo for accurate measurement.</p>
+      <button class="btn btn-outline btn-block" onclick="document.getElementById('smPreSiteInput').click()">📷 Capture site photo</button>
+      <input type="file" id="smPreSiteInput" accept="image/*" capture="environment" style="display:none" onchange="smOnPreSitePhoto(event)">
+      <div id="smPreMeasureArea"></div>
+    </div>
+    <div class="card locked-until-address" id="smPreCostCard">
+      <h2>4. Cost &amp; Auditor</h2>
+      <div class="field"><label>Auditor Name</label><input type="text" id="sm_pre_auditor" value="${CHECKIN_NAME||''}"></div>
+      <div class="field"><label>Cost (₹)</label><input type="number" id="sm_pre_cost" step="0.01"></div>
+    </div>
+    <button class="btn btn-primary btn-block" onclick="smSubmitPreAudit()" id="smPreSubmitBtn">Submit Site Measurement</button>
+    <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="renderSmMainMenu()">← Back to SmartMeasure menu</button>
+  `;
+}
+function smSelectCategory(cat, el){
+  SM_PRE.category = cat;
+  document.querySelectorAll('#smCategoryGrid > div').forEach(c=>{ c.style.borderColor='var(--border-2)'; c.style.background='var(--card)'; });
+  el.style.borderColor='var(--amber)'; el.style.background='var(--paper-2)';
+}
+function smCapturePreLocation(){
+  if(!navigator.geolocation){ toast('Geolocation not supported', true); return; }
+  const btn = document.getElementById('smPreGeoBtn');
+  setBtnBusy(btn, 'Locating…');
+  navigator.geolocation.getCurrentPosition(async (pos)=>{
+    const lat=pos.coords.latitude, lng=pos.coords.longitude;
+    SM_PRE.geo = {lat, lng, link:`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`};
+    document.getElementById('smPreGeoStatus').className='geo-status got';
+    document.getElementById('smPreGeoStatus').textContent = `✅ ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    document.getElementById('smPrePhotoCard').classList.remove('locked-until-address');
+    document.getElementById('smPreCostCard').classList.remove('locked-until-address');
+    setBtnIdle(btn, '📍 Re-capture Location');
+    const base = await getBaseAddress(lat, lng);
+    if(base.formatted) document.getElementById('sm_pre_address').value = base.formatted;
+    if(base.city) document.getElementById('sm_pre_city').value = base.city;
+  }, ()=>{ toast('Could not get location', true); setBtnIdle(btn, '📍 Get Current Location'); }, {enableHighAccuracy:true, timeout:15000});
+}
+function smOnPreSitePhoto(e){
+  const file = e.target.files[0]; if(!file) return;
+  downscale(file, (dataUrl)=>{
+    SM_PRE.photoRaw = dataUrl;
+    document.getElementById('smPreMeasureArea').innerHTML = `<div id="smPreMeasureToolMount" style="margin-top:14px;"></div>`;
+    smRenderMeasureTool('smPreMeasureToolMount', dataUrl, (result)=>{
+      SM_PRE.measurement = result;
+      document.getElementById('smPreMeasureArea').innerHTML += `<div class="addr-note" style="font-size:15px; font-weight:700; margin-top:10px;">✅ ${result.area} sq ft locked in (${result.method})</div>`;
+    });
+  });
+}
+async function smSubmitPreAudit(){
+  if(!SM_PRE.category){ toast('Select a site category', true); return; }
+  if(!SM_PRE.geo){ toast('Capture the location first', true); return; }
+  if(!SM_PRE.photoRaw || !SM_PRE.measurement){ toast('Capture the site photo and complete the measurement', true); return; }
+  const btn = document.getElementById('smPreSubmitBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Submitting…';
+  const now = new Date();
+  const lines = [`${now.toISOString().slice(0,10)} ${now.toTimeString().slice(0,5)}`, `${SM_PRE.geo.lat.toFixed(6)}, ${SM_PRE.geo.lng.toFixed(6)}`, `Auditor: ${document.getElementById('sm_pre_auditor').value}`];
+  const stamped = await stampPhoto(SM_PRE.photoRaw, lines);
+  const payload = {
+    action:'submitPreAudit', category:SM_PRE.category,
+    date: now.toISOString().slice(0,10), time: now.toTimeString().slice(0,5),
+    auditorName: document.getElementById('sm_pre_auditor').value, phone: CHECKIN_PHONE,
+    address: document.getElementById('sm_pre_address').value, city: document.getElementById('sm_pre_city').value,
+    lat:SM_PRE.geo.lat, lng:SM_PRE.geo.lng, mapsLink:SM_PRE.geo.link,
+    area:SM_PRE.measurement.area, areaUnit:'sq ft', measureMethod:SM_PRE.measurement.method,
+    cost: document.getElementById('sm_pre_cost').value, photo: stamped
+  };
+  try{
+    if(!smConfigured()) throw new Error('__NOCFG__');
+    const r = await fetch(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify(payload)});
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message||'Submit failed');
+    smShowSubmissionSuccess(res.submissionId);
+  }catch(e){
+    if(e.message==='__NOCFG__') smShowSubmissionSuccess('DEMO-'+Date.now());
+    else { toast(e.message||'Could not submit', true); btn.disabled=false; btn.textContent='Submit Site Measurement'; }
+  }
+}
+function smShowSubmissionSuccess(id){
+  document.getElementById('smWrap').innerHTML = `
+    <div class="card" style="text-align:center;">
+      <div style="font-size:40px;">✅</div>
+      <h2 style="margin-top:10px;">Measurement Submitted</h2>
+      <p style="color:var(--slate); font-size:13px; margin-top:6px;">Save this ID — you'll need it to verify the installation later.</p>
+      <div style="background:var(--ink); color:var(--amber); font-family:'IBM Plex Mono',monospace; font-weight:700; padding:10px 16px; border-radius:10px; text-align:center; font-size:18px; letter-spacing:.05em; margin-top:10px;">${id}</div>
+      <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="smStartPreAudit()">➕ Measure Another Site</button>
+      <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="renderSmMainMenu()">← Back to SmartMeasure menu</button>
+    </div>`;
+}
+
+/* ---- Post-installation verification flow ---- */
+let SM_VERIFY = {};
+function smStartVerify(){
+  if(!smRequireCheckin()) return;
+  document.getElementById('smWrap').innerHTML = `
+    <div class="card">
+      <h2>Find a Submission</h2>
+      <div class="field"><label>Submission ID <span class="req-mark">*</span></label><input type="text" id="smVerifyIdInput" placeholder="e.g. BV260903-065612"></div>
+      <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="smLookupSubmission()" id="smVerifyLookupBtn">Find Submission</button>
+    </div>
+    <button class="btn btn-outline btn-block" onclick="renderSmMainMenu()">← Back to SmartMeasure menu</button>
+  `;
+}
+async function smLookupSubmission(){
+  const id = document.getElementById('smVerifyIdInput').value.trim();
+  if(!id){ toast('Enter a submission ID', true); return; }
+  const btn = document.getElementById('smVerifyLookupBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Searching…';
+  try{
+    if(!smConfigured()) throw new Error('__NOCFG__');
+    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getSubmission&id=${encodeURIComponent(id)}`, {}, 10000);
+    const j = await r.json();
+    if(!j.success) throw new Error(j.message||'Not found');
+    SM_VERIFY = {submission:j.submission, geo:null, photoRaw:null, measurement:null};
+    smRenderVerifyForm();
+  }catch(e){
+    toast(e.message||'Could not find that submission', true);
+    btn.disabled=false; btn.textContent='Find Submission';
+  }
+}
+function smRenderVerifyForm(){
+  const s = SM_VERIFY.submission;
+  const alreadyVerified = s.Status === 'Verified';
+  document.getElementById('smWrap').innerHTML = `
+    <div class="card">
+      <h2>Submission Found <span class="status-pill ${alreadyVerified?'verified':'pending'}" style="display:inline-block; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:700; text-transform:uppercase; background:${alreadyVerified?'var(--green-bg)':'#FFF4E5'}; color:${alreadyVerified?'var(--green)':'var(--amber-dark)'};">${s.Status}</span></h2>
+      <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--border-2); font-size:13px;"><span style="color:var(--slate);">ID</span><span style="font-weight:600;">${s.SubmissionID}</span></div>
+      <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--border-2); font-size:13px;"><span style="color:var(--slate);">Category</span><span style="font-weight:600;">${s.Category}</span></div>
+      <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--border-2); font-size:13px;"><span style="color:var(--slate);">Address</span><span style="font-weight:600;">${s.PreAddress||'—'}</span></div>
+      <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--border-2); font-size:13px;"><span style="color:var(--slate);">Submitted Area</span><span style="font-weight:600;">${s.PreArea} ${s.PreAreaUnit}</span></div>
+      <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span style="color:var(--slate);">Submitted Cost</span><span style="font-weight:600;">₹${s.PreCost}</span></div>
+    </div>
+    ${alreadyVerified ? `
+      <div class="card">
+        <h2>Already Verified</h2>
+        <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span style="color:var(--slate);">Approved Area</span><span style="font-weight:600;">${s.PostArea} sq ft</span></div>
+        <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span style="color:var(--slate);">Approved Cost</span><span style="font-weight:600;">₹${s.PostApprovedCost}</span></div>
+      </div>
+      <button class="btn btn-outline btn-block" onclick="renderSmMainMenu()">← Back to menu</button>
+    ` : `
+      <div class="card">
+        <h2>Verify Installation</h2>
+        <div class="geo-status pending" id="smVerifyGeoStatus" style="margin-top:12px;">Not captured yet</div>
+        <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="smCaptureVerifyLocation()" id="smVerifyGeoBtn">📍 Get Current Location</button>
+      </div>
+      <div class="card locked-until-address" id="smVerifyPhotoCard">
+        <h2>Installed Site Photo &amp; Measurement</h2>
+        <p style="font-size:12px; color:var(--slate); margin:12px 0 10px;">Photograph the ACTUAL installed ad, with your reference object, to measure what really went up.</p>
+        <button class="btn btn-outline btn-block" onclick="document.getElementById('smVerifySiteInput').click()">📷 Capture installed site photo</button>
+        <input type="file" id="smVerifySiteInput" accept="image/*" capture="environment" style="display:none" onchange="smOnVerifyPhoto(event)">
+        <div id="smVerifyMeasureArea"></div>
+      </div>
+      <div class="card locked-until-address" id="smVerifyCostCard">
+        <h2>Approval</h2>
+        <div class="field"><label>Auditor Name</label><input type="text" id="sm_verify_auditor" value="${CHECKIN_NAME||''}"></div>
+        <div class="field"><label>Approved Cost (₹)</label><input type="number" id="sm_verify_cost" step="0.01"></div>
+        <div class="field"><label>Remarks</label><textarea id="sm_verify_remarks" rows="2" placeholder="Optional notes"></textarea></div>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="smSubmitVerification()" id="smVerifySubmitBtn">Submit Verification</button>
+      <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="renderSmMainMenu()">← Back to menu</button>
+    `}
+  `;
+}
+function smCaptureVerifyLocation(){
+  if(!navigator.geolocation){ toast('Geolocation not supported', true); return; }
+  const btn = document.getElementById('smVerifyGeoBtn');
+  setBtnBusy(btn, 'Locating…');
+  navigator.geolocation.getCurrentPosition((pos)=>{
+    const lat=pos.coords.latitude, lng=pos.coords.longitude;
+    SM_VERIFY.geo = {lat, lng, link:`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`};
+    document.getElementById('smVerifyGeoStatus').className='geo-status got';
+    document.getElementById('smVerifyGeoStatus').textContent = `✅ ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    document.getElementById('smVerifyPhotoCard').classList.remove('locked-until-address');
+    document.getElementById('smVerifyCostCard').classList.remove('locked-until-address');
+    setBtnIdle(btn, '📍 Re-capture Location');
+  }, ()=>{ toast('Could not get location', true); setBtnIdle(btn, '📍 Get Current Location'); }, {enableHighAccuracy:true, timeout:15000});
+}
+function smOnVerifyPhoto(e){
+  const file = e.target.files[0]; if(!file) return;
+  downscale(file, (dataUrl)=>{
+    SM_VERIFY.photoRaw = dataUrl;
+    document.getElementById('smVerifyMeasureArea').innerHTML = `<div id="smVerifyMeasureToolMount" style="margin-top:14px;"></div>`;
+    smRenderMeasureTool('smVerifyMeasureToolMount', dataUrl, (result)=>{
+      SM_VERIFY.measurement = result;
+      document.getElementById('smVerifyMeasureArea').innerHTML += `<div class="addr-note" style="font-size:15px; font-weight:700; margin-top:10px;">✅ ${result.area} sq ft installed (${result.method})</div>`;
+    });
+  });
+}
+async function smSubmitVerification(){
+  if(!SM_VERIFY.geo){ toast('Capture the location first', true); return; }
+  if(!SM_VERIFY.photoRaw || !SM_VERIFY.measurement){ toast('Capture the photo and complete the measurement', true); return; }
+  const btn = document.getElementById('smVerifySubmitBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Submitting…';
+  const now = new Date();
+  const lines = [`${now.toISOString().slice(0,10)} ${now.toTimeString().slice(0,5)}`, `Verification · ${SM_VERIFY.submission.SubmissionID}`, `Auditor: ${document.getElementById('sm_verify_auditor').value}`];
+  const stamped = await stampPhoto(SM_VERIFY.photoRaw, lines);
+  const payload = {
+    action:'submitPostVerification', submissionId: SM_VERIFY.submission.SubmissionID,
+    date: now.toISOString().slice(0,10), time: now.toTimeString().slice(0,5),
+    auditorName: document.getElementById('sm_verify_auditor').value, phone: CHECKIN_PHONE,
+    lat:SM_VERIFY.geo.lat, lng:SM_VERIFY.geo.lng, mapsLink:SM_VERIFY.geo.link,
+    area:SM_VERIFY.measurement.area, approvedCost: document.getElementById('sm_verify_cost').value,
+    remarks: document.getElementById('sm_verify_remarks').value, photo: stamped
+  };
+  try{
+    if(!smConfigured()) throw new Error('__NOCFG__');
+    const r = await fetch(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify(payload)});
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message||'Submit failed');
+    document.getElementById('smWrap').innerHTML = `<div class="card" style="text-align:center;"><div style="font-size:40px;">✅</div><h2 style="margin-top:10px;">Verification Complete</h2><p style="color:var(--slate); font-size:13px;">${res.submissionId} is now marked Verified.</p><button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="renderSmMainMenu()">← Back to menu</button></div>`;
+  }catch(e){
+    toast(e.message||'Could not submit', true);
+    btn.disabled=false; btn.textContent='Submit Verification';
+  }
+}
+
+/* ---- My Submissions ---- */
+function smStartMySubmissions(){
+  if(!smRequireCheckin()) return;
+  smRenderMySubmissions();
+}
+async function smRenderMySubmissions(){
+  const wrap = document.getElementById('smWrap');
+  wrap.innerHTML = `<div class="card"><h2>My Submissions</h2><div id="smMySubsList" style="margin-top:12px;"><span class="spin"></span></div></div><button class="btn btn-outline btn-block" onclick="renderSmMainMenu()">← Back to menu</button>`;
+  const listEl = document.getElementById('smMySubsList');
+  try{
+    if(!smConfigured()) throw new Error('__NOCFG__');
+    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=listMySubmissions&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 10000);
+    const j = await r.json();
+    const subs = j.submissions || [];
+    if(!subs.length){ listEl.innerHTML = `<p style="color:var(--slate); font-size:13px;">No submissions yet — your first "New Site Measurement" will show up here.</p>`; return; }
+    listEl.innerHTML = subs.map(s=>`
+      <div class="menu-choice" onclick="smJumpToVerify('${s.submissionId}')" style="border:1.5px solid var(--border-2); border-radius:14px; padding:14px; margin-bottom:12px; cursor:pointer; background:var(--card);">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <b style="font-family:'IBM Plex Mono',monospace; font-size:13px;">${s.submissionId}</b>
+          <span style="display:inline-block; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:700; text-transform:uppercase; background:${s.status==='Verified'?'var(--green-bg)':'#FFF4E5'}; color:${s.status==='Verified'?'var(--green)':'var(--amber-dark)'};">${s.status}</span>
+        </div>
+        <p style="margin:6px 0 0; font-size:13px; color:var(--slate);">${s.category} · ${s.area||'—'} sq ft · ₹${s.cost||0}</p>
+        <p style="margin:2px 0 0; font-size:12px; color:var(--slate);">${s.address||''}${s.city?', '+s.city:''} · ${s.date||''}</p>
+      </div>
+    `).join('');
+  }catch(e){
+    listEl.innerHTML = `<p style="color:var(--red); font-size:13px;">Could not load submissions — check your connection.</p>`;
+  }
+}
+function smJumpToVerify(id){
+  document.getElementById('smWrap').innerHTML = `<div class="card"><h2>Loading…</h2></div>`;
+  (async ()=>{
+    try{
+      const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getSubmission&id=${encodeURIComponent(id)}`, {}, 10000);
+      const j = await r.json();
+      if(!j.success) throw new Error(j.message);
+      SM_VERIFY = {submission:j.submission, geo:null, photoRaw:null, measurement:null};
+      smRenderVerifyForm();
+    }catch(e){ toast('Could not open that submission', true); smRenderMySubmissions(); }
+  })();
+}
 </script>
 </body>
 </html>
