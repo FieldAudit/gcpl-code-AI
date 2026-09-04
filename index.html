@@ -337,7 +337,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.35.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.36.0</div></div>
   </div>
 </header>
 
@@ -2821,22 +2821,20 @@ function smRenderMeasureTool(containerId, photoDataUrl, onDone){
   SM_ZOOM_PCT = 100;
   SM_MEASURE = {photo:photoDataUrl, points:[], stage:'ref', refCm:null, refDistanceM:1, targetDistanceM:null, pxPerCmAtRefDistance:null, widthCm:null, heightCm:null, onDone, tapeProof:null, drawOps:[]};
   const c = document.getElementById(containerId);
+  // Goes straight to the photo-tap (A4 sheet) tool — this is reached
+  // specifically when the person chose "measure using an A4 sheet", so
+  // landing on a different (tape-measure) view first was the actual bug:
+  // the photo-tap option wasn't gone, it was just hidden behind a second
+  // tap on a tab most people didn't notice.
   c.innerHTML = `
-    <div class="tab-toggle" style="display:flex; gap:8px; margin-top:14px;">
-      <button class="active" id="smTabManual" onclick="smSwitchMeasureTab('manual')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">📏 Tape Measure (recommended)</button>
-      <button id="smTabCalibrate" onclick="smSwitchMeasureTab('calibrate')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">📷 Photo-based (no tape available)</button>
-    </div>
-    <div id="smMeasureManualView"></div>
-    <div id="smMeasureCalibrateView" style="display:none;"></div>
+    <div id="smMeasureCalibrateView"></div>
+    <div class="addr-note" style="text-align:center; margin-top:12px;">Don't have an A4 sheet handy? <span style="color:var(--amber); font-weight:700; cursor:pointer;" onclick="smSwitchMeasureTab('manual')">Enter with a tape measure instead</span></div>
+    <div id="smMeasureManualView" style="display:none;"></div>
   `;
-  smRenderManualView();
   smRenderCalibrateView();
+  smRenderManualView();
 }
 function smSwitchMeasureTab(tab){
-  document.getElementById('smTabCalibrate').style.background = tab==='calibrate' ? 'var(--ink)' : 'var(--card)';
-  document.getElementById('smTabCalibrate').style.color = tab==='calibrate' ? '#fff' : 'var(--ink)';
-  document.getElementById('smTabManual').style.background = tab==='manual' ? 'var(--ink)' : 'var(--card)';
-  document.getElementById('smTabManual').style.color = tab==='manual' ? '#fff' : 'var(--ink)';
   document.getElementById('smMeasureCalibrateView').style.display = tab==='calibrate' ? 'block' : 'none';
   document.getElementById('smMeasureManualView').style.display = tab==='manual' ? 'block' : 'none';
 }
@@ -2862,6 +2860,7 @@ function smRenderManualView(){
       <img id="smTapeProofPreview" style="max-width:100%; max-height:200px; border-radius:8px; margin-top:10px; display:none;">
     </div>
     <button class="btn btn-dark btn-block" style="margin-top:12px;" onclick="smConfirmManualMeasurement()">Use this measurement</button>
+    <div class="addr-note" style="text-align:center; margin-top:12px;"><span style="color:var(--amber); font-weight:700; cursor:pointer;" onclick="smSwitchMeasureTab('calibrate')">← Back to A4 sheet photo method</span></div>
   `;
 }
 function smOnTapeProofPhoto(e){
