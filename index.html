@@ -337,7 +337,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.26.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.32.0</div></div>
   </div>
 </header>
 
@@ -360,8 +360,8 @@ window.onerror = function(msg, url, line, col, err){
     </button>
     <button class="module-card" onclick="selectModule('smartmeasure')">
       <div class="icon">📐</div>
-      <div class="title">SmartMeasure</div>
-      <div class="desc">Outdoor ad (billboard, hoarding, wall painting) site measurement — before and after installation, with photo-based measurement.</div>
+      <div class="title">Ad Manager</div>
+      <div class="desc">Outdoor ad site measurement, installation verification, and ongoing "is it still running" audits — billboards, hoardings, wall paint, bus/metro/train ads, POSM.</div>
     </button>
   </div>
 
@@ -714,7 +714,7 @@ window.onerror = function(msg, url, line, col, err){
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHBfP9GR5QOC-AsVtYZqbcqyOVX1T4TiTo4ktHXcmbXF9S9_A6/exec";
 // SmartMeasure is a separate Apps Script project + Google Sheet — its own
 // backend, reached from this SAME app now that it's a third module here.
-const BETAVERSE_SCRIPT_URL = "PASTE_YOUR_BETAVERSE_APPS_SCRIPT_URL_HERE";
+const BETAVERSE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzskyp0hNsLejZWlFn5OOcQfrkoBU0Dxe_KX-5iUwkI0-siVew5e4HVUwdpGdJgutMN5A/exec";
 function smConfigured(){ return BETAVERSE_SCRIPT_URL && BETAVERSE_SCRIPT_URL.indexOf('PASTE_YOUR') === -1; }
 
 let FORM = {};
@@ -1230,6 +1230,13 @@ async function verifyBiometricDevice(credentialIds){
 const SO_IDENTITY_KEY = 'fieldaudit_so_identity';
 let CHECKIN_PHONE = '';
 let CHECKIN_NAME = '';
+// Cached from the daily check-in's own successful credential lookup, so
+// every SUBSEQUENT audit submission that same day doesn't need a second
+// network round-trip just to re-fetch the same credential IDs — that
+// redundant fetch (with only an 8s timeout) was blocking otherwise-valid
+// submissions on weak/slow connections (e.g. late-night network), even
+// though the actual submit itself would have gone through fine.
+let CHECKIN_CREDENTIAL_IDS = null;
 
 function ckIds(p){
   return {
@@ -1331,6 +1338,13 @@ async function startIdentityScan(prefix){
         CHECKIN_PHONE = saved.phone; CHECKIN_NAME = saved.name;
         CHECKIN_DONE = true; CHECKIN_TIME = j.time;
         renderCheckinDoneAll();
+        // Cache credential IDs once here too (already-checked-in-today
+        // path) — same reasoning as the fresh check-in flow: fetch once
+        // while network is already being used for checkinStatus, not
+        // again on every single audit submit later in the day.
+        fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(saved.phone)}`, {}, 8000)
+          .then(r=>r.json()).then(cj=>{ if(cj.enrolled && cj.credentialIds && cj.credentialIds.length) CHECKIN_CREDENTIAL_IDS = cj.credentialIds; })
+          .catch(()=>{});
         return;
       }
     }catch(_e){}
@@ -1381,6 +1395,9 @@ async function checkTodayCheckin(prefix){
     if(j.checkedIn){
       CHECKIN_DONE = true; CHECKIN_TIME = j.time;
       renderCheckinDoneAll();
+      fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 8000)
+        .then(r2=>r2.json()).then(cj=>{ if(cj.enrolled && cj.credentialIds && cj.credentialIds.length) CHECKIN_CREDENTIAL_IDS = cj.credentialIds; })
+        .catch(()=>{});
     } else {
       CHECKIN_DONE = false;
       renderCheckinCapture(prefix);
@@ -1532,6 +1549,7 @@ async function doSubmitCheckin(prefix){
         toast('Fingerprint/Face verification failed or was cancelled — check-in needs it to continue.', true);
         btn.disabled = false; btn.textContent = 'Submit check-in'; return;
       }
+      CHECKIN_CREDENTIAL_IDS = credJson.credentialIds;
     } else {
       wasNewEnrollment = true;
       bioResult = await registerBiometricDevice(CHECKIN_PHONE, CHECKIN_NAME);
@@ -1541,6 +1559,7 @@ async function doSubmitCheckin(prefix){
           : 'Fingerprint/Face setup was cancelled — check-in needs it to continue.', true);
         btn.disabled = false; btn.textContent = 'Submit check-in'; return;
       }
+      if(bioResult.credentialId) CHECKIN_CREDENTIAL_IDS = [bioResult.credentialId];
     }
   }catch(e){
     toast(e.message==='__NOCFG__' ? 'Backend not connected' : 'Could not check biometric status — try again.', true);
@@ -1592,12 +1611,24 @@ function downscale(file, cb){
   reader.onload = function(ev){
     const img = new Image();
     img.onload = function(){
-      const maxW = 1280;
+      // Reduced from 1280px/0.85 quality — on low-RAM devices (some Vivo/
+      // budget Android WebViews specifically), holding several full-size
+      // base64 photo strings in memory at once (5 bill photos + outlet
+      // photos) was enough to trigger an OS-level "low memory" kill of the
+      // whole page, even with plenty of free STORAGE — this is about RAM,
+      // not disk space. Smaller images here meaningfully cut peak memory.
+      const maxW = 1000;
       const scale = Math.min(1, maxW/img.width);
       const canvas = document.createElement('canvas');
       canvas.width = img.width*scale; canvas.height = img.height*scale;
       canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
-      cb(canvas.toDataURL('image/jpeg', 0.85));
+      const result = canvas.toDataURL('image/jpeg', 0.72);
+      // Explicitly drop references to the large intermediate buffers so
+      // they're eligible for garbage collection immediately, rather than
+      // waiting for these closures themselves to go out of scope.
+      canvas.width = 0; canvas.height = 0;
+      img.src = '';
+      cb(result);
     };
     img.src = ev.target.result;
   };
@@ -2219,13 +2250,21 @@ function validateDBForm(){
 async function r9yMnTm4NSzvG9rrwjM2ec8xZgh1cafXH8(){
   if(!CHECKIN_PHONE){ toast('Complete the Daily Selfie Check-in first', true); return false; }
   try{
-    const credRes = await fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 8000);
-    const credJson = await credRes.json();
-    if(!credJson.enrolled || !credJson.credentialIds || !credJson.credentialIds.length){
-      toast('No fingerprint/Face unlock enrolled for this phone yet — complete check-in first', true);
-      return false;
+    let credentialIds = CHECKIN_CREDENTIAL_IDS;
+    if(!credentialIds || !credentialIds.length){
+      // Cache miss (e.g. page was reloaded without re-running check-in
+      // detection) — fall back to fetching, but this is now the
+      // exception, not something every single submit pays for.
+      const credRes = await fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 8000);
+      const credJson = await credRes.json();
+      if(!credJson.enrolled || !credJson.credentialIds || !credJson.credentialIds.length){
+        toast('No fingerprint/Face unlock enrolled for this phone yet — complete check-in first', true);
+        return false;
+      }
+      credentialIds = credJson.credentialIds;
+      CHECKIN_CREDENTIAL_IDS = credentialIds;
     }
-    const result = await verifyBiometricDevice(credJson.credentialIds);
+    const result = await verifyBiometricDevice(credentialIds);
     if(!result.ok){
       toast('Fingerprint/Face verification failed or was cancelled — submission needs it to continue.', true);
       return false;
@@ -2613,17 +2652,149 @@ function renderSmMainMenu(){
   document.getElementById('smWrap').innerHTML = `
     <div class="menu-choice" onclick="smStartPreAudit()">
       <h3>📐 New Site Measurement</h3>
-      <p>Measure a billboard, hoarding, wall painting, or wall ad site BEFORE the ad goes up — creates a new Submission ID.</p>
+      <p>Measure a billboard, hoarding, wall painting, wall ad, bus/metro/train ad, or POSM site BEFORE the ad goes up — creates a new Submission ID.</p>
     </div>
     <div class="menu-choice" onclick="smStartVerify()">
       <h3>✅ Verify Installation</h3>
       <p>After the ad has been put up, confirm how much of the submitted site actually got the ad and the approved cost — linked to an existing Submission ID.</p>
+    </div>
+    <div class="menu-choice" onclick="smStartStatusCheck()">
+      <h3>🔄 Check Running Status</h3>
+      <p>Re-visit an already-approved site to confirm the ad is STILL genuinely displayed — an independent, photo-verified spot-check.</p>
     </div>
     <div class="menu-choice" onclick="smStartMySubmissions()">
       <h3>📋 My Submissions</h3>
       <p>Browse your own past site measurements — handy if you don't remember a Submission ID by heart.</p>
     </div>
   `;
+}
+
+/* ---- Running Status Check — the anti-fraud spot-check flow ---- */
+let SM_STATUS_CHECK = {};
+function smStartStatusCheck(){
+  if(!smRequireCheckin()) return;
+  document.getElementById('smWrap').innerHTML = `
+    <div class="card">
+      <h2>Find a Submission to Check</h2>
+      <p style="font-size:12px; color:var(--slate); margin-top:6px;">Any auditor can spot-check any approved site — not just whoever installed it.</p>
+      <div class="field"><label>Submission ID <span class="req-mark">*</span></label><input type="text" id="smStatusIdInput" placeholder="e.g. BV260903-065612"></div>
+      <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="smLookupForStatusCheck()" id="smStatusLookupBtn">Find Submission</button>
+    </div>
+    <button class="btn btn-outline btn-block" onclick="renderSmMainMenu()">← Back to Ad Manager menu</button>
+  `;
+}
+async function smLookupForStatusCheck(){
+  const id = document.getElementById('smStatusIdInput').value.trim();
+  if(!id){ toast('Enter a submission ID', true); return; }
+  const btn = document.getElementById('smStatusLookupBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Searching…';
+  try{
+    if(!smConfigured()) throw new Error('__NOCFG__');
+    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getSubmission&id=${encodeURIComponent(id)}`, {}, 10000);
+    const j = await r.json();
+    if(!j.success) throw new Error(j.message||'Not found');
+    const histR = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getStatusCheckHistory&id=${encodeURIComponent(id)}`, {}, 10000);
+    const histJ = await histR.json();
+    SM_STATUS_CHECK = {submission:j.submission, history:histJ.checks||[], geo:null, photoRaw:null};
+    smRenderStatusCheckForm();
+  }catch(e){
+    toast(e.message||'Could not find that submission', true);
+    btn.disabled=false; btn.textContent='Find Submission';
+  }
+}
+function smRenderStatusCheckForm(){
+  const s = SM_STATUS_CHECK.submission;
+  const history = SM_STATUS_CHECK.history;
+  const historyHtml = history.length ? history.map(h=>`
+    <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--border-2); font-size:12px;">
+      <span style="color:var(--slate);">${h.date} — ${h.checkedBy}</span>
+      <span style="font-weight:700; color:${h.isRunning==='Yes'?'var(--green)':'var(--red)'};">${h.isRunning==='Yes'?'✅ Running':'🚩 NOT running'}</span>
+    </div>
+  `).join('') : `<p style="font-size:12px; color:var(--slate);">No previous status checks on record.</p>`;
+  document.getElementById('smWrap').innerHTML = `
+    <div class="card">
+      <h2>${s.SubmissionID}</h2>
+      <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--border-2); font-size:13px;"><span style="color:var(--slate);">Category</span><span style="font-weight:600;">${s.Category}</span></div>
+      <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span style="color:var(--slate);">Address</span><span style="font-weight:600;">${s.PreAddress||'—'}</span></div>
+    </div>
+    <div class="card">
+      <h2>Previous Checks</h2>
+      <div style="margin-top:10px;">${historyHtml}</div>
+    </div>
+    <div class="card">
+      <h2>New Check</h2>
+      <div class="geo-status pending" id="smStatusGeoStatus" style="margin-top:12px;">Not captured yet</div>
+      <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="smCaptureStatusLocation()" id="smStatusGeoBtn">📍 Get Current Location</button>
+    </div>
+    <div class="card locked-until-address" id="smStatusPhotoCard">
+      <h2>Is the ad currently displayed and visible? <span class="req-mark">*</span></h2>
+      <div class="yn" style="display:flex; gap:10px; margin-top:12px;" id="smStatusYN">
+        <button onclick="smSetStatusRunning('Yes', this)" style="flex:1; padding:13px; border-radius:11px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700;">✅ Yes, running</button>
+        <button onclick="smSetStatusRunning('No', this)" style="flex:1; padding:13px; border-radius:11px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700;">🚩 No, not there</button>
+      </div>
+      <p style="font-size:12px; color:var(--slate); margin:12px 0 10px;">Photograph the site now as evidence, whichever answer you gave.</p>
+      <button class="btn btn-outline btn-block" onclick="document.getElementById('smStatusPhotoInput').click()">📷 Capture proof photo</button>
+      <input type="file" id="smStatusPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="smOnStatusPhoto(event)">
+      <img id="smStatusPhotoPreview" style="max-width:100%; max-height:220px; border-radius:8px; margin-top:10px; display:none;">
+      <div class="field" style="margin-top:12px;"><label>Notes (optional)</label><input type="text" id="sm_status_notes" placeholder="e.g. torn poster, or replaced with different brand"></div>
+    </div>
+    <button class="btn btn-primary btn-block" onclick="smSubmitStatusCheck()" id="smStatusSubmitBtn">Submit Status Check</button>
+    <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="renderSmMainMenu()">← Back to Ad Manager menu</button>
+  `;
+}
+function smSetStatusRunning(val, el){
+  SM_STATUS_CHECK.isRunning = val;
+  document.querySelectorAll('#smStatusYN button').forEach(b=>{ b.style.borderColor='var(--border-2)'; b.style.background='var(--card)'; b.style.color='var(--ink)'; });
+  el.style.borderColor = val==='Yes' ? 'var(--green)' : 'var(--red)';
+  el.style.background = val==='Yes' ? 'var(--green-bg)' : 'var(--red-bg)';
+  el.style.color = val==='Yes' ? 'var(--green)' : 'var(--red)';
+}
+function smCaptureStatusLocation(){
+  if(!navigator.geolocation){ toast('Geolocation not supported', true); return; }
+  const btn = document.getElementById('smStatusGeoBtn');
+  setBtnBusy(btn, 'Locating…');
+  navigator.geolocation.getCurrentPosition((pos)=>{
+    const lat=pos.coords.latitude, lng=pos.coords.longitude;
+    SM_STATUS_CHECK.geo = {lat, lng, link:`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`};
+    document.getElementById('smStatusGeoStatus').className='geo-status got';
+    document.getElementById('smStatusGeoStatus').textContent = `✅ ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    document.getElementById('smStatusPhotoCard').classList.remove('locked-until-address');
+    setBtnIdle(btn, '📍 Re-capture Location');
+  }, ()=>{ toast('Could not get location', true); setBtnIdle(btn, '📍 Get Current Location'); }, {enableHighAccuracy:true, timeout:15000});
+}
+function smOnStatusPhoto(e){
+  const file = e.target.files[0]; if(!file) return;
+  downscale(file, (dataUrl)=>{
+    SM_STATUS_CHECK.photoRaw = dataUrl;
+    const prev = document.getElementById('smStatusPhotoPreview');
+    prev.src = dataUrl; prev.style.display='block';
+  });
+}
+async function smSubmitStatusCheck(){
+  if(!SM_STATUS_CHECK.geo){ toast('Capture the location first', true); return; }
+  if(!SM_STATUS_CHECK.isRunning){ toast('Answer whether the ad is currently displayed', true); return; }
+  if(!SM_STATUS_CHECK.photoRaw){ toast('Capture a proof photo', true); return; }
+  const btn = document.getElementById('smStatusSubmitBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Submitting…';
+  const now = new Date();
+  const lines = [`${now.toISOString().slice(0,10)} ${now.toTimeString().slice(0,5)}`, `Status Check · ${SM_STATUS_CHECK.submission.SubmissionID}`, `Auditor: ${CHECKIN_NAME}`];
+  const stamped = await stampPhoto(SM_STATUS_CHECK.photoRaw, lines);
+  const payload = {
+    action:'submitStatusCheck', submissionId: SM_STATUS_CHECK.submission.SubmissionID,
+    date: now.toISOString().slice(0,10), auditorName: CHECKIN_NAME, phone: CHECKIN_PHONE,
+    isRunning: SM_STATUS_CHECK.isRunning, lat:SM_STATUS_CHECK.geo.lat, lng:SM_STATUS_CHECK.geo.lng,
+    mapsLink:SM_STATUS_CHECK.geo.link, notes: document.getElementById('sm_status_notes').value, photo: stamped
+  };
+  try{
+    if(!smConfigured()) throw new Error('__NOCFG__');
+    const r = await fetch(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify(payload)});
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message||'Submit failed');
+    document.getElementById('smWrap').innerHTML = `<div class="card" style="text-align:center;"><div style="font-size:40px;">${SM_STATUS_CHECK.isRunning==='Yes'?'✅':'🚩'}</div><h2 style="margin-top:10px;">Status Check Recorded</h2><p style="color:var(--slate); font-size:13px;">${SM_STATUS_CHECK.submission.SubmissionID} — ${SM_STATUS_CHECK.isRunning==='Yes'?'confirmed running':'flagged as NOT running'}.</p><button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="renderSmMainMenu()">← Back to menu</button></div>`;
+  }catch(e){
+    toast(e.message||'Could not submit', true);
+    btn.disabled=false; btn.textContent='Submit Status Check';
+  }
 }
 
 /* ---- Measurement tool: reference-object calibration + manual fallback ---- */
@@ -2635,13 +2806,25 @@ const SM_REFERENCE_OBJECTS = [
   {label:'Custom length…', cm:null}
 ];
 let SM_MEASURE = null;
+/* THE FIX for "illogical" results: a reference object held close to the
+   camera and a billboard far away are NOT the same distance from the
+   lens — a simple pixel ratio silently assumes they are, which is exactly
+   what was producing wrong numbers. The correct fix (standard in
+   professional photogrammetry) is: apparent size in a photo is
+   proportional to (real size ÷ distance from camera). So:
+     real_target_size = (target_px / reference_px) × reference_cm × (target_distance / reference_distance)
+   This needs the TWO distances — reference is close (auditor holds it,
+   default ~1m, editable) and target is far, measured by GPS-pacing
+   (walk from the photo spot to the base of the target — much harder to
+   casually fake than just typing a number, which is the actual point). */
 function smRenderMeasureTool(containerId, photoDataUrl, onDone){
-  SM_MEASURE = {photo:photoDataUrl, points:[], stage:'ref', refCm:null, pxPerCm:null, widthCm:null, heightCm:null, onDone};
+  SM_ZOOM_PCT = 100;
+  SM_MEASURE = {photo:photoDataUrl, points:[], stage:'ref', refCm:null, refDistanceM:1, targetDistanceM:null, pxPerCmAtRefDistance:null, widthCm:null, heightCm:null, onDone};
   const c = document.getElementById(containerId);
   c.innerHTML = `
     <div class="tab-toggle" style="display:flex; gap:8px; margin-top:14px;">
-      <button class="active" id="smTabCalibrate" onclick="smSwitchMeasureTab('calibrate')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">📷 Measure from Photo</button>
-      <button id="smTabManual" onclick="smSwitchMeasureTab('manual')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">✏️ Enter Manually</button>
+      <button class="active" id="smTabCalibrate" onclick="smSwitchMeasureTab('calibrate')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">📏 Distance-Corrected Measure</button>
+      <button id="smTabManual" onclick="smSwitchMeasureTab('manual')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">✏️ Manual (needs approval)</button>
     </div>
     <div id="smMeasureCalibrateView"></div>
     <div id="smMeasureManualView" style="display:none;"></div>
@@ -2659,8 +2842,10 @@ function smSwitchMeasureTab(tab){
 }
 function smRenderManualView(){
   document.getElementById('smMeasureManualView').innerHTML = `
+    <div class="addr-note warn" style="margin-top:10px;">⚠️ Manual entries are NOT verified against any photo evidence — they're flagged for extra management review before approval, and are the highest-risk way to record a measurement. Use "Distance-Corrected Measure" whenever at all possible.</div>
     <div class="field"><label>Width (feet)</label><input type="number" step="0.1" id="smManualWidth" oninput="smUpdateManualArea()"></div>
     <div class="field"><label>Height (feet)</label><input type="number" step="0.1" id="smManualHeight" oninput="smUpdateManualArea()"></div>
+    <div class="field"><label>Reason manual entry was needed</label><input type="text" id="smManualReason" placeholder="e.g. no reference object available"></div>
     <div class="addr-note" id="smManualAreaResult" style="font-size:16px; font-weight:700;">0 sq ft</div>
     <button class="btn btn-dark btn-block" style="margin-top:12px;" onclick="smConfirmManualMeasurement()">Use this measurement</button>
   `;
@@ -2674,31 +2859,127 @@ function smConfirmManualMeasurement(){
   const w = Number(document.getElementById('smManualWidth').value)||0;
   const h = Number(document.getElementById('smManualHeight').value)||0;
   if(!w || !h){ toast('Enter both width and height', true); return; }
-  SM_MEASURE.onDone({area:(w*h).toFixed(1), method:'Manual entry', width:w, height:h});
+  const reason = document.getElementById('smManualReason').value.trim();
+  if(!reason){ toast('Enter a reason — this is required for manual entries', true); return; }
+  SM_MEASURE.onDone({area:(w*h).toFixed(1), method:'⚠️ Manual entry (unverified) — '+reason, width:w, height:h, needsReview:true});
 }
 function smRenderCalibrateView(){
   const refOptions = SM_REFERENCE_OBJECTS.map((r,i)=>`<option value="${i}">${r.label}</option>`).join('');
   document.getElementById('smMeasureCalibrateView').innerHTML = `
-    <div class="field"><label>What are you using as a size reference?</label>
-      <select id="smRefObjectSelect" onchange="smOnRefObjectChange()">${refOptions}</select>
+    <div class="addr-note" style="margin-top:10px; line-height:1.6;">
+      <b>How this works, step by step:</b><br>
+      1️⃣ Tell the app how far you are from your reference object AND from the target (a reference held close to you and a distant billboard are NOT the same distance from your camera — this is what makes a plain photo-ratio wrong, and correcting for it is what makes this accurate).<br>
+      2️⃣ Pick what you're using as your reference (A4 sheet is the easiest — every A4 sheet is exactly 21 × 29.7 cm, always).<br>
+      3️⃣ Tap the two ends of that reference object in your photo — the app now knows "this many pixels = this many real cm, AT that distance".<br>
+      4️⃣ Tap the target's width, then its height — the app converts those pixel taps into real feet, correcting for the distance difference from step 1.
     </div>
-    <div class="field" id="smCustomCmField" style="display:none;"><label>Reference length (cm)</label><input type="number" id="smCustomCm" step="0.1"></div>
-    <div class="addr-note" id="smMeasureInstruction">Step 1 of 3 — Tap the TWO ENDS of your reference object in the photo below.</div>
-    <div style="position:relative; width:100%; margin-top:10px; touch-action:none;">
-      <canvas id="smMeasureCanvas" style="width:100%; border-radius:8px; display:block;"></canvas>
+    <div class="field"><label>Distance from you to the reference object (metres)</label><input type="number" id="smRefDistanceM" step="0.1" value="1" oninput="SM_MEASURE.refDistanceM=Number(this.value)||1; smUpdateCalcInfo();"></div>
+    <div class="field">
+      <label>Distance from you to the target (metres) <span class="req-mark">*</span></label>
+      <input type="number" id="smTargetDistanceM" step="0.1" placeholder="Measure below, or enter if you know it" oninput="SM_MEASURE.targetDistanceM=Number(this.value)||null; smCheckDistanceReady(); smUpdateCalcInfo();">
     </div>
-    <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="smResetMeasurePoints()">↺ Restart points</button>
-    <div id="smMeasureResultArea"></div>
+    <button class="btn btn-outline btn-block" onclick="smMeasureDistanceByPacing()" id="smPaceDistanceBtn">📏 Measure by walking to the target</button>
+    <div class="addr-note" id="smPaceStatus" style="display:none;"></div>
+    <div id="smCanvasSection" class="locked-until-address">
+      <div class="field" style="margin-top:14px;"><label>What are you using as a size reference? <span class="req-mark">*</span></label>
+        <select id="smRefObjectSelect" onchange="smOnRefObjectChange()">${refOptions}</select>
+      </div>
+      <p class="addr-note" style="margin-top:4px;">💡 Don't have a reference object? An A4 sheet of paper works perfectly — every A4 sheet in the world is the exact same size (21 × 29.7 cm), so it's the most reliable choice and needs nothing special.</p>
+      <div class="field" id="smCustomCmField" style="display:none;"><label>Reference length (cm)</label><input type="number" id="smCustomCm" step="0.1"></div>
+      <div id="smCalcInfoBox" class="addr-note got" style="display:none; margin-top:10px; font-size:12px; line-height:1.6;"></div>
+      <div class="addr-note" id="smMeasureInstruction" style="margin-top:10px; font-weight:700;">Step 1 of 3 — Tap the TWO ENDS of your reference object in the photo below (e.g. the two long edges of the A4 sheet).</div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button class="btn btn-outline" style="flex:1; padding:8px;" onclick="smZoomMeasure(-1)">－ Zoom out</button>
+        <button class="btn btn-outline" style="flex:1; padding:8px;" onclick="smZoomMeasure(1)">＋ Zoom in</button>
+      </div>
+      <div style="position:relative; width:100%; margin-top:10px; touch-action:pan-x pan-y; overflow:auto; max-height:60vh; border:1.5px solid var(--border-2); border-radius:8px;" id="smCanvasScroll">
+        <canvas id="smMeasureCanvas" style="display:block; transform-origin:0 0; will-change:transform;"></canvas>
+      </div>
+      <div class="addr-note" style="text-align:center;">Zoom in for precise tapping, then scroll to find each point — the photo doesn't move until you zoom back out.</div>
+      <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="smResetMeasurePoints()">↺ Restart points</button>
+      <div id="smMeasureResultArea"></div>
+    </div>
   `;
   const img = new Image();
   img.onload = ()=>{
     const canvas = document.getElementById('smMeasureCanvas');
     canvas.width = img.width; canvas.height = img.height;
+    // Base display size fits the screen width — zoom then scales UP from
+    // here via a GPU-accelerated CSS transform (not by changing the
+    // width/height layout properties, which forces an expensive reflow +
+    // repaint of the whole element on every tap on mobile — that was the
+    // actual cause of the lag while using the measurement tool).
+    const wrapWidth = document.getElementById('smCanvasScroll').clientWidth;
+    canvas.style.width = wrapWidth + 'px';
+    canvas.style.height = (wrapWidth * img.height / img.width) + 'px';
+    canvas.style.transform = 'scale(1)';
     canvas.getContext('2d').drawImage(img,0,0);
     canvas._img = img;
     canvas.addEventListener('click', smOnCanvasTap);
   };
   img.src = SM_MEASURE.photo;
+}
+function smUpdateCalcInfo(){
+  const box = document.getElementById('smCalcInfoBox');
+  if(!box) return;
+  if(!SM_MEASURE.refDistanceM || !SM_MEASURE.targetDistanceM){ box.style.display='none'; return; }
+  const ratio = SM_MEASURE.targetDistanceM / SM_MEASURE.refDistanceM;
+  box.style.display='block';
+  box.innerHTML = `📐 <b>Calculation so far:</b> target is ${ratio.toFixed(1)}× farther from you than your reference object — the app will multiply every measurement by ${ratio.toFixed(1)} to correct for that before showing you the final size.`;
+}
+function smCheckDistanceReady(){
+  const section = document.getElementById('smCanvasSection');
+  if(SM_MEASURE.targetDistanceM && SM_MEASURE.targetDistanceM > 0) section.classList.remove('locked-until-address');
+  else section.classList.add('locked-until-address');
+}
+/* GPS-pacing distance — walk from where the photo was taken to the base of
+   the target and tap again. This is deliberately a two-step FIELD action
+   (not a typed number) — much harder to casually fake than just entering
+   a distance, which is the actual fraud-prevention point here, on top of
+   fixing the accuracy problem. Falls back to manual distance entry if
+   GPS accuracy is poor or the spot can't be reached (e.g. across a
+   highway) — the field above stays editable either way. */
+let SM_PACE_START = null;
+function smMeasureDistanceByPacing(){
+  const btn = document.getElementById('smPaceDistanceBtn');
+  const status = document.getElementById('smPaceStatus');
+  status.style.display='block'; status.className='addr-note';
+  if(!SM_PACE_START){
+    setBtnBusy(btn, 'Getting your position…');
+    navigator.geolocation.getCurrentPosition((pos)=>{
+      SM_PACE_START = {lat:pos.coords.latitude, lng:pos.coords.longitude};
+      setBtnIdle(btn, '✅ Now walk to the base of the target, then tap here');
+      status.textContent = 'Position saved. Walk to directly below/in front of the target, then tap the button again.';
+    }, ()=>{ toast('Could not get location', true); setBtnIdle(btn, '📏 Measure by walking to the target'); }, {enableHighAccuracy:true, timeout:15000});
+  } else {
+    setBtnBusy(btn, 'Getting target position…');
+    navigator.geolocation.getCurrentPosition((pos)=>{
+      const end = {lat:pos.coords.latitude, lng:pos.coords.longitude};
+      const distM = smHaversineMeters(SM_PACE_START.lat, SM_PACE_START.lng, end.lat, end.lng);
+      document.getElementById('smTargetDistanceM').value = distM.toFixed(1);
+      SM_MEASURE.targetDistanceM = distM;
+      smCheckDistanceReady();
+      status.className='addr-note got';
+      status.textContent = `✅ Measured distance: ${distM.toFixed(1)} m`;
+      setBtnIdle(btn, '📏 Re-measure by walking to the target');
+      SM_PACE_START = null;
+    }, ()=>{ toast('Could not get location', true); setBtnIdle(btn, '📏 Measure by walking to the target'); }, {enableHighAccuracy:true, timeout:15000});
+  }
+}
+function smHaversineMeters(lat1, lng1, lat2, lng2){
+  const R = 6371000;
+  const toRad = d => d*Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R * 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+let SM_ZOOM_PCT = 100;
+function smZoomMeasure(deltaStep){
+  // 1x, 1.5x, 2x, 2.5x, 3x — transform:scale is GPU-composited, so this is
+  // instant on tap instead of forcing a layout reflow of a large element.
+  SM_ZOOM_PCT = Math.min(300, Math.max(100, SM_ZOOM_PCT + deltaStep*50));
+  const canvas = document.getElementById('smMeasureCanvas');
+  if(canvas) canvas.style.transform = `scale(${SM_ZOOM_PCT/100})`;
 }
 function smOnRefObjectChange(){
   const idx = Number(document.getElementById('smRefObjectSelect').value);
@@ -2708,8 +2989,9 @@ function smResetMeasurePoints(){
   SM_MEASURE.points = []; SM_MEASURE.stage='ref';
   const canvas = document.getElementById('smMeasureCanvas');
   canvas.getContext('2d').drawImage(canvas._img,0,0);
-  document.getElementById('smMeasureInstruction').textContent = 'Step 1 of 3 — Tap the TWO ENDS of your reference object in the photo below.';
+  document.getElementById('smMeasureInstruction').textContent = 'Step 1 of 3 — Tap the TWO ENDS of your reference object in the photo below (e.g. the two long edges of the A4 sheet).';
   document.getElementById('smMeasureResultArea').innerHTML = '';
+  smUpdateCalcInfo();
 }
 function smOnCanvasTap(e){
   const canvas = e.target;
@@ -2722,34 +3004,45 @@ function smOnCanvasTap(e){
   ctx.beginPath(); ctx.arc(x,y,10,0,7); ctx.fill();
   const n = SM_MEASURE.points.length;
   const drawLine=(p1,p2,color)=>{ ctx.strokeStyle=color; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke(); };
+  // Distance correction: apparent size in a photo is proportional to
+  // (real size ÷ distance from camera). The reference gives us pixels-per-cm
+  // AT THE REFERENCE'S OWN DISTANCE — applying that directly to the
+  // target (which is much farther away) is exactly the bug that made
+  // results "illogical". Scaling by (targetDistance / refDistance)
+  // corrects for it.
+  const distanceCorrection = SM_MEASURE.targetDistanceM / SM_MEASURE.refDistanceM;
   if(SM_MEASURE.stage==='ref' && n===2){
     drawLine(SM_MEASURE.points[0], SM_MEASURE.points[1], '#F5A623');
     const idx = Number(document.getElementById('smRefObjectSelect').value);
     const refCm = SM_REFERENCE_OBJECTS[idx].cm !== null ? SM_REFERENCE_OBJECTS[idx].cm : Number(document.getElementById('smCustomCm').value);
     if(!refCm){ toast('Enter the custom reference length first', true); SM_MEASURE.points=[]; return; }
     const pxDist = Math.hypot(SM_MEASURE.points[1].x-SM_MEASURE.points[0].x, SM_MEASURE.points[1].y-SM_MEASURE.points[0].y);
-    SM_MEASURE.refCm = refCm; SM_MEASURE.pxPerCm = pxDist/refCm; SM_MEASURE.points = []; SM_MEASURE.stage = 'width';
-    document.getElementById('smMeasureInstruction').textContent = "Step 2 of 3 — Tap the TWO ENDS of the target's WIDTH.";
+    SM_MEASURE.refCm = refCm; SM_MEASURE.pxPerCmAtRefDistance = pxDist/refCm; SM_MEASURE.points = []; SM_MEASURE.stage = 'width';
+    document.getElementById('smMeasureInstruction').textContent = "Step 2 of 3 — Tap the TWO ENDS of the target's WIDTH (left edge to right edge).";
+    document.getElementById('smCalcInfoBox').innerHTML = `📐 <b>Reference calibrated:</b> your ${refCm}cm reference measured ${Math.round(pxDist)} pixels in this photo, so ${(pxDist/refCm).toFixed(1)} pixels = 1cm at ITS distance. Next, tapping the target applies the ${distanceCorrection.toFixed(1)}× distance correction automatically.`;
   } else if(SM_MEASURE.stage==='width' && n===2){
     drawLine(SM_MEASURE.points[0], SM_MEASURE.points[1], '#1B7A43');
     const pxDist = Math.hypot(SM_MEASURE.points[1].x-SM_MEASURE.points[0].x, SM_MEASURE.points[1].y-SM_MEASURE.points[0].y);
-    SM_MEASURE.widthCm = pxDist/SM_MEASURE.pxPerCm; SM_MEASURE.points = []; SM_MEASURE.stage = 'height';
-    document.getElementById('smMeasureInstruction').textContent = "Step 3 of 3 — Tap the TWO ENDS of the target's HEIGHT.";
+    SM_MEASURE.widthCm = (pxDist/SM_MEASURE.pxPerCmAtRefDistance) * distanceCorrection;
+    SM_MEASURE.points = []; SM_MEASURE.stage = 'height';
+    document.getElementById('smMeasureInstruction').textContent = "Step 3 of 3 — Tap the TWO ENDS of the target's HEIGHT (top edge to bottom edge).";
+    document.getElementById('smCalcInfoBox').innerHTML = `📐 <b>Width so far:</b> ${(SM_MEASURE.widthCm/30.48).toFixed(1)} ft (${Math.round(SM_MEASURE.widthCm)} cm) — distance-corrected. Now tap the height the same way.`;
   } else if(SM_MEASURE.stage==='height' && n===2){
     drawLine(SM_MEASURE.points[0], SM_MEASURE.points[1], '#1B7A43');
     const pxDist = Math.hypot(SM_MEASURE.points[1].x-SM_MEASURE.points[0].x, SM_MEASURE.points[1].y-SM_MEASURE.points[0].y);
-    SM_MEASURE.heightCm = pxDist/SM_MEASURE.pxPerCm; SM_MEASURE.stage = 'done';
+    SM_MEASURE.heightCm = (pxDist/SM_MEASURE.pxPerCmAtRefDistance) * distanceCorrection;
+    SM_MEASURE.stage = 'done';
     const widthFt = SM_MEASURE.widthCm/30.48, heightFt = SM_MEASURE.heightCm/30.48;
     const areaSqFt = (widthFt*heightFt).toFixed(1);
     document.getElementById('smMeasureInstruction').textContent = '✅ Measurement complete.';
     document.getElementById('smMeasureResultArea').innerHTML = `
-      <div class="addr-note" style="font-size:16px; font-weight:700; margin-top:10px;">${areaSqFt} sq ft <span style="font-size:12px; font-weight:400;">(${widthFt.toFixed(1)} ft × ${heightFt.toFixed(1)} ft)</span></div>
+      <div class="addr-note" style="font-size:16px; font-weight:700; margin-top:10px;">${areaSqFt} sq ft <span style="font-size:12px; font-weight:400;">(${widthFt.toFixed(1)} ft × ${heightFt.toFixed(1)} ft, distance-corrected)</span></div>
       <button class="btn btn-dark btn-block" style="margin-top:10px;" onclick="smConfirmCalibratedMeasurement(${areaSqFt}, ${widthFt.toFixed(2)}, ${heightFt.toFixed(2)})">Use this measurement</button>
     `;
   }
 }
 function smConfirmCalibratedMeasurement(area, width, height){
-  SM_MEASURE.onDone({area, method:'Photo reference measurement', width, height});
+  SM_MEASURE.onDone({area, method:`Distance-corrected photo measurement (target ${SM_MEASURE.targetDistanceM.toFixed(1)}m away)`, width, height});
 }
 
 /* ---- Pre-installation flow ---- */
@@ -2758,12 +3051,14 @@ function smStartPreAudit(){
   if(!smRequireCheckin()) return;
   SM_PRE = {category:'', geo:null, photoRaw:null, measurement:null};
   const wrap = document.getElementById('smWrap');
+  const categories = ['Billboard / Hoarding','Wall Painting','Hand-painted / Localized Wall Ad','Bus Ad','Metro Ad','Train Ad','POSM Audit'];
+  const catIcon = c => c.includes('Billboard')?'🛑':c.includes('Painting')?'🎨':c.includes('Hand-painted')?'🏚️':c.includes('Bus')?'🚌':c.includes('Metro')?'🚇':c.includes('Train')?'🚆':'🏷️';
   wrap.innerHTML = `
     <div class="card">
       <h2>1. Site Category <span class="req-mark">*</span></h2>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px;" id="smCategoryGrid">
-        ${['Billboard / Hoarding','Wall Painting','Hand-painted / Localized Wall Ad'].map(c=>`
-          <div onclick="smSelectCategory('${c}', this)" style="border:1.5px solid var(--border-2); border-radius:12px; padding:16px 10px; text-align:center; cursor:pointer;"><div style="font-size:26px;">${c.includes('Billboard')?'🛑':c.includes('Painting')?'🎨':'🏚️'}</div><div style="font-size:12px; font-weight:700; margin-top:6px;">${c}</div></div>
+        ${categories.map(c=>`
+          <div onclick="smSelectCategory('${c}', this)" style="border:1.5px solid var(--border-2); border-radius:12px; padding:16px 10px; text-align:center; cursor:pointer;"><div style="font-size:26px;">${catIcon(c)}</div><div style="font-size:12px; font-weight:700; margin-top:6px;">${c}</div></div>
         `).join('')}
       </div>
     </div>
@@ -2787,13 +3082,38 @@ function smStartPreAudit(){
       <div class="field"><label>Cost (₹)</label><input type="number" id="sm_pre_cost" step="0.01"></div>
     </div>
     <button class="btn btn-primary btn-block" onclick="smSubmitPreAudit()" id="smPreSubmitBtn">Submit Site Measurement</button>
-    <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="renderSmMainMenu()">← Back to SmartMeasure menu</button>
+    <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="renderSmMainMenu()">← Back to Ad Manager menu</button>
   `;
 }
 function smSelectCategory(cat, el){
   SM_PRE.category = cat;
   document.querySelectorAll('#smCategoryGrid > div').forEach(c=>{ c.style.borderColor='var(--border-2)'; c.style.background='var(--card)'; });
   el.style.borderColor='var(--amber)'; el.style.background='var(--paper-2)';
+  const needsMeasurement = cat==='Billboard / Hoarding' || cat==='Wall Painting' || cat==='Hand-painted / Localized Wall Ad';
+  const photoCard = document.getElementById('smPrePhotoCard');
+  if(needsMeasurement){
+    photoCard.innerHTML = `
+      <h2>3. Site Photo &amp; Measurement <span class="req-mark">*</span></h2>
+      <p style="font-size:12px; color:var(--slate); margin:12px 0 10px;">Frame the target AND your reference object (A4 sheet, note, tape) together in one photo for accurate measurement.</p>
+      <button class="btn btn-outline btn-block" onclick="document.getElementById('smPreSiteInput').click()">📷 Capture site photo</button>
+      <input type="file" id="smPreSiteInput" accept="image/*" capture="environment" style="display:none" onchange="smOnPreSitePhoto(event)">
+      <div id="smPreMeasureArea"></div>
+    `;
+  } else {
+    // Bus/Metro/Train/POSM: the point is confirming the ad is genuinely
+    // up and visible, not re-measuring a standard-size panel — so this
+    // skips the area-measurement tool and just needs a clear photo, since
+    // a timestamped, GPS-tagged photo IS the evidence that matters here.
+    photoCard.innerHTML = `
+      <h2>3. Site Photo — Proof of Display <span class="req-mark">*</span></h2>
+      <p style="font-size:12px; color:var(--slate); margin:12px 0 10px;">Photograph the ad clearly and visibly displayed, with enough surroundings that the location is obviously recognisable.</p>
+      <button class="btn btn-outline btn-block" onclick="document.getElementById('smPreSiteInput').click()">📷 Capture proof photo</button>
+      <input type="file" id="smPreSiteInput" accept="image/*" capture="environment" style="display:none" onchange="smOnPreSitePhotoSimple(event)">
+      <img id="smPreSimplePreview" style="max-width:100%; max-height:220px; border-radius:8px; margin-top:10px; display:none;">
+      <div class="field" style="margin-top:12px;"><label>Quantity / Size details (optional)</label><input type="text" id="sm_pre_qty" placeholder="e.g. 2 bus panels, or 4x3 ft POSM standee"></div>
+    `;
+    SM_PRE.measurement = {area:'', method:'Presence-only (no area measurement needed for this category)', width:'', height:''};
+  }
 }
 function smCapturePreLocation(){
   if(!navigator.geolocation){ toast('Geolocation not supported', true); return; }
@@ -2810,6 +3130,7 @@ function smCapturePreLocation(){
     const base = await getBaseAddress(lat, lng);
     if(base.formatted) document.getElementById('sm_pre_address').value = base.formatted;
     if(base.city) document.getElementById('sm_pre_city').value = base.city;
+    fetchLandmarkAndAppend(lat, lng, document.getElementById('sm_pre_address'), base.formatted||'');
   }, ()=>{ toast('Could not get location', true); setBtnIdle(btn, '📍 Get Current Location'); }, {enableHighAccuracy:true, timeout:15000});
 }
 function smOnPreSitePhoto(e){
@@ -2821,6 +3142,15 @@ function smOnPreSitePhoto(e){
       SM_PRE.measurement = result;
       document.getElementById('smPreMeasureArea').innerHTML += `<div class="addr-note" style="font-size:15px; font-weight:700; margin-top:10px;">✅ ${result.area} sq ft locked in (${result.method})</div>`;
     });
+  });
+}
+function smOnPreSitePhotoSimple(e){
+  const file = e.target.files[0]; if(!file) return;
+  downscale(file, (dataUrl)=>{
+    SM_PRE.photoRaw = dataUrl;
+    const prev = document.getElementById('smPreSimplePreview');
+    prev.src = dataUrl; prev.style.display='block';
+    SM_PRE.measurement = {area:'', method:'Presence-only (no area measurement needed for this category)', width:'', height:''};
   });
 }
 async function smSubmitPreAudit(){
@@ -2860,7 +3190,7 @@ function smShowSubmissionSuccess(id){
       <p style="color:var(--slate); font-size:13px; margin-top:6px;">Save this ID — you'll need it to verify the installation later.</p>
       <div style="background:var(--ink); color:var(--amber); font-family:'IBM Plex Mono',monospace; font-weight:700; padding:10px 16px; border-radius:10px; text-align:center; font-size:18px; letter-spacing:.05em; margin-top:10px;">${id}</div>
       <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="smStartPreAudit()">➕ Measure Another Site</button>
-      <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="renderSmMainMenu()">← Back to SmartMeasure menu</button>
+      <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="renderSmMainMenu()">← Back to Ad Manager menu</button>
     </div>`;
 }
 
@@ -2874,7 +3204,7 @@ function smStartVerify(){
       <div class="field"><label>Submission ID <span class="req-mark">*</span></label><input type="text" id="smVerifyIdInput" placeholder="e.g. BV260903-065612"></div>
       <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="smLookupSubmission()" id="smVerifyLookupBtn">Find Submission</button>
     </div>
-    <button class="btn btn-outline btn-block" onclick="renderSmMainMenu()">← Back to SmartMeasure menu</button>
+    <button class="btn btn-outline btn-block" onclick="renderSmMainMenu()">← Back to Ad Manager menu</button>
   `;
 }
 async function smLookupSubmission(){
