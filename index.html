@@ -337,7 +337,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.32.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.35.0</div></div>
   </div>
 </header>
 
@@ -2819,18 +2819,18 @@ let SM_MEASURE = null;
    casually fake than just typing a number, which is the actual point). */
 function smRenderMeasureTool(containerId, photoDataUrl, onDone){
   SM_ZOOM_PCT = 100;
-  SM_MEASURE = {photo:photoDataUrl, points:[], stage:'ref', refCm:null, refDistanceM:1, targetDistanceM:null, pxPerCmAtRefDistance:null, widthCm:null, heightCm:null, onDone};
+  SM_MEASURE = {photo:photoDataUrl, points:[], stage:'ref', refCm:null, refDistanceM:1, targetDistanceM:null, pxPerCmAtRefDistance:null, widthCm:null, heightCm:null, onDone, tapeProof:null, drawOps:[]};
   const c = document.getElementById(containerId);
   c.innerHTML = `
     <div class="tab-toggle" style="display:flex; gap:8px; margin-top:14px;">
-      <button class="active" id="smTabCalibrate" onclick="smSwitchMeasureTab('calibrate')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">📏 Distance-Corrected Measure</button>
-      <button id="smTabManual" onclick="smSwitchMeasureTab('manual')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">✏️ Manual (needs approval)</button>
+      <button class="active" id="smTabManual" onclick="smSwitchMeasureTab('manual')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">📏 Tape Measure (recommended)</button>
+      <button id="smTabCalibrate" onclick="smSwitchMeasureTab('calibrate')" style="flex:1; padding:10px; border-radius:10px; border:1.5px solid var(--border-2); background:var(--card); font-weight:700; font-size:13px;">📷 Photo-based (no tape available)</button>
     </div>
-    <div id="smMeasureCalibrateView"></div>
-    <div id="smMeasureManualView" style="display:none;"></div>
+    <div id="smMeasureManualView"></div>
+    <div id="smMeasureCalibrateView" style="display:none;"></div>
   `;
-  smRenderCalibrateView();
   smRenderManualView();
+  smRenderCalibrateView();
 }
 function smSwitchMeasureTab(tab){
   document.getElementById('smTabCalibrate').style.background = tab==='calibrate' ? 'var(--ink)' : 'var(--card)';
@@ -2840,15 +2840,37 @@ function smSwitchMeasureTab(tab){
   document.getElementById('smMeasureCalibrateView').style.display = tab==='calibrate' ? 'block' : 'none';
   document.getElementById('smMeasureManualView').style.display = tab==='manual' ? 'block' : 'none';
 }
+/* Tape-measure entry is now the RECOMMENDED default — a physical tape or
+   laser distance meter is standard equipment for this kind of site audit
+   in the real world, and is far more reliable than any photo-based
+   optical estimate (which needs precise taps, an accurate distance, and
+   the right reference object all lining up — too many places for error
+   to creep in, and errors here directly cost the company money). A photo
+   of the tape actually held against the wall is the evidence trail here,
+   not the source of the number itself. */
 function smRenderManualView(){
   document.getElementById('smMeasureManualView').innerHTML = `
-    <div class="addr-note warn" style="margin-top:10px;">⚠️ Manual entries are NOT verified against any photo evidence — they're flagged for extra management review before approval, and are the highest-risk way to record a measurement. Use "Distance-Corrected Measure" whenever at all possible.</div>
-    <div class="field"><label>Width (feet)</label><input type="number" step="0.1" id="smManualWidth" oninput="smUpdateManualArea()"></div>
-    <div class="field"><label>Height (feet)</label><input type="number" step="0.1" id="smManualHeight" oninput="smUpdateManualArea()"></div>
-    <div class="field"><label>Reason manual entry was needed</label><input type="text" id="smManualReason" placeholder="e.g. no reference object available"></div>
+    <div class="addr-note got" style="margin-top:10px;">✅ Measure the width and height directly with a tape measure or laser distance meter, then enter the numbers below — this is the most accurate and recommended method.</div>
+    <div class="field"><label>Width (feet) <span class="req-mark">*</span></label><input type="number" step="0.1" id="smManualWidth" oninput="smUpdateManualArea()"></div>
+    <div class="field"><label>Height (feet) <span class="req-mark">*</span></label><input type="number" step="0.1" id="smManualHeight" oninput="smUpdateManualArea()"></div>
     <div class="addr-note" id="smManualAreaResult" style="font-size:16px; font-weight:700;">0 sq ft</div>
+    <div class="field" style="margin-top:12px;">
+      <label>Photo of tape/scale against the wall <span class="req-mark">*</span></label>
+      <p style="font-size:12px; color:var(--slate); margin:4px 0 8px;">A close-up showing the tape measure or scale actually laid against the site — this is your evidence that a real measurement was taken.</p>
+      <button class="btn btn-outline btn-block" onclick="document.getElementById('smTapeProofInput').click()">📷 Capture tape/scale photo</button>
+      <input type="file" id="smTapeProofInput" accept="image/*" capture="environment" style="display:none" onchange="smOnTapeProofPhoto(event)">
+      <img id="smTapeProofPreview" style="max-width:100%; max-height:200px; border-radius:8px; margin-top:10px; display:none;">
+    </div>
     <button class="btn btn-dark btn-block" style="margin-top:12px;" onclick="smConfirmManualMeasurement()">Use this measurement</button>
   `;
+}
+function smOnTapeProofPhoto(e){
+  const file = e.target.files[0]; if(!file) return;
+  downscale(file, (dataUrl)=>{
+    SM_MEASURE.tapeProof = dataUrl;
+    const prev = document.getElementById('smTapeProofPreview');
+    prev.src = dataUrl; prev.style.display='block';
+  });
 }
 function smUpdateManualArea(){
   const w = Number(document.getElementById('smManualWidth').value)||0;
@@ -2859,21 +2881,38 @@ function smConfirmManualMeasurement(){
   const w = Number(document.getElementById('smManualWidth').value)||0;
   const h = Number(document.getElementById('smManualHeight').value)||0;
   if(!w || !h){ toast('Enter both width and height', true); return; }
-  const reason = document.getElementById('smManualReason').value.trim();
-  if(!reason){ toast('Enter a reason — this is required for manual entries', true); return; }
-  SM_MEASURE.onDone({area:(w*h).toFixed(1), method:'⚠️ Manual entry (unverified) — '+reason, width:w, height:h, needsReview:true});
+  if(!SM_MEASURE.tapeProof){ toast('Capture a photo of the tape/scale against the wall first', true); return; }
+  SM_MEASURE.onDone({area:(w*h).toFixed(1), method:'Tape measure (photo-verified)', width:w, height:h, tapeProof:SM_MEASURE.tapeProof});
 }
 function smRenderCalibrateView(){
   const refOptions = SM_REFERENCE_OBJECTS.map((r,i)=>`<option value="${i}">${r.label}</option>`).join('');
   document.getElementById('smMeasureCalibrateView').innerHTML = `
-    <div class="addr-note" style="margin-top:10px; line-height:1.6;">
-      <b>How this works, step by step:</b><br>
-      1️⃣ Tell the app how far you are from your reference object AND from the target (a reference held close to you and a distant billboard are NOT the same distance from your camera — this is what makes a plain photo-ratio wrong, and correcting for it is what makes this accurate).<br>
-      2️⃣ Pick what you're using as your reference (A4 sheet is the easiest — every A4 sheet is exactly 21 × 29.7 cm, always).<br>
-      3️⃣ Tap the two ends of that reference object in your photo — the app now knows "this many pixels = this many real cm, AT that distance".<br>
-      4️⃣ Tap the target's width, then its height — the app converts those pixel taps into real feet, correcting for the distance difference from step 1.
+    <div class="card" style="background:var(--paper-2); margin-top:10px; padding:16px; border-radius:12px;">
+      <h3 style="font-family:'Oswald'; font-size:15px; margin-bottom:10px;">📄 How to place the A4 sheet — for a perfect measurement</h3>
+      <svg viewBox="0 0 320 130" style="width:100%; max-width:320px; display:block; margin:0 auto;">
+        <rect x="0" y="0" width="320" height="130" fill="#F1ECE0" rx="8"/>
+        <rect x="20" y="15" width="230" height="95" fill="none" stroke="#D8D2C4" stroke-width="2" stroke-dasharray="4 4"/>
+        <text x="135" y="10" text-anchor="middle" font-size="9" fill="#6B7280">TARGET WALL (in the same photo)</text>
+        <rect x="35" y="70" width="34" height="40" fill="#fff" stroke="#12172B" stroke-width="2"/>
+        <text x="52" y="94" text-anchor="middle" font-size="9" fill="#12172B" font-weight="700">A4</text>
+        <line x1="35" y1="65" x2="69" y2="65" stroke="#F5A623" stroke-width="2"/>
+        <circle cx="35" cy="65" r="3" fill="#F5A623"/><circle cx="69" cy="65" r="3" fill="#F5A623"/>
+        <text x="52" y="58" text-anchor="middle" font-size="8" fill="#C97F0E">flat against the SAME wall</text>
+      </svg>
+      <ul style="font-size:12.5px; line-height:1.7; margin:10px 0 0; padding-left:18px; color:var(--ink);">
+        <li><b>Hold or tape it FLAT against the same wall/surface</b> you're measuring — not tilted, not held out in front of you.</li>
+        <li><b>Keep the whole A4 sheet visible</b> in the same photo as the target, ideally near a corner or edge of it.</li>
+        <li><b>Don't crumple or fold it</b> — its two edges need to be straight lines you can tap accurately.</li>
+        <li>Portrait or landscape both work, as long as you pick the matching edge (21cm short edge or 29.7cm long edge) in the dropdown below.</li>
+      </ul>
     </div>
-    <div class="field"><label>Distance from you to the reference object (metres)</label><input type="number" id="smRefDistanceM" step="0.1" value="1" oninput="SM_MEASURE.refDistanceM=Number(this.value)||1; smUpdateCalcInfo();"></div>
+    <div class="addr-note" style="margin-top:10px; line-height:1.6;">
+      <b>How the calculation works, step by step:</b><br>
+      1️⃣ Tell the app how far you are from the A4 sheet AND from the target (a sheet held close to you and a distant wall are NOT the same distance from your camera — this is what makes a plain photo-ratio wrong, and correcting for it is what makes this accurate).<br>
+      2️⃣ Tap the two ends of the A4 sheet in your photo — the app now knows "this many pixels = this many real cm, AT that distance".<br>
+      3️⃣ Tap the target's width, then its height — the app converts those pixel taps into real feet, correcting for the distance difference from step 1.
+    </div>
+    <div class="field"><label>Distance from you to the A4 sheet (metres)</label><input type="number" id="smRefDistanceM" step="0.1" value="1" oninput="SM_MEASURE.refDistanceM=Number(this.value)||1; smUpdateCalcInfo();"></div>
     <div class="field">
       <label>Distance from you to the target (metres) <span class="req-mark">*</span></label>
       <input type="number" id="smTargetDistanceM" step="0.1" placeholder="Measure below, or enter if you know it" oninput="SM_MEASURE.targetDistanceM=Number(this.value)||null; smCheckDistanceReady(); smUpdateCalcInfo();">
@@ -2881,13 +2920,12 @@ function smRenderCalibrateView(){
     <button class="btn btn-outline btn-block" onclick="smMeasureDistanceByPacing()" id="smPaceDistanceBtn">📏 Measure by walking to the target</button>
     <div class="addr-note" id="smPaceStatus" style="display:none;"></div>
     <div id="smCanvasSection" class="locked-until-address">
-      <div class="field" style="margin-top:14px;"><label>What are you using as a size reference? <span class="req-mark">*</span></label>
+      <div class="field" style="margin-top:14px;"><label>Which A4 edge did you use? <span class="req-mark">*</span></label>
         <select id="smRefObjectSelect" onchange="smOnRefObjectChange()">${refOptions}</select>
       </div>
-      <p class="addr-note" style="margin-top:4px;">💡 Don't have a reference object? An A4 sheet of paper works perfectly — every A4 sheet in the world is the exact same size (21 × 29.7 cm), so it's the most reliable choice and needs nothing special.</p>
       <div class="field" id="smCustomCmField" style="display:none;"><label>Reference length (cm)</label><input type="number" id="smCustomCm" step="0.1"></div>
       <div id="smCalcInfoBox" class="addr-note got" style="display:none; margin-top:10px; font-size:12px; line-height:1.6;"></div>
-      <div class="addr-note" id="smMeasureInstruction" style="margin-top:10px; font-weight:700;">Step 1 of 3 — Tap the TWO ENDS of your reference object in the photo below (e.g. the two long edges of the A4 sheet).</div>
+      <div class="addr-note" id="smMeasureInstruction" style="margin-top:10px; font-weight:700;">Step 1 of 3 — Tap the TWO ENDS of the A4 sheet in the photo below.</div>
       <div style="display:flex; gap:8px; margin-top:8px;">
         <button class="btn btn-outline" style="flex:1; padding:8px;" onclick="smZoomMeasure(-1)">－ Zoom out</button>
         <button class="btn btn-outline" style="flex:1; padding:8px;" onclick="smZoomMeasure(1)">＋ Zoom in</button>
@@ -2896,7 +2934,10 @@ function smRenderCalibrateView(){
         <canvas id="smMeasureCanvas" style="display:block; transform-origin:0 0; will-change:transform;"></canvas>
       </div>
       <div class="addr-note" style="text-align:center;">Zoom in for precise tapping, then scroll to find each point — the photo doesn't move until you zoom back out.</div>
-      <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="smResetMeasurePoints()">↺ Restart points</button>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="btn btn-outline" style="flex:1;" onclick="smUndoLastTap()">↩ Undo last tap</button>
+        <button class="btn btn-outline" style="flex:1;" onclick="smResetMeasurePoints()">↺ Restart all</button>
+      </div>
       <div id="smMeasureResultArea"></div>
     </div>
   `;
@@ -2986,11 +3027,52 @@ function smOnRefObjectChange(){
   document.getElementById('smCustomCmField').style.display = SM_REFERENCE_OBJECTS[idx].cm===null ? 'block' : 'none';
 }
 function smResetMeasurePoints(){
-  SM_MEASURE.points = []; SM_MEASURE.stage='ref';
+  SM_MEASURE.points = []; SM_MEASURE.stage='ref'; SM_MEASURE.drawOps = [];
   const canvas = document.getElementById('smMeasureCanvas');
   canvas.getContext('2d').drawImage(canvas._img,0,0);
   document.getElementById('smMeasureInstruction').textContent = 'Step 1 of 3 — Tap the TWO ENDS of your reference object in the photo below (e.g. the two long edges of the A4 sheet).';
   document.getElementById('smMeasureResultArea').innerHTML = '';
+  smUpdateCalcInfo();
+}
+/* Full redraw from a recorded list of draw operations — lets a single
+   wrong tap be undone cleanly (redraw everything except the last op)
+   instead of forcing a full restart, which was the actual complaint:
+   a mis-tap should be a small fix, not starting over from scratch. */
+function smRedrawFromOps(){
+  const canvas = document.getElementById('smMeasureCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(canvas._img,0,0);
+  (SM_MEASURE.drawOps||[]).forEach(op=>{
+    if(op.type==='dot'){ ctx.fillStyle=op.color; ctx.beginPath(); ctx.arc(op.x,op.y,10,0,7); ctx.fill(); }
+    else { ctx.strokeStyle=op.color; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(op.x1,op.y1); ctx.lineTo(op.x2,op.y2); ctx.stroke(); }
+  });
+}
+function smUndoLastTap(){
+  if(!SM_MEASURE.drawOps || !SM_MEASURE.drawOps.length){ toast('Nothing to undo yet', true); return; }
+  if(SM_MEASURE.points.length > 0){
+    // Mid-pair: one point placed, waiting for the second — just drop it.
+    SM_MEASURE.points.pop();
+    SM_MEASURE.drawOps.pop(); // the dot just placed
+    smRedrawFromOps();
+    return;
+  }
+  // A pair (and its connecting line) just completed and the tool has
+  // already moved to the NEXT step — step back one stage and remove that
+  // whole pair (2 dots + 1 line = the last 3 ops) so it can be re-tapped.
+  SM_MEASURE.drawOps.splice(-3, 3);
+  if(SM_MEASURE.stage==='width'){
+    SM_MEASURE.stage='ref'; SM_MEASURE.refCm=null; SM_MEASURE.pxPerCmAtRefDistance=null;
+    document.getElementById('smMeasureInstruction').textContent = 'Step 1 of 3 — Tap the TWO ENDS of your reference object in the photo below (e.g. the two long edges of the A4 sheet).';
+  } else if(SM_MEASURE.stage==='height'){
+    SM_MEASURE.stage='width'; SM_MEASURE.widthCm=null;
+    document.getElementById('smMeasureInstruction').textContent = "Step 2 of 3 — Tap the TWO ENDS of the target's WIDTH (left edge to right edge).";
+  } else if(SM_MEASURE.stage==='done'){
+    SM_MEASURE.stage='height'; SM_MEASURE.heightCm=null;
+    document.getElementById('smMeasureInstruction').textContent = "Step 3 of 3 — Tap the TWO ENDS of the target's HEIGHT (top edge to bottom edge).";
+    document.getElementById('smMeasureResultArea').innerHTML = '';
+  }
+  smRedrawFromOps();
   smUpdateCalcInfo();
 }
 function smOnCanvasTap(e){
@@ -2999,11 +3081,14 @@ function smOnCanvasTap(e){
   const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
   const x = (e.clientX-rect.left)*scaleX, y = (e.clientY-rect.top)*scaleY;
   SM_MEASURE.points.push({x,y});
+  SM_MEASURE.drawOps = SM_MEASURE.drawOps || [];
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = SM_MEASURE.stage==='ref' ? '#F5A623' : '#1B7A43';
+  const dotColor = SM_MEASURE.stage==='ref' ? '#F5A623' : '#1B7A43';
+  ctx.fillStyle = dotColor;
   ctx.beginPath(); ctx.arc(x,y,10,0,7); ctx.fill();
+  SM_MEASURE.drawOps.push({type:'dot', x, y, color:dotColor});
   const n = SM_MEASURE.points.length;
-  const drawLine=(p1,p2,color)=>{ ctx.strokeStyle=color; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke(); };
+  const drawLine=(p1,p2,color)=>{ ctx.strokeStyle=color; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke(); SM_MEASURE.drawOps.push({type:'line', x1:p1.x, y1:p1.y, x2:p2.x, y2:p2.y, color}); };
   // Distance correction: apparent size in a photo is proportional to
   // (real size ÷ distance from camera). The reference gives us pixels-per-cm
   // AT THE REFERENCE'S OWN DISTANCE — applying that directly to the
@@ -3037,6 +3122,13 @@ function smOnCanvasTap(e){
     document.getElementById('smMeasureInstruction').textContent = '✅ Measurement complete.';
     document.getElementById('smMeasureResultArea').innerHTML = `
       <div class="addr-note" style="font-size:16px; font-weight:700; margin-top:10px;">${areaSqFt} sq ft <span style="font-size:12px; font-weight:400;">(${widthFt.toFixed(1)} ft × ${heightFt.toFixed(1)} ft, distance-corrected)</span></div>
+      <div class="addr-note" style="font-size:11.5px; line-height:1.6; margin-top:6px; background:var(--paper-2); padding:10px; border-radius:8px;">
+        <b>How this number was calculated:</b><br>
+        • Your ${SM_MEASURE.refCm}cm reference measured out to a certain pixel length in the photo, giving pixels-per-cm at ITS distance (${SM_MEASURE.refDistanceM}m away).<br>
+        • Width tap → ${Math.round(SM_MEASURE.widthCm/distanceCorrection)}cm at the reference's distance, × ${distanceCorrection.toFixed(2)} (target is ${SM_MEASURE.targetDistanceM}m vs ${SM_MEASURE.refDistanceM}m away) = ${Math.round(SM_MEASURE.widthCm)}cm = ${widthFt.toFixed(1)} ft.<br>
+        • Height tap → same method = ${Math.round(SM_MEASURE.heightCm)}cm = ${heightFt.toFixed(1)} ft.<br>
+        • Area = ${widthFt.toFixed(1)} × ${heightFt.toFixed(1)} = ${areaSqFt} sq ft.
+      </div>
       <button class="btn btn-dark btn-block" style="margin-top:10px;" onclick="smConfirmCalibratedMeasurement(${areaSqFt}, ${widthFt.toFixed(2)}, ${heightFt.toFixed(2)})">Use this measurement</button>
     `;
   }
@@ -3071,7 +3163,7 @@ function smStartPreAudit(){
     </div>
     <div class="card locked-until-address" id="smPrePhotoCard">
       <h2>3. Site Photo &amp; Measurement <span class="req-mark">*</span></h2>
-      <p style="font-size:12px; color:var(--slate); margin:12px 0 10px;">Frame the target AND your reference object (A4 sheet, note, tape) together in one photo for accurate measurement.</p>
+      <p style="font-size:12px; color:var(--slate); margin:12px 0 10px;">Capture a clear photo of the site — you'll measure it with a tape measure next (recommended), with a photo-based estimate as backup if no tape is available.</p>
       <button class="btn btn-outline btn-block" onclick="document.getElementById('smPreSiteInput').click()">📷 Capture site photo</button>
       <input type="file" id="smPreSiteInput" accept="image/*" capture="environment" style="display:none" onchange="smOnPreSitePhoto(event)">
       <div id="smPreMeasureArea"></div>
@@ -3093,11 +3185,19 @@ function smSelectCategory(cat, el){
   const photoCard = document.getElementById('smPrePhotoCard');
   if(needsMeasurement){
     photoCard.innerHTML = `
-      <h2>3. Site Photo &amp; Measurement <span class="req-mark">*</span></h2>
-      <p style="font-size:12px; color:var(--slate); margin:12px 0 10px;">Frame the target AND your reference object (A4 sheet, note, tape) together in one photo for accurate measurement.</p>
-      <button class="btn btn-outline btn-block" onclick="document.getElementById('smPreSiteInput').click()">📷 Capture site photo</button>
-      <input type="file" id="smPreSiteInput" accept="image/*" capture="environment" style="display:none" onchange="smOnPreSitePhoto(event)">
+      <h2>3. Measure the Site <span class="req-mark">*</span></h2>
+      <p style="font-size:12px; color:var(--slate); margin:12px 0 10px;">Measure directly with your phone's camera — point and tap, no reference object or typing needed.</p>
+      <button class="btn btn-primary btn-block" onclick="smStartARMeasure()" id="smARMeasureBtn">📱 Measure with Phone Camera (AR)</button>
+      <button class="btn btn-outline btn-block" style="margin-top:8px;" onclick="document.getElementById('smA4PhotoInput').click()">📄 Measure using an A4 sheet instead</button>
+      <input type="file" id="smA4PhotoInput" accept="image/*" capture="environment" style="display:none" onchange="smOnPreSitePhoto(event)">
+      <div id="smARFallbackNote" style="display:none;"></div>
       <div id="smPreMeasureArea"></div>
+      <div id="smPrePhotoSection" style="display:none; margin-top:16px; padding-top:16px; border-top:1.5px dashed var(--border-2);">
+        <label style="display:block; font-size:12px; font-weight:700; color:var(--slate); text-transform:uppercase; margin-bottom:8px;">Site Photo <span class="req-mark">*</span></label>
+        <button class="btn btn-outline btn-block" onclick="document.getElementById('smPreSiteInput').click()">📷 Capture site photo</button>
+        <input type="file" id="smPreSiteInput" accept="image/*" capture="environment" style="display:none" onchange="smOnAREvidencePhoto(event)">
+        <img id="smPreSimplePreview" style="max-width:100%; max-height:220px; border-radius:8px; margin-top:10px; display:none;">
+      </div>
     `;
   } else {
     // Bus/Metro/Train/POSM: the point is confirming the ad is genuinely
@@ -3142,6 +3242,144 @@ function smOnPreSitePhoto(e){
       SM_PRE.measurement = result;
       document.getElementById('smPreMeasureArea').innerHTML += `<div class="addr-note" style="font-size:15px; font-weight:700; margin-top:10px;">✅ ${result.area} sq ft locked in (${result.method})</div>`;
     });
+  });
+}
+/* ============================================================
+   AR MEASUREMENT — phone-camera-only, no reference object, no typing.
+   Uses WebXR hit-testing (the same underlying tech as Google's own
+   "Measure" app and similar) to get REAL 3D positions in the world from
+   where the camera is pointed, so distance between two tapped points is
+   an actual sensor-based measurement, not a photo-pixel estimate. Only
+   works on WebXR/ARCore-capable devices (recent Android Chrome mainly —
+   no iOS Safari support at all); falls back to the photo-based estimate
+   tool automatically and transparently when unsupported, so the audit
+   is never blocked outright by a missing capability. */
+async function smCheckARSupport(){
+  if(!navigator.xr) return false;
+  try{ return await navigator.xr.isSessionSupported('immersive-ar'); }catch(e){ return false; }
+}
+let SM_AR = null;
+async function smStartARMeasure(){
+  const btn = document.getElementById('smARMeasureBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Checking AR support…';
+  const supported = await smCheckARSupport();
+  btn.disabled = false; btn.textContent = '📱 Measure with Phone Camera';
+  if(!supported){
+    document.getElementById('smARFallbackNote').style.display = 'block';
+    document.getElementById('smARFallbackNote').innerHTML = `<div class="addr-note warn" style="margin-top:10px;">This device/browser doesn't support AR measurement (needs a recent Android + Chrome). Using the photo-based estimate instead.</div>`;
+    document.getElementById('smPreMeasureArea').innerHTML = `<button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="document.getElementById('smARPhotoFallbackInput').click()">📷 Capture site photo to measure instead</button><input type="file" id="smARPhotoFallbackInput" accept="image/*" capture="environment" style="display:none" onchange="smOnPreSitePhoto(event)">`;
+    return;
+  }
+  smOpenAROverlay();
+}
+function smOpenAROverlay(){
+  SM_AR = {stage:'width', points:[], session:null, widthM:null, heightM:null};
+  const overlay = document.createElement('div');
+  overlay.id = 'smAROverlay';
+  overlay.style.cssText = 'position:fixed; inset:0; z-index:500; background:#000;';
+  overlay.innerHTML = `
+    <div id="smARDomRoot" style="position:absolute; inset:0; pointer-events:none;">
+      <div style="position:absolute; top:14px; left:14px; right:14px; background:rgba(18,23,43,.75); color:#fff; padding:12px 16px; border-radius:12px; font-size:13px; font-weight:600; pointer-events:none;" id="smARInstruction">Point your camera at the LEFT edge of the target, then tap the shutter.</div>
+      <div style="position:absolute; top:50%; left:50%; width:22px; height:22px; margin:-11px 0 0 -11px; border:3px solid #F5A623; border-radius:50%; box-shadow:0 0 0 2000px rgba(0,0,0,.001);" id="smARReticle"></div>
+      <div style="position:absolute; bottom:0; left:0; right:0; padding:20px 24px calc(20px + env(safe-area-inset-bottom,0px)); display:flex; align-items:center; justify-content:space-between; background:linear-gradient(transparent, rgba(0,0,0,.6)); pointer-events:auto;">
+        <button id="smARCancelBtn" style="background:none; border:none; color:#fff; font-size:14px; font-weight:600; width:70px;">✕ Cancel</button>
+        <button id="smARShutterBtn" style="width:70px; height:70px; border-radius:50%; background:#F5A623; border:4px solid rgba(255,255,255,.5);"></button>
+        <span style="width:70px;"></span>
+      </div>
+      <div id="smARResultBanner" style="display:none; position:absolute; top:60px; left:14px; right:14px; background:rgba(27,122,67,.9); color:#fff; padding:10px 16px; border-radius:12px; font-size:13px; font-weight:700; text-align:center;"></div>
+    </div>
+    <canvas id="smARCanvas" style="position:absolute; inset:0; width:100%; height:100%;"></canvas>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('smARCancelBtn').addEventListener('click', smCloseAR);
+  document.getElementById('smARShutterBtn').addEventListener('click', smARPlacePoint);
+  smInitARSession(overlay);
+}
+async function smInitARSession(overlay){
+  try{
+    const canvas = document.getElementById('smARCanvas');
+    const gl = canvas.getContext('webgl', {xrCompatible:true});
+    const session = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hit-test'],
+      optionalFeatures: ['dom-overlay'],
+      domOverlay: {root: document.getElementById('smARDomRoot')}
+    });
+    SM_AR.session = session;
+    await gl.makeXRCompatible();
+    session.updateRenderState({baseLayer: new XRWebGLLayer(session, gl)});
+    const refSpace = await session.requestReferenceSpace('local');
+    const viewerSpace = await session.requestReferenceSpace('viewer');
+    const hitTestSource = await session.requestHitTestSource({space: viewerSpace});
+    SM_AR.refSpace = refSpace; SM_AR.hitTestSource = hitTestSource; SM_AR.lastPose = null;
+    session.addEventListener('end', ()=>{ if(document.getElementById('smAROverlay')) smCloseAR(true); });
+    const onFrame = (t, frame)=>{
+      if(!SM_AR || !SM_AR.session) return;
+      const hitResults = frame.getHitTestResults(hitTestSource);
+      if(hitResults.length > 0){
+        SM_AR.lastPose = hitResults[0].getPose(refSpace);
+        document.getElementById('smARReticle').style.borderColor = '#1B7A43';
+      } else {
+        SM_AR.lastPose = null;
+        document.getElementById('smARReticle').style.borderColor = '#F5A623';
+      }
+      session.requestAnimationFrame(onFrame);
+    };
+    session.requestAnimationFrame(onFrame);
+  }catch(e){
+    toast('Could not start AR — using photo-based measurement instead', true);
+    smCloseAR(true);
+    document.getElementById('smARFallbackNote').style.display = 'block';
+    document.getElementById('smARFallbackNote').innerHTML = `<div class="addr-note warn" style="margin-top:10px;">AR failed to start on this device. Using the photo-based estimate instead.</div>`;
+    document.getElementById('smPreMeasureArea').innerHTML = `<button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="document.getElementById('smARPhotoFallbackInput').click()">📷 Capture site photo to measure instead</button><input type="file" id="smARPhotoFallbackInput" accept="image/*" capture="environment" style="display:none" onchange="smOnPreSitePhoto(event)">`;
+  }
+}
+function smARPlacePoint(){
+  if(!SM_AR.lastPose){ toast('Point the camera so the dot turns green over a surface first', true); return; }
+  const p = SM_AR.lastPose.transform.position;
+  SM_AR.points.push({x:p.x, y:p.y, z:p.z});
+  if(SM_AR.stage==='width' && SM_AR.points.length===1){
+    document.getElementById('smARInstruction').textContent = 'Now point at the RIGHT edge of the target, then tap the shutter.';
+  } else if(SM_AR.stage==='width' && SM_AR.points.length===2){
+    const [a,b] = SM_AR.points;
+    SM_AR.widthM = Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
+    SM_AR.points = []; SM_AR.stage = 'height';
+    document.getElementById('smARInstruction').textContent = `Width: ${(SM_AR.widthM*3.28084).toFixed(1)} ft. Now point at the TOP edge, then tap the shutter.`;
+  } else if(SM_AR.stage==='height' && SM_AR.points.length===1){
+    document.getElementById('smARInstruction').textContent = 'Now point at the BOTTOM edge of the target, then tap the shutter.';
+  } else if(SM_AR.stage==='height' && SM_AR.points.length===2){
+    const [a,b] = SM_AR.points;
+    SM_AR.heightM = Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
+    const widthFt = SM_AR.widthM*3.28084, heightFt = SM_AR.heightM*3.28084;
+    const areaSqFt = (widthFt*heightFt).toFixed(1);
+    const banner = document.getElementById('smARResultBanner');
+    banner.style.display='block';
+    banner.innerHTML = `✅ ${areaSqFt} sq ft (${widthFt.toFixed(1)} × ${heightFt.toFixed(1)} ft) — <span style="text-decoration:underline; pointer-events:auto; cursor:pointer;" id="smARUseBtn">Use this ↗</span>`;
+    document.getElementById('smARInstruction').textContent = 'Measurement complete.';
+    document.getElementById('smARUseBtn').addEventListener('click', ()=>{
+      SM_PRE.measurement = {area:areaSqFt, method:'AR camera measurement (phone sensor-based)', width:widthFt.toFixed(2), height:heightFt.toFixed(2)};
+      smCloseAR();
+      document.getElementById('smPreMeasureArea').innerHTML = `<div class="addr-note got" style="font-size:15px; font-weight:700; margin-top:10px;">✅ ${areaSqFt} sq ft locked in (AR camera measurement)</div>`;
+      document.getElementById('smPrePhotoSection').style.display = 'block';
+    });
+  }
+}
+function smCloseAR(skipSessionEnd){
+  if(SM_AR && SM_AR.session && !skipSessionEnd){ try{ SM_AR.session.end(); }catch(_e){} }
+  const overlay = document.getElementById('smAROverlay');
+  if(overlay) overlay.remove();
+  SM_AR = null;
+}
+/* Dedicated evidence-photo handler for AFTER an AR measurement completes —
+   deliberately separate from smOnPreSitePhotoSimple (used by the
+   presence-only Bus/Metro/Train/POSM categories), because that function
+   unconditionally resets SM_PRE.measurement to a blank placeholder, which
+   would silently wipe out the AR result if reused here. */
+function smOnAREvidencePhoto(e){
+  const file = e.target.files[0]; if(!file) return;
+  downscale(file, (dataUrl)=>{
+    SM_PRE.photoRaw = dataUrl;
+    const prev = document.getElementById('smPreSimplePreview');
+    prev.src = dataUrl; prev.style.display='block';
   });
 }
 function smOnPreSitePhotoSimple(e){
