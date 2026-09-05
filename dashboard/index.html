@@ -339,7 +339,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.40.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.41.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -717,7 +717,7 @@ function enterApp(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.40.0';
+const FRONTEND_VERSION = 'v6.41.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1124,17 +1124,24 @@ async function callApi(payload, usePost){
 }
 async function loadData(){
   if(MODULE === 'betaverse'){
+    // Two independent fetches — deliberately NOT Promise.all, so that if
+    // getAllStatusChecks fails (e.g. an older backend deployment without
+    // the StatusChecks sheet yet), it doesn't wipe out perfectly good
+    // submissions data that loaded fine on its own. Each is isolated in
+    // its own try/catch.
+    ALL_DATA = [];
+    BETAVERSE_STATUS_CHECKS = [];
+    if(!betaverseConfigured()) return;
     try{
-      if(!betaverseConfigured()) throw new Error('__NOCFG__');
-      const [r, checksR] = await Promise.all([
-        fetch(`${BETAVERSE_SCRIPT_URL}?action=getSubmissionsData&_t=${Date.now()}`, {cache:'no-store'}),
-        fetch(`${BETAVERSE_SCRIPT_URL}?action=getAllStatusChecks&_t=${Date.now()}`, {cache:'no-store'})
-      ]);
+      const r = await fetch(`${BETAVERSE_SCRIPT_URL}?action=getSubmissionsData&_t=${Date.now()}`, {cache:'no-store'});
       const res = await r.json();
+      ALL_DATA = res.rows || [];
+    }catch(e){ ALL_DATA = []; }
+    try{
+      const checksR = await fetch(`${BETAVERSE_SCRIPT_URL}?action=getAllStatusChecks&_t=${Date.now()}`, {cache:'no-store'});
       const checksRes = await checksR.json();
       BETAVERSE_STATUS_CHECKS = checksRes.checks || [];
-      ALL_DATA = res.rows || [];
-    }catch(e){ ALL_DATA = []; BETAVERSE_STATUS_CHECKS = []; }
+    }catch(e){ BETAVERSE_STATUS_CHECKS = []; }
     return;
   }
   try{
