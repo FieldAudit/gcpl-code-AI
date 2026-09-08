@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.42.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.43.0</div></div>
   </div>
 </header>
 
@@ -2695,9 +2695,17 @@ async function smLookupForStatusCheck(){
     const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getSubmission&id=${encodeURIComponent(id)}`, {}, 10000);
     const j = await r.json();
     if(!j.success) throw new Error(j.message||'Not found');
-    const histR = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getStatusCheckHistory&id=${encodeURIComponent(id)}`, {}, 10000);
-    const histJ = await histR.json();
-    SM_STATUS_CHECK = {submission:j.submission, history:histJ.checks||[], geo:null, photoRaw:null};
+    // Fetched separately from the main lookup above — a failure here
+    // (e.g. an older deployed backend without this action yet) should
+    // never block showing the submission that WAS found successfully;
+    // it just means the history list shows as empty instead.
+    let history = [];
+    try{
+      const histR = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getStatusCheckHistory&id=${encodeURIComponent(id)}`, {}, 10000);
+      const histJ = await histR.json();
+      history = histJ.checks || [];
+    }catch(_histErr){ history = []; }
+    SM_STATUS_CHECK = {submission:j.submission, history, geo:null, photoRaw:null};
     smRenderStatusCheckForm();
   }catch(e){
     toast(e.message||'Could not find that submission', true);
