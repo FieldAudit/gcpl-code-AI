@@ -339,7 +339,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.45.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.47.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -544,6 +544,15 @@ let ALL_DATA = [];
 let CHARTS = {};
 let MODULE = 'retail'; // 'retail' | 'db'
 
+/* Same fix as the field app — .toISOString() gives UTC, which shifts
+   "today" back a day for India (UTC+5:30) during the early-morning hours.
+   Used here for date-range filter presets ("Last 7 days" etc.) and export
+   filenames, so both stay anchored to the viewer's own local calendar day. */
+function localDateStr(d){
+  d = d || new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 function toast(msg, isErr){
   const t = document.getElementById('toast');
   t.textContent = msg; t.className = 'toast' + (isErr?' err':''); t.style.display='block';
@@ -628,12 +637,18 @@ async function doLogin(){
   showLoadProgress(15, 'Signing in…');
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    const qs = new URLSearchParams({action:'login', userId:user, password:pass}).toString();
+    // Cache-buster (_t) + cache:'no-store' — same as every other working
+    // API call in this file. Without these, a browser can serve this GET
+    // from its own HTTP cache (or leave it stuck behind a prior pending
+    // request to the exact same URL) instead of making a fresh network
+    // call — which is exactly what a silent, indefinite "stuck at 15%"
+    // looks like from the outside.
+    const qs = new URLSearchParams({action:'login', userId:user, password:pass, _t:Date.now()}).toString();
     // 15s timeout — a login call that never resolves used to leave the
     // person staring at a frozen progress ring forever with no error and
     // no way forward; this guarantees they get an actionable message
     // instead, however slow or unreachable the backend is that moment.
-    const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {}, 15000);
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 15000);
     showLoadProgress(40, 'Checking credentials…');
     const res = await r.json();
     if(!res.success) throw new Error(res.message || 'Invalid credentials');
@@ -729,7 +744,7 @@ function enterApp(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.45.0';
+const FRONTEND_VERSION = 'v6.47.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -910,8 +925,8 @@ function openJourney(phone, name, photoUrl){
   JOURNEY_PHONE = phone; JOURNEY_NAME = name; JOURNEY_PHOTO = photoUrl;
   document.getElementById('teamGridView').style.display='none';
   document.getElementById('teamJourneyView').style.display='block';
-  const today = new Date().toISOString().slice(0,10);
-  const monthAgo = new Date(Date.now() - 30*86400000).toISOString().slice(0,10);
+  const today = localDateStr();
+  const monthAgo = localDateStr(new Date(Date.now() - 30*86400000));
   renderJourneyShell(monthAgo, today);
   loadJourney(monthAgo, today);
 }
@@ -1260,7 +1275,7 @@ function exportUserPerformanceTable(){
   ws['!cols'] = headers.map(h=>({wch: Math.max(12, String(h).length+2)}));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'User Performance');
-  XLSX.writeFile(wb, `User_Performance_${MODULE}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `User_Performance_${MODULE}_${localDateStr()}.xlsx`);
 }
 
 /** Builds a full, presentable slide deck straight from whatever's on
@@ -1338,7 +1353,7 @@ async function exportAnalyticsPPT(){
       }
     }
 
-    await pptx.writeFile({fileName:`FieldAudit_${snap.module}_Report_${new Date().toISOString().slice(0,10)}.pptx`});
+    await pptx.writeFile({fileName:`FieldAudit_${snap.module}_Report_${localDateStr()}.pptx`});
     toast('Presentation downloaded');
   }catch(e){
     console.error(e);
@@ -1434,8 +1449,8 @@ function applyDashPreset(){
   else if(preset){
     const to = new Date();
     const from = new Date(); from.setDate(from.getDate() - Number(preset));
-    toEl.value = to.toISOString().slice(0,10);
-    fromEl.value = from.toISOString().slice(0,10);
+    toEl.value = localDateStr(to);
+    fromEl.value = localDateStr(from);
   }
   renderDashboard();
 }
@@ -1857,7 +1872,7 @@ function exportBetaverseAuditorReport(){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsAuditor, 'By Auditor');
   XLSX.utils.book_append_sheet(wb, wsDetail, 'Full Detail');
-  XLSX.writeFile(wb, `AdManager_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `AdManager_Report_${localDateStr()}.xlsx`);
   toast('Auditor-wise report downloaded');
 }
 function updateSelectedCountLabel(){
@@ -1939,7 +1954,7 @@ function exportPlainFallback(){
     ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'DB Stock Audit Data');
-    XLSX.writeFile(wb, `DB_Stock_Audit_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `DB_Stock_Audit_Report_${localDateStr()}.xlsx`);
     return;
   }
   const headers = ['Date','Auditor','District','City','Distributor','Route','Outlet Name','Outlet Type','Address','Owner Name','Retailer Phone','Distribution (Y/N)','DB Count','Spice Avail (Y/N)','Happy w/ DB (Y/N)','Price Source','Bill Type','Invoice GST Scan','Visibility (1-5)','POSM (Y/N)','NLB/GSB Brand','Latitude','Longitude','Maps Link'];
@@ -1949,7 +1964,7 @@ function exportPlainFallback(){
   ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Retail Audit Data');
-  XLSX.writeFile(wb, `Retail_Audit_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `Retail_Audit_Report_${localDateStr()}.xlsx`);
 }
 
 /* ============ PHOTOS TAB ============
