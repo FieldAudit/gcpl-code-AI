@@ -339,7 +339,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.47.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.48.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -495,6 +495,7 @@ table.data tr:hover td{background:var(--paper-2);}
       <div class="load-progress-pct" id="loadProgressPct">0%</div>
     </div>
     <div class="load-progress-label" id="loadProgressLabel">Starting…</div>
+    <button onclick="cancelLoadProgress()" style="margin-top:16px; background:none; border:1px solid rgba(255,255,255,.4); color:#fff; padding:8px 18px; border-radius:20px; font-size:12px; cursor:pointer;">✕ Cancel</button>
   </div>
 </div>
 <div class="photo-lightbox" id="photoLightbox" onclick="closeLightbox(event)">
@@ -620,21 +621,34 @@ function showLoadProgress(pct, label){
 function hideLoadProgress(){
   document.getElementById('loadProgressOverlay').classList.remove('show');
 }
+/* The overlay's own "Cancel" button — resets the in-progress guard too,
+   so a person who got stuck and cancelled can immediately try again
+   instead of every future click being silently ignored. */
+function cancelLoadProgress(){
+  hideLoadProgress();
+  LOGIN_IN_PROGRESS = false;
+  const btn = document.getElementById('loginBtn');
+  if(btn){ btn.disabled = false; btn.innerHTML = 'Sign in'; }
+}
 async function fetchWithTimeout(url, opts, ms){
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), ms || 15000);
   return fetch(url, Object.assign({}, opts, {signal:controller.signal})).finally(()=>clearTimeout(timer));
 }
+let LOGIN_IN_PROGRESS = false;
 async function doLogin(){
+  if(LOGIN_IN_PROGRESS){ console.log('[login] already in progress, ignoring duplicate click'); return; }
   const user = document.getElementById('loginUser').value.trim();
   const pass = document.getElementById('loginPass').value;
   const remember = document.getElementById('rememberMeBox').checked;
   const err = document.getElementById('loginError');
   err.style.display='none';
   if(!user || !pass){ err.textContent='Enter your user ID and password.'; err.style.display='block'; return; }
+  LOGIN_IN_PROGRESS = true;
   const btn = document.getElementById('loginBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Signing in…';
   showLoadProgress(15, 'Signing in…');
+  console.log('[login] starting, configured():', configured());
   try{
     if(!configured()) throw new Error('__NOCFG__');
     // Cache-buster (_t) + cache:'no-store' — same as every other working
@@ -644,13 +658,17 @@ async function doLogin(){
     // call — which is exactly what a silent, indefinite "stuck at 15%"
     // looks like from the outside.
     const qs = new URLSearchParams({action:'login', userId:user, password:pass, _t:Date.now()}).toString();
-    // 15s timeout — a login call that never resolves used to leave the
+    console.log('[login] fetching…', `${SCRIPT_URL}?action=login&userId=${user}&password=***&_t=...`);
+    const startTime = Date.now();
+    // 10s timeout — a login call that never resolves used to leave the
     // person staring at a frozen progress ring forever with no error and
     // no way forward; this guarantees they get an actionable message
     // instead, however slow or unreachable the backend is that moment.
-    const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 15000);
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 10000);
+    console.log('[login] fetch resolved after', Date.now()-startTime, 'ms — HTTP status:', r.status);
     showLoadProgress(40, 'Checking credentials…');
     const res = await r.json();
+    console.log('[login] parsed JSON:', res);
     if(!res.success) throw new Error(res.message || 'Invalid credentials');
     SESSION = {userId:user, name:res.name || user, role:res.role || 'Manager', token:res.token};
     if(remember){
@@ -658,6 +676,7 @@ async function doLogin(){
     }
     enterApp(); // takes over the progress ring itself, through to 100%
   }catch(e){
+    console.error('[login] failed:', e.name, e.message);
     hideLoadProgress();
     if(e.message === '__NOCFG__'){
       SESSION = {userId:user, name:user, role:'Manager', token:'demo'};
@@ -672,6 +691,7 @@ async function doLogin(){
     }
   }finally{
     btn.disabled = false; btn.innerHTML = 'Sign in';
+    LOGIN_IN_PROGRESS = false;
   }
 }
 function logout(){
@@ -744,7 +764,7 @@ function enterApp(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.47.0';
+const FRONTEND_VERSION = 'v6.48.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
