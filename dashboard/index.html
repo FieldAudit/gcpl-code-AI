@@ -339,7 +339,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.42.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.43.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -717,7 +717,7 @@ function enterApp(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.42.0';
+const FRONTEND_VERSION = 'v6.43.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1644,8 +1644,8 @@ function renderBetaverseHistory(){
     return !q || [r.preAddress,r.preCity,r.preAuditor,r.submissionId,r.category].join(' ').toLowerCase().includes(q);
   }).sort((a,b)=>String(b.submissionId).localeCompare(String(a.submissionId)));
   const thead = document.querySelector('#histTable thead'), tbody = document.querySelector('#histTable tbody');
-  thead.innerHTML = `<tr><th>ID</th><th>Category</th><th>Status</th><th>Measurement</th><th>Address</th><th>Submitted Area</th><th>Approved Area</th><th>Submitted Cost</th><th>Approved Cost</th><th>Cost Variance</th><th>Auditor</th><th>Date</th><th>Map</th></tr>`;
-  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="13"><div class="empty">No matching submissions.</div></td></tr>`; return; }
+  thead.innerHTML = `<tr><th>ID</th><th>Category</th><th>Status</th><th>Measurement</th><th>Address</th><th>Submitted W×H</th><th>Submitted Area</th><th>Approved W×H</th><th>Approved Area</th><th>Submitted Cost</th><th>Approved Cost</th><th>Cost Variance</th><th>Auditor</th><th>Date</th><th>Map</th></tr>`;
+  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="15"><div class="empty">No matching submissions.</div></td></tr>`; return; }
   tbody.innerHTML = rows.map(r=>{
     const isVerified = r.status==='Verified';
     const costDiff = isVerified ? ((Number(r.postApprovedCost)||0) - (Number(r.preCost)||0)) : null;
@@ -1655,7 +1655,9 @@ function renderBetaverseHistory(){
       <td><span class="tag ${isVerified?'tag-yes':'tag-no'}">${isVerified?'✅ Approved':'⏳ Unapproved'}</span></td>
       <td>${isManual ? `<span style="color:var(--red); font-weight:700; font-size:11px;">⚠️ MANUAL — needs review</span>` : `<span style="color:var(--green); font-size:11px;">✅ Distance-corrected</span>`}</td>
       <td>${r.preAddress||'—'}</td>
+      <td class="mono">${r.preWidth&&r.preHeight ? `${r.preWidth}×${r.preHeight} ft` : '—'}</td>
       <td>${r.preArea} ${r.preAreaUnit||'sq ft'}</td>
+      <td class="mono">${isVerified && r.postWidth&&r.postHeight ? `${r.postWidth}×${r.postHeight} ft` : '—'}</td>
       <td>${isVerified ? r.postArea+' sq ft' : '—'}</td>
       <td>₹${(Number(r.preCost)||0).toLocaleString('en-IN')}</td>
       <td>${isVerified ? '₹'+(Number(r.postApprovedCost)||0).toLocaleString('en-IN') : '—'}</td>
@@ -1826,13 +1828,14 @@ function exportBetaverseAuditorReport(){
   wsAuditor['!cols'] = auditorAoa[0].map(h=>({wch: Math.max(14, String(h).length+2)}));
 
   // ---- Sheet 2: Full Detail (every field, incl. lat/long + address) ----
-  const detailHeaders = ['Submission ID','Category','Status','Auditor','Auditor Phone','Address','City','Latitude','Longitude','Maps Link','Submitted Area','Area Unit','Measurement Method','Submitted Cost (₹)','Submitted Date','Approved Area','Approved Cost (₹)','Verified By','Verified Date','Latest Status Check','Latest Check Date','Latest Check By'];
+  const detailHeaders = ['Submission ID','Category','Status','Auditor','Auditor Phone','Address','City','Latitude','Longitude','Maps Link','Submitted Width (ft)','Submitted Height (ft)','Submitted Area','Area Unit','Measurement Method','Submitted Cost (₹)','Submitted Date','Approved Width (ft)','Approved Height (ft)','Approved Area','Approved Cost (₹)','Site Condition','Verified By','Verified Date','Latest Status Check','Latest Check Date','Latest Check By'];
   const detailAoa = [detailHeaders, ...ALL_DATA.map(r=>{
     const check = latestCheckBySubmission[r.submissionId];
     return [
       r.submissionId, r.category, r.status, r.preAuditor, r.prePhone, r.preAddress, r.preCity,
-      r.preLat, r.preLng, r.preMapsLink, r.preArea, r.preAreaUnit, r.preMeasureMethod, r.preCost, r.preDate,
-      r.status==='Verified' ? r.postArea : '', r.status==='Verified' ? r.postApprovedCost : '', r.status==='Verified' ? r.postAuditor : '', r.status==='Verified' ? r.postDate : '',
+      r.preLat, r.preLng, r.preMapsLink, r.preWidth||'', r.preHeight||'', r.preArea, r.preAreaUnit, r.preMeasureMethod, r.preCost, r.preDate,
+      r.status==='Verified' ? r.postWidth||'' : '', r.status==='Verified' ? r.postHeight||'' : '', r.status==='Verified' ? r.postArea : '', r.status==='Verified' ? r.postApprovedCost : '',
+      r.status==='Verified' ? r.postCondition||'' : '', r.status==='Verified' ? r.postAuditor : '', r.status==='Verified' ? r.postDate : '',
       check ? (check.isRunning==='Yes' ? 'Running' : 'NOT running') : 'Not checked yet', check ? check.date : '', check ? check.checkedBy : ''
     ];
   })];
@@ -1995,24 +1998,36 @@ function renderBetaversePhotos(){
     const isVerified = r.status==='Verified';
     const preCoords = (r.preLat && r.preLng) ? `${Number(r.preLat).toFixed(5)}, ${Number(r.preLng).toFixed(5)}` : '';
     const postCoords = (r.postLat && r.postLng) ? `${Number(r.postLat).toFixed(5)}, ${Number(r.postLng).toFixed(5)}` : '';
+    // Prefer the ANNOTATED measurement image (with the tapped points and
+    // width/height lines drawn on it, exactly as the auditor saw them) —
+    // this is what actually lets anyone reviewing later verify the
+    // measurement was taken correctly, not just trust a bare number.
+    const preImg = r.preRefPhotoUrl || r.prePhotoUrl;
+    const postImg = r.postRefPhotoUrl || r.postPhotoUrl;
+    const preWHInfo = `Width × Height = ${r.preWidth||'?'} ft × ${r.preHeight||'?'} ft. Area = Width × Height = ${r.preArea} sq ft. Measured via: ${r.preMeasureMethod||'not recorded'}.`;
+    const postWHInfo = `Width × Height = ${r.postWidth||'?'} ft × ${r.postHeight||'?'} ft. Area = Width × Height = ${r.postArea} sq ft.`;
     return `<div class="photo-card">
       <div style="display:grid; grid-template-columns:1fr 1fr;">
         <div>
           <div style="position:relative;">
-            ${r.prePhotoUrl ? `<img class="thumb" src="${r.prePhotoUrl}" style="aspect-ratio:1/1; cursor:pointer;" onclick="document.getElementById('lightboxImg').src=this.src; document.getElementById('lightboxCaption').textContent='Before — ${r.submissionId}'; document.getElementById('photoLightbox').classList.add('show');">` : `<div style="aspect-ratio:1/1; background:var(--paper-2); display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--slate);">No photo</div>`}
+            ${preImg ? `<img class="thumb" src="${preImg}" style="aspect-ratio:1/1; cursor:pointer;" onclick="document.getElementById('lightboxImg').src=this.src; document.getElementById('lightboxCaption').textContent='Before — ${r.submissionId}'; document.getElementById('photoLightbox').classList.add('show');">` : `<div style="aspect-ratio:1/1; background:var(--paper-2); display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--slate);">No photo</div>`}
             <span class="type-tag" style="position:absolute; top:6px; left:6px; background:#FFF4E5; color:var(--amber-dark, #C97F0E);">BEFORE</span>
+            ${r.preRefPhotoUrl ? `<span style="position:absolute; top:6px; right:6px; background:rgba(18,23,43,.75); color:#fff; font-size:9px; padding:2px 6px; border-radius:8px;">📐 Marked-up</span>` : ''}
           </div>
-          <div style="font-size:10px; color:var(--slate); padding:6px 4px; line-height:1.5;">
+          ${(r.preWidth || r.preHeight) ? `<div style="font-size:11px; font-weight:700; padding:6px 4px 0; display:flex; align-items:center; gap:4px;">${r.preWidth} ft × ${r.preHeight} ft <span class="info-i" title="${preWHInfo.replace(/"/g,'&quot;')}" style="cursor:help; opacity:.6;">ⓘ</span></div>` : ''}
+          <div style="font-size:10px; color:var(--slate); padding:4px 4px 6px; line-height:1.5;">
             ${r.preAddress ? `📍 ${r.preAddress}<br>` : ''}
             ${preCoords ? `<span class="mono">${preCoords}</span> ${r.preMapsLink ? `<a href="${r.preMapsLink}" target="_blank" style="color:var(--amber);">↗</a>` : ''}` : ''}
           </div>
         </div>
         <div>
           <div style="position:relative;">
-            ${r.postPhotoUrl ? `<img class="thumb" src="${r.postPhotoUrl}" style="aspect-ratio:1/1; cursor:pointer;" onclick="document.getElementById('lightboxImg').src=this.src; document.getElementById('lightboxCaption').textContent='After — ${r.submissionId}'; document.getElementById('photoLightbox').classList.add('show');">` : `<div style="aspect-ratio:1/1; background:var(--paper-2); display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--slate); text-align:center; padding:8px;">Not yet installed/verified</div>`}
+            ${postImg ? `<img class="thumb" src="${postImg}" style="aspect-ratio:1/1; cursor:pointer;" onclick="document.getElementById('lightboxImg').src=this.src; document.getElementById('lightboxCaption').textContent='After — ${r.submissionId}'; document.getElementById('photoLightbox').classList.add('show');">` : `<div style="aspect-ratio:1/1; background:var(--paper-2); display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--slate); text-align:center; padding:8px;">Not yet installed/verified</div>`}
             <span class="type-tag" style="position:absolute; top:6px; left:6px; background:${isVerified?'var(--green-bg)':'#eee'}; color:${isVerified?'var(--green)':'#999'};">AFTER</span>
+            ${r.postRefPhotoUrl ? `<span style="position:absolute; top:6px; right:6px; background:rgba(18,23,43,.75); color:#fff; font-size:9px; padding:2px 6px; border-radius:8px;">📐 Marked-up</span>` : ''}
           </div>
-          <div style="font-size:10px; color:var(--slate); padding:6px 4px; line-height:1.5;">
+          ${isVerified && (r.postWidth || r.postHeight) ? `<div style="font-size:11px; font-weight:700; padding:6px 4px 0; display:flex; align-items:center; gap:4px;">${r.postWidth} ft × ${r.postHeight} ft <span class="info-i" title="${postWHInfo.replace(/"/g,'&quot;')}" style="cursor:help; opacity:.6;">ⓘ</span></div>` : ''}
+          <div style="font-size:10px; color:var(--slate); padding:4px 4px 6px; line-height:1.5;">
             ${isVerified && r.postCondition ? `Condition: <b>${r.postCondition}</b><br>` : ''}
             ${postCoords ? `<span class="mono">${postCoords}</span> ${r.postMapsLink ? `<a href="${r.postMapsLink}" target="_blank" style="color:var(--amber);">↗</a>` : ''}` : ''}
           </div>
