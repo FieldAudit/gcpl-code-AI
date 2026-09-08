@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.41.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.42.0</div></div>
   </div>
 </header>
 
@@ -3137,7 +3137,13 @@ function smPlacePointAtXY(canvas, x, y){
   }
 }
 function smConfirmCalibratedMeasurement(area, width, height){
-  SM_MEASURE.onDone({area, method:'A4-reference photo measurement (co-planar, no distance estimate used)', width, height});
+  // Capture the CANVAS exactly as the auditor saw it — reference points,
+  // width line, height line and all — so anyone reviewing later (dashboard,
+  // report) can visually check the measurement was taken correctly instead
+  // of just trusting a number with no way to verify it.
+  const canvas = document.getElementById('smMeasureCanvas');
+  const annotatedPhoto = canvas ? canvas.toDataURL('image/jpeg', 0.85) : null;
+  SM_MEASURE.onDone({area, method:'A4-reference photo measurement (co-planar, no distance estimate used)', width, height, annotatedPhoto});
 }
 
 /* ---- Pre-installation flow ---- */
@@ -3411,16 +3417,19 @@ async function smSubmitPreAudit(){
   const btn = document.getElementById('smPreSubmitBtn');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Submitting…';
   const now = new Date();
-  const lines = [`${now.toISOString().slice(0,10)} ${now.toTimeString().slice(0,5)}`, `${SM_PRE.geo.lat.toFixed(6)}, ${SM_PRE.geo.lng.toFixed(6)}`, `Auditor: ${document.getElementById('sm_pre_auditor').value}`];
+  const addressVal = document.getElementById('sm_pre_address').value;
+  const lines = [`${now.toISOString().slice(0,10)} ${now.toTimeString().slice(0,5)}`, `${SM_PRE.geo.lat.toFixed(6)}, ${SM_PRE.geo.lng.toFixed(6)}`, addressVal ? addressVal.slice(0,60) : '', `Auditor: ${document.getElementById('sm_pre_auditor').value}`].filter(Boolean);
   const stamped = await stampPhoto(SM_PRE.photoRaw, lines);
+  const stampedRef = SM_PRE.measurement.annotatedPhoto ? await stampPhoto(SM_PRE.measurement.annotatedPhoto, lines) : null;
   const payload = {
     action:'submitPreAudit', category:SM_PRE.category,
     date: now.toISOString().slice(0,10), time: now.toTimeString().slice(0,5),
     auditorName: document.getElementById('sm_pre_auditor').value, phone: CHECKIN_PHONE,
-    address: document.getElementById('sm_pre_address').value, city: document.getElementById('sm_pre_city').value,
+    address: addressVal, city: document.getElementById('sm_pre_city').value,
     lat:SM_PRE.geo.lat, lng:SM_PRE.geo.lng, mapsLink:SM_PRE.geo.link,
     area:SM_PRE.measurement.area, areaUnit:'sq ft', measureMethod:SM_PRE.measurement.method,
-    cost: document.getElementById('sm_pre_cost').value, photo: stamped
+    width: SM_PRE.measurement.width || '', height: SM_PRE.measurement.height || '',
+    cost: document.getElementById('sm_pre_cost').value, photo: stamped, refPhoto: stampedRef
   };
   try{
     if(!smConfigured()) throw new Error('__NOCFG__');
@@ -3564,15 +3573,18 @@ async function smSubmitVerification(){
   const btn = document.getElementById('smVerifySubmitBtn');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Submitting…';
   const now = new Date();
-  const lines = [`${now.toISOString().slice(0,10)} ${now.toTimeString().slice(0,5)}`, `Verification · ${SM_VERIFY.submission.SubmissionID}`, `Auditor: ${document.getElementById('sm_verify_auditor').value}`];
+  const knownAddress = SM_VERIFY.submission.PreAddress || '';
+  const lines = [`${now.toISOString().slice(0,10)} ${now.toTimeString().slice(0,5)}`, `${SM_VERIFY.geo.lat.toFixed(6)}, ${SM_VERIFY.geo.lng.toFixed(6)}`, knownAddress ? knownAddress.slice(0,60) : '', `Verification · ${SM_VERIFY.submission.SubmissionID}`, `Auditor: ${document.getElementById('sm_verify_auditor').value}`].filter(Boolean);
   const stamped = await stampPhoto(SM_VERIFY.photoRaw, lines);
+  const stampedRef = SM_VERIFY.measurement.annotatedPhoto ? await stampPhoto(SM_VERIFY.measurement.annotatedPhoto, lines) : null;
   const payload = {
     action:'submitPostVerification', submissionId: SM_VERIFY.submission.SubmissionID,
     date: now.toISOString().slice(0,10), time: now.toTimeString().slice(0,5),
     auditorName: document.getElementById('sm_verify_auditor').value, phone: CHECKIN_PHONE,
     lat:SM_VERIFY.geo.lat, lng:SM_VERIFY.geo.lng, mapsLink:SM_VERIFY.geo.link,
-    area:SM_VERIFY.measurement.area, approvedCost: document.getElementById('sm_verify_cost').value,
-    condition, remarks: document.getElementById('sm_verify_remarks').value, photo: stamped
+    area:SM_VERIFY.measurement.area, width: SM_VERIFY.measurement.width || '', height: SM_VERIFY.measurement.height || '',
+    approvedCost: document.getElementById('sm_verify_cost').value,
+    condition, remarks: document.getElementById('sm_verify_remarks').value, photo: stamped, refPhoto: stampedRef
   };
   try{
     if(!smConfigured()) throw new Error('__NOCFG__');
