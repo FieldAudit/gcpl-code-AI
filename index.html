@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.43.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.45.0</div></div>
   </div>
 </header>
 
@@ -817,6 +817,18 @@ document.addEventListener('click', (e)=>{
   }catch(_e){}
 })();
 
+/* Today's date in the DEVICE'S OWN LOCAL time zone — .toISOString() gives
+   UTC, which is WRONG for "today's date" outside UTC: for India (UTC+5:30)
+   specifically, anything submitted between 12:00 AM and 5:29 AM IST would
+   get dated as the PREVIOUS calendar day, since UTC hasn't rolled over to
+   the new day yet at that point. This reads the device's own Y/M/D
+   instead, so the date shown always matches the day the auditor actually
+   experienced, regardless of time zone or time of day. */
+function localDateStr(d){
+  d = d || new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 function toast(msg, isErr){
   const t = document.getElementById('toast');
   t.textContent = msg; t.className = 'toast' + (isErr?' err':''); t.style.display='block';
@@ -1333,7 +1345,7 @@ async function startIdentityScan(prefix){
   try{ saved = JSON.parse(localStorage.getItem(SO_IDENTITY_KEY) || 'null'); }catch(_e){}
   if(saved && saved.phone && saved.name && configured()){
     try{
-      const today = new Date().toISOString().slice(0,10);
+      const today = localDateStr();
       const r = await fetchWithTimeout(`${SCRIPT_URL}?action=checkinStatus&phone=${encodeURIComponent(saved.phone)}&date=${today}`, {}, 8000);
       const j = await r.json();
       if(j.checkedIn){
@@ -1388,7 +1400,7 @@ function prefillSavedSOIdentity(prefix){
 
 async function checkTodayCheckin(prefix){
   const ids = ckIds(prefix);
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDateStr();
   document.getElementById(ids.content).insertAdjacentHTML('beforeend', '');
   try{
     if(!configured()) throw new Error('__NOCFG__');
@@ -1569,7 +1581,7 @@ async function doSubmitCheckin(prefix){
   }
 
   btn.innerHTML = '<span class="spin"></span> Stamping selfie…';
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDateStr();
   const lines = [
     `${today}  •  Daily Check-in`,
     `SO: ${CHECKIN_NAME || CHECKIN_PHONE}`
@@ -2494,7 +2506,7 @@ function resetForm(){
   document.querySelectorAll('#retailModule .card').forEach(card=>{
     if(card.id !== 'geoCard' && card.id !== 'r_checkinCard') card.classList.add('locked-until-address');
   });
-  document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('f_date').value = localDateStr();
   if(CHECKIN_NAME) document.getElementById('f_auditor').value = CHECKIN_NAME; // re-fill after clearing above — same SO, no need to retype
   window.scrollTo({top:0, behavior:'smooth'});
 }
@@ -2630,12 +2642,12 @@ function resetDBForm(){
   setBtnIdle(document.getElementById('dbGeoBtn'), PIN_SVG + 'Capture GPS location');
   document.getElementById('dbPhotoLock').style.display='block';
   document.getElementById('dbPhotoLock2').style.display='block';
-  document.getElementById('db_date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('db_date').value = localDateStr();
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
-document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
-document.getElementById('db_date').value = new Date().toISOString().slice(0,10);
+document.getElementById('f_date').value = localDateStr();
+document.getElementById('db_date').value = localDateStr();
 if(!configured()) document.getElementById('cfgWarning').style.display='block';
 loadDBMasterCache();
 
@@ -2787,11 +2799,11 @@ async function smSubmitStatusCheck(){
   const btn = document.getElementById('smStatusSubmitBtn');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Submitting…';
   const now = new Date();
-  const lines = [`${now.toISOString().slice(0,10)} ${now.toTimeString().slice(0,5)}`, `Status Check · ${SM_STATUS_CHECK.submission.SubmissionID}`, `Auditor: ${CHECKIN_NAME}`];
+  const lines = [`${localDateStr(now)} ${now.toTimeString().slice(0,5)}`, `Status Check · ${SM_STATUS_CHECK.submission.SubmissionID}`, `Auditor: ${CHECKIN_NAME}`];
   const stamped = await stampPhoto(SM_STATUS_CHECK.photoRaw, lines);
   const payload = {
     action:'submitStatusCheck', submissionId: SM_STATUS_CHECK.submission.SubmissionID,
-    date: now.toISOString().slice(0,10), auditorName: CHECKIN_NAME, phone: CHECKIN_PHONE,
+    date: localDateStr(now), auditorName: CHECKIN_NAME, phone: CHECKIN_PHONE,
     isRunning: SM_STATUS_CHECK.isRunning, lat:SM_STATUS_CHECK.geo.lat, lng:SM_STATUS_CHECK.geo.lng,
     mapsLink:SM_STATUS_CHECK.geo.link, notes: document.getElementById('sm_status_notes').value, photo: stamped
   };
@@ -3426,12 +3438,13 @@ async function smSubmitPreAudit(){
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Submitting…';
   const now = new Date();
   const addressVal = document.getElementById('sm_pre_address').value;
-  const lines = [`${now.toISOString().slice(0,10)} ${now.toTimeString().slice(0,5)}`, `${SM_PRE.geo.lat.toFixed(6)}, ${SM_PRE.geo.lng.toFixed(6)}`, addressVal ? addressVal.slice(0,60) : '', `Auditor: ${document.getElementById('sm_pre_auditor').value}`].filter(Boolean);
+  const lines = [`${localDateStr(now)} ${now.toTimeString().slice(0,5)}`, `${SM_PRE.geo.lat.toFixed(6)}, ${SM_PRE.geo.lng.toFixed(6)}`, addressVal ? addressVal.slice(0,60) : '', `Auditor: ${document.getElementById('sm_pre_auditor').value}`].filter(Boolean);
   const stamped = await stampPhoto(SM_PRE.photoRaw, lines);
-  const stampedRef = SM_PRE.measurement.annotatedPhoto ? await stampPhoto(SM_PRE.measurement.annotatedPhoto, lines) : null;
+  const refImageToStamp = SM_PRE.measurement.annotatedPhoto || SM_PRE.measurement.tapeProof;
+  const stampedRef = refImageToStamp ? await stampPhoto(refImageToStamp, lines) : null;
   const payload = {
     action:'submitPreAudit', category:SM_PRE.category,
-    date: now.toISOString().slice(0,10), time: now.toTimeString().slice(0,5),
+    date: localDateStr(now), time: now.toTimeString().slice(0,5),
     auditorName: document.getElementById('sm_pre_auditor').value, phone: CHECKIN_PHONE,
     address: addressVal, city: document.getElementById('sm_pre_city').value,
     lat:SM_PRE.geo.lat, lng:SM_PRE.geo.lng, mapsLink:SM_PRE.geo.link,
@@ -3582,12 +3595,13 @@ async function smSubmitVerification(){
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Submitting…';
   const now = new Date();
   const knownAddress = SM_VERIFY.submission.PreAddress || '';
-  const lines = [`${now.toISOString().slice(0,10)} ${now.toTimeString().slice(0,5)}`, `${SM_VERIFY.geo.lat.toFixed(6)}, ${SM_VERIFY.geo.lng.toFixed(6)}`, knownAddress ? knownAddress.slice(0,60) : '', `Verification · ${SM_VERIFY.submission.SubmissionID}`, `Auditor: ${document.getElementById('sm_verify_auditor').value}`].filter(Boolean);
+  const lines = [`${localDateStr(now)} ${now.toTimeString().slice(0,5)}`, `${SM_VERIFY.geo.lat.toFixed(6)}, ${SM_VERIFY.geo.lng.toFixed(6)}`, knownAddress ? knownAddress.slice(0,60) : '', `Verification · ${SM_VERIFY.submission.SubmissionID}`, `Auditor: ${document.getElementById('sm_verify_auditor').value}`].filter(Boolean);
   const stamped = await stampPhoto(SM_VERIFY.photoRaw, lines);
-  const stampedRef = SM_VERIFY.measurement.annotatedPhoto ? await stampPhoto(SM_VERIFY.measurement.annotatedPhoto, lines) : null;
+  const refImageToStampV = SM_VERIFY.measurement.annotatedPhoto || SM_VERIFY.measurement.tapeProof;
+  const stampedRef = refImageToStampV ? await stampPhoto(refImageToStampV, lines) : null;
   const payload = {
     action:'submitPostVerification', submissionId: SM_VERIFY.submission.SubmissionID,
-    date: now.toISOString().slice(0,10), time: now.toTimeString().slice(0,5),
+    date: localDateStr(now), time: now.toTimeString().slice(0,5),
     auditorName: document.getElementById('sm_verify_auditor').value, phone: CHECKIN_PHONE,
     lat:SM_VERIFY.geo.lat, lng:SM_VERIFY.geo.lng, mapsLink:SM_VERIFY.geo.link,
     area:SM_VERIFY.measurement.area, width: SM_VERIFY.measurement.width || '', height: SM_VERIFY.measurement.height || '',
