@@ -339,7 +339,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.44.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.45.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -729,7 +729,7 @@ function enterApp(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.44.0';
+const FRONTEND_VERSION = 'v6.45.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1999,6 +1999,18 @@ function buildPhotoList(){
 let CURRENT_PHOTO_LIST = [];
 let SELECTED_PHOTO_KEYS = new Set(); // keyed by "type|url" so selection survives re-renders/re-filters
 function photoKey(p){ return p.type + '|' + (p.url || (p.urls && p.urls[0])); }
+/* Short, readable label for whichever measurement method was actually
+   used on a submission — shown right on the card so anyone reviewing
+   doesn't have to guess or hunt through a tooltip to see it. */
+function smMethodBadge(method){
+  const m = String(method||'');
+  if(m.includes('A4-reference') || m.includes('co-planar')) return '📐 A4 Photo Method';
+  if(m.includes('Tape measure')) return '📏 Tape Measure';
+  if(m.includes('Angle')) return '📐 Angle + Distance';
+  if(m.includes('Manual')) return '⚠️ Manual Entry';
+  if(m.includes('Presence-only')) return '✅ Presence Check';
+  return m ? m.slice(0,30) : 'Not recorded';
+}
 function renderBetaversePhotos(){
   const el = document.getElementById('photosContent');
   const q = document.getElementById('photoSearch').value.toLowerCase();
@@ -2047,6 +2059,7 @@ function renderBetaversePhotos(){
       </div>
       <div class="meta">
         <span class="type-tag" style="background:${isVerified?'var(--green-bg)':'#FFF4E5'}; color:${isVerified?'var(--green)':'var(--amber-dark, #C97F0E)'};">${isVerified?'✅ Approved':'⏳ Unapproved'}</span>
+        <span class="type-tag" style="background:var(--paper-2); color:var(--ink);">${smMethodBadge(r.preMeasureMethod)}</span>
         <div class="name">${r.preAddress||r.submissionId}</div>
         <div class="detail-list">
           <div class="detail-row"><span class="detail-label">Submission ID</span><span class="detail-val">${r.submissionId}</span></div>
