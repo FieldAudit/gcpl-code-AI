@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.47.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.48.0</div></div>
   </div>
 </header>
 
@@ -3541,7 +3541,7 @@ async function smLookupSubmission(){
     // Catch this BEFORE opening the whole verify form — better to tell the
     // auditor upfront than let them fill in a photo + measurement only to
     // have the final submit rejected by the same check on the backend.
-    if(j.submission.Status === 'Pending Approval'){
+    if(j.submission.Status === 'Pending Approval' || j.submission.Status === 'Pending Installation'){
       toast('This site is still waiting on Admin/Marketing approval — check back once it\'s approved.', true);
       btn.disabled=false; btn.textContent='Find Submission';
       return;
