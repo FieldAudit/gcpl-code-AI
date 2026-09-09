@@ -295,6 +295,7 @@ table.data tr:hover td{background:var(--paper-2);}
 .journey-filters{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
 .journey-filters input[type=date]{padding:8px 10px; border:1.5px solid var(--border-2); border-radius:3px; font-size:13px;}
 .map-placeholder{background:var(--paper-2); border:1.5px dashed var(--border-2); border-radius:6px; padding:30px 20px; text-align:center; color:var(--slate); font-size:13px;}
+.map-dot{display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle;}
 </style>
 </head>
 <body>
@@ -339,7 +340,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.54.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.56.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -408,16 +409,8 @@ table.data tr:hover td{background:var(--paper-2);}
 
     <section id="tab-map" style="display:none;">
       <div class="card">
-        <div class="filters" style="margin-bottom:6px;">
-          <select id="mapCategoryFilter" onchange="renderMap()"><option value="">All ad types</option></select>
-          <span style="display:inline-flex; align-items:center; gap:16px; font-size:12px; color:var(--slate); margin-left:12px;">
-            <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#F5A623; margin-right:4px;"></span>Pending Approval</span>
-            <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#2255CC; margin-right:4px;"></span>Awaiting Install</span>
-            <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#1B7A43; margin-right:4px;"></span>Verified</span>
-            <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#C0392B; margin-right:4px;"></span>Rejected</span>
-          </span>
-        </div>
-        <p style="font-size:11px; color:var(--slate); margin-bottom:12px;">Pin colour = approval status · pin icon = ad type (🏗️ Hoarding · 🎨 Wall · 📰 Poster · 🏪 POSM · 🚌 Bus/Auto/Toto · 🚇 Metro · 🚆 Train) · click any pin for photo, cost, and details.</p>
+        <div id="mapControlsArea"></div>
+        <div id="mapAnalyticsStrip" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;"></div>
         <div id="mapContainer" style="height:560px; border-radius:12px; overflow:hidden; border:1px solid var(--border-2);"></div>
       </div>
     </section>
@@ -808,7 +801,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.54.0';
+const FRONTEND_VERSION = 'v6.56.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -882,7 +875,7 @@ function switchModule(mod){
   document.querySelectorAll('#moduleToggle button').forEach(b=>b.classList.toggle('active', b.dataset.mod===mod));
   document.getElementById('betaverseApprovalToggle').style.display = mod==='betaverse' ? 'flex' : 'none';
   document.getElementById('approvalsTabBtn').style.display = (mod==='betaverse' && CAN_APPROVE()) ? 'inline-block' : 'none';
-  document.getElementById('mapTabBtn').style.display = (mod==='betaverse') ? 'inline-block' : 'none';
+  document.getElementById('mapTabBtn').style.display = 'inline-block';
   APPROVAL_FILTER = '';
   document.getElementById('histCity').innerHTML = '<option value="">All cities</option>'; // rebuild filter options for the new dataset
   document.getElementById('histSearch').placeholder = mod==='db' ? 'Search distributor, city…' : mod==='betaverse' ? 'Search address, city, auditor…' : 'Search outlet, city, distributor…';
@@ -966,7 +959,7 @@ function renderApprovals(){
       </div>
       <div class="detail-list" style="margin-top:12px;">
         <div class="detail-row"><span class="detail-label">Submitted Area</span><span class="detail-val">${r.preWidth&&r.preHeight ? `${r.preWidth}×${r.preHeight} ft = `:''}${r.preArea} ${r.preAreaUnit||'sq ft'}</span></div>
-        <div class="detail-row"><span class="detail-label">Estimated Cost</span><span class="detail-val">₹${(Number(r.preCost)||0).toLocaleString('en-IN')}</span></div>
+        <div class="detail-row"><span class="detail-label">Measurement Method</span><span class="detail-val">${r.preMeasureMethod||'—'}</span></div>
         <div class="detail-row"><span class="detail-label">Auditor</span><span class="detail-val">${r.preAuditor||'—'} · ${r.prePhone||''}</span></div>
         <div class="detail-row"><span class="detail-label">Measurement Method</span><span class="detail-val">${r.preMeasureMethod||'—'}</span></div>
         <div class="detail-row"><span class="detail-label">Submitted On</span><span class="detail-val">${r.preDate||''}</span></div>
@@ -981,17 +974,18 @@ function renderApprovals(){
 }
 
 /* ============================================================
-   MAP TAB — every Ad Manager site plotted by its own lat/long on Google
-   Maps, icon shows the AD TYPE, colour shows the STATUS, and clicking any
-   pin opens its photo, cost, and approval state right there. A vendor's
-   claim that an ad is "somewhere in that area" is never enough to judge
-   coverage — seeing the actual spread of pending vs approved vs verified
-   sites is what makes a coverage gap or a stalled cluster of approvals
-   visible at a glance, not buried in a table.
+   MAP TAB — every module's own submissions plotted by lat/long on Google
+   Maps, colour-coded by whatever dimension matters most for THAT module,
+   filterable, with a click-through popup and a quick analytics strip. A
+   vendor's/outlet's/distributor's claim about coverage is never as
+   trustworthy as actually seeing where the visits happened and how they
+   broke down, at a glance, on a real map.
    ============================================================ */
-let SM_MAP = null; // the google.maps.Map instance, created once and reused
+let SM_MAP = null; // the google.maps.Map instance, created once and reused across all 3 modules
 let SM_MAP_MARKERS = [];
 let SM_MAP_INFOWINDOW = null;
+let MAP_FILTERS = {}; // { betaverse:{category:''}, retail:{district:'',city:''}, db:{dbName:'',auditType:''} }
+
 function smMapColorForStatus(status){
   if(status==='Pending Approval' || status==='Pending Installation') return '#F5A623';
   if(status==='Approved - Pending Installation') return '#2255CC';
@@ -1013,12 +1007,10 @@ function smMapEmojiForCategory(category){
   if(c.includes('train')) return '🚆';
   return '📍';
 }
-/* Builds a small SVG pin as a data-URI — a coloured circle (status) with
-   the category emoji centred inside — so every marker carries both
-   signals without needing a legend lookup for each one. */
-function smMapIcon(category, status){
-  const color = smMapColorForStatus(status);
-  const emoji = smMapEmojiForCategory(category);
+/* Builds a small SVG pin as a data-URI — a coloured circle with an emoji
+   centred inside — so every marker carries both a category/type signal
+   and a colour signal without needing a legend lookup for each one. */
+function smMapIcon(emoji, color){
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36"><circle cx="18" cy="18" r="15" fill="${color}" stroke="#fff" stroke-width="2.5"/><text x="18" y="24" font-size="16" text-anchor="middle">${emoji}</text></svg>`;
   return {
     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
@@ -1026,15 +1018,147 @@ function smMapIcon(category, status){
     anchor: new google.maps.Point(18, 18)
   };
 }
-async function renderMap(){
-  if(MODULE !== 'betaverse') return;
-  const sel = document.getElementById('mapCategoryFilter');
-  if(sel.options.length <= 1){
+function mapFilterState(){
+  if(!MAP_FILTERS[MODULE]) MAP_FILTERS[MODULE] = {};
+  return MAP_FILTERS[MODULE];
+}
+function setMapFilter(key, val){ mapFilterState()[key] = val; renderMap(); }
+
+/* Builds the filter dropdown(s) + colour legend for whichever module is
+   currently active — each module's meaningful "what should the colour
+   mean" dimension is different, so this isn't one generic control set. */
+function renderMapControls(){
+  const el = document.getElementById('mapControlsArea');
+  const f = mapFilterState();
+  if(MODULE === 'betaverse'){
     const cats = [...new Set(ALL_DATA.map(r=>r.category).filter(Boolean))];
-    cats.forEach(c=>{ const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+    el.innerHTML = `
+      <div class="filters" style="margin-bottom:6px;">
+        <select onchange="setMapFilter('category', this.value)"><option value="">All ad types</option>${cats.map(c=>`<option value="${c}" ${f.category===c?'selected':''}>${c}</option>`).join('')}</select>
+        <span style="display:inline-flex; align-items:center; gap:14px; font-size:12px; color:var(--slate); margin-left:12px; flex-wrap:wrap;">
+          <span><span class="map-dot" style="background:#F5A623;"></span>Pending Approval</span>
+          <span><span class="map-dot" style="background:#2255CC;"></span>Awaiting Install</span>
+          <span><span class="map-dot" style="background:#1B7A43;"></span>Verified</span>
+          <span><span class="map-dot" style="background:#C0392B;"></span>Rejected</span>
+        </span>
+      </div>
+      <p style="font-size:11px; color:var(--slate); margin-bottom:12px;">Pin colour = approval status · pin icon = ad type · click any pin for photo and details.</p>
+    `;
+  } else if(MODULE === 'retail'){
+    const districts = [...new Set(ALL_DATA.map(r=>r.district).filter(Boolean))].sort();
+    const cities = [...new Set(ALL_DATA.map(r=>r.city).filter(Boolean))].sort();
+    el.innerHTML = `
+      <div class="filters" style="margin-bottom:6px;">
+        <select onchange="setMapFilter('district', this.value)"><option value="">All districts</option>${districts.map(d=>`<option value="${d}" ${f.district===d?'selected':''}>${d}</option>`).join('')}</select>
+        <select onchange="setMapFilter('city', this.value)"><option value="">All cities</option>${cities.map(c=>`<option value="${c}" ${f.city===c?'selected':''}>${c}</option>`).join('')}</select>
+        <span style="display:inline-flex; align-items:center; gap:14px; font-size:12px; color:var(--slate); margin-left:12px;">
+          <span><span class="map-dot" style="background:#1B7A43;"></span>Distributing GCPL</span>
+          <span><span class="map-dot" style="background:#C0392B;"></span>Not distributing</span>
+        </span>
+      </div>
+      <p style="font-size:11px; color:var(--slate); margin-bottom:12px;">Pin colour = whether the outlet is currently distributing GCPL products · click any pin for outlet photo and details.</p>
+    `;
+  } else if(MODULE === 'db'){
+    const dbNames = [...new Set(ALL_DATA.map(r=>r.dbName).filter(Boolean))].sort();
+    const cities = [...new Set(ALL_DATA.map(r=>r.dbCity).filter(Boolean))].sort();
+    el.innerHTML = `
+      <div class="filters" style="margin-bottom:6px;">
+        <select onchange="setMapFilter('dbName', this.value)"><option value="">All distributors</option>${dbNames.map(d=>`<option value="${d}" ${f.dbName===d?'selected':''}>${d}</option>`).join('')}</select>
+        <select onchange="setMapFilter('city', this.value)"><option value="">All cities</option>${cities.map(c=>`<option value="${c}" ${f.city===c?'selected':''}>${c}</option>`).join('')}</select>
+        <span style="display:inline-flex; align-items:center; gap:14px; font-size:12px; color:var(--slate); margin-left:12px;">
+          <span><span class="map-dot" style="background:#2255CC;"></span>GCPL Sales Officer</span>
+          <span><span class="map-dot" style="background:#F5A623;"></span>3PA</span>
+          <span><span class="map-dot" style="background:#888;"></span>External (GCPL app)</span>
+        </span>
+      </div>
+      <p style="font-size:11px; color:var(--slate); margin-bottom:12px;">Pin colour = who conducted the audit · click any pin for warehouse photo and stock detail.</p>
+    `;
   }
-  const catFilter = sel.value;
-  const rows = ALL_DATA.filter(r => r.preLat && r.preLng && (!catFilter || r.category===catFilter));
+}
+
+function retailMapColor(r){ return r.q1_distribution === 'Yes' ? '#1B7A43' : '#C0392B'; }
+function dbMapColor(r){
+  if(r.auditType === 'GCPL Sales Officer') return '#2255CC';
+  if(r.auditType === '3PA') return '#F5A623';
+  return '#888888';
+}
+
+/* Small pill-badge strip above the map — a fast breakdown of what the
+   colours mean in COUNTS, so the map complements the numbers rather than
+   forcing anyone to count pins by eye. */
+function renderMapAnalytics(rows){
+  const el = document.getElementById('mapAnalyticsStrip');
+  const pill = (label, count, color) => `<span style="display:inline-flex; align-items:center; gap:6px; background:var(--paper-2); padding:6px 12px; border-radius:20px; font-size:12px; font-weight:700; color:var(--ink);"><span class="map-dot" style="background:${color};"></span>${label}: ${count}</span>`;
+  if(MODULE === 'betaverse'){
+    const groups = {'Pending Approval':0,'Approved - Pending Installation':0,'Verified':0,'Rejected':0};
+    rows.forEach(r=>{ const k = (r.status==='Pending Installation') ? 'Pending Approval' : r.status; if(groups[k]!==undefined) groups[k]++; });
+    el.innerHTML = pill('Pending', groups['Pending Approval'], '#F5A623') + pill('Awaiting Install', groups['Approved - Pending Installation'], '#2255CC') + pill('Verified', groups['Verified'], '#1B7A43') + pill('Rejected', groups['Rejected'], '#C0392B');
+  } else if(MODULE === 'retail'){
+    const yes = rows.filter(r=>r.q1_distribution==='Yes').length;
+    el.innerHTML = pill('Distributing', yes, '#1B7A43') + pill('Not distributing', rows.length-yes, '#C0392B') + pill('Total plotted', rows.length, '#12172B');
+  } else if(MODULE === 'db'){
+    const sales = rows.filter(r=>r.auditType==='GCPL Sales Officer').length;
+    const tpa = rows.filter(r=>r.auditType==='3PA').length;
+    el.innerHTML = pill('GCPL Sales', sales, '#2255CC') + pill('3PA', tpa, '#F5A623') + pill('Total plotted', rows.length, '#12172B');
+  }
+}
+
+async function renderMap(){
+  renderMapControls();
+  const f = mapFilterState();
+  let rows, latKey, lngKey, colorFn, iconEmojiFn, popupFn;
+
+  if(MODULE === 'betaverse'){
+    rows = ALL_DATA.filter(r => r.preLat && r.preLng && (!f.category || r.category===f.category));
+    latKey='preLat'; lngKey='preLng';
+    colorFn = r => smMapColorForStatus(r.status);
+    iconEmojiFn = r => smMapEmojiForCategory(r.category);
+    popupFn = r => `
+      <div style="font-family:'IBM Plex Sans',sans-serif; min-width:220px; max-width:260px;">
+        ${r.prePhotoUrl ? `<img src="${r.prePhotoUrl}" style="width:100%; height:120px; object-fit:cover; border-radius:6px; cursor:pointer; margin-bottom:8px;" onclick='smOpenBvLightbox(${JSON.stringify(r.prePhotoUrl)}, ${JSON.stringify(r.submissionId+" — "+r.category)})'>` : ''}
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700;">${r.submissionId}</div>
+        <div style="font-size:14px; font-weight:700; margin-top:2px;">${r.category}</div>
+        <div style="font-size:11px; color:#666; margin:4px 0;">${r.preAddress||''}</div>
+        <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; color:#fff; background:${colorFn(r)};">${r.status}</div>
+        <div style="font-size:12px; margin-top:6px;"><b>Method:</b> ${r.preMeasureMethod||'—'}</div>
+        <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+          ${(r.status==='Pending Approval'||r.status==='Pending Installation') && CAN_APPROVE() ? `<button onclick="smApproveSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #1B7A43; color:#1B7A43; background:#fff; cursor:pointer;">✓ Approve</button><button onclick="smRejectSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #C0392B; color:#C0392B; background:#fff; cursor:pointer;">✕ Reject</button>` : ''}
+          <button onclick="showTab('history'); document.getElementById('histSearch').value='${r.submissionId}'; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in History</button>
+        </div>
+      </div>`;
+  } else if(MODULE === 'retail'){
+    rows = ALL_DATA.filter(r => r.lat && r.lng && (!f.district || r.district===f.district) && (!f.city || r.city===f.city));
+    latKey='lat'; lngKey='lng';
+    colorFn = retailMapColor;
+    iconEmojiFn = () => '🏪';
+    popupFn = r => `
+      <div style="font-family:'IBM Plex Sans',sans-serif; min-width:220px; max-width:260px;">
+        ${r.photoUrl ? `<img src="${r.photoUrl}" style="width:100%; height:120px; object-fit:cover; border-radius:6px; margin-bottom:8px;">` : ''}
+        <div style="font-size:14px; font-weight:700;">${r.outletName||'Outlet'}</div>
+        <div style="font-size:11px; color:#666; margin:4px 0;">${r.address||''}${r.city?', '+r.city:''}</div>
+        <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; color:#fff; background:${colorFn(r)};">${r.q1_distribution==='Yes'?'Distributing GCPL':'Not distributing'}</div>
+        <div style="font-size:12px; margin-top:6px;"><b>Auditor:</b> ${r.auditor||'—'} · <b>Date:</b> ${r.date||''}</div>
+        <div style="margin-top:8px;"><button onclick="showTab('history'); document.getElementById('histSearch').value=${JSON.stringify(r.outletName||'')}; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in History</button></div>
+      </div>`;
+  } else if(MODULE === 'db'){
+    rows = ALL_DATA.filter(r => r.lat && r.lng && (!f.dbName || r.dbName===f.dbName) && (!f.city || r.dbCity===f.city));
+    latKey='lat'; lngKey='lng';
+    colorFn = dbMapColor;
+    iconEmojiFn = () => '📦';
+    popupFn = r => `
+      <div style="font-family:'IBM Plex Sans',sans-serif; min-width:220px; max-width:260px;">
+        ${r.photoUrlWide ? `<img src="${r.photoUrlWide}" style="width:100%; height:120px; object-fit:cover; border-radius:6px; margin-bottom:8px;">` : ''}
+        <div style="font-size:14px; font-weight:700;">${r.dbName||r.dbCode||'Distributor'}</div>
+        <div style="font-size:11px; color:#666; margin:4px 0;">${r.address||''}${r.dbCity?', '+r.dbCity:''}</div>
+        <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; color:#fff; background:${colorFn(r)};">${r.auditType||'—'}</div>
+        <div style="font-size:12px; margin-top:6px;"><b>SO:</b> ${r.soName||'—'} · <b>Date:</b> ${r.date||''}</div>
+        <div style="margin-top:8px;"><button onclick="showTab('history'); document.getElementById('histSearch').value=${JSON.stringify(r.dbCode||r.dbName||'')}; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in History</button></div>
+      </div>`;
+  } else {
+    return;
+  }
+
+  renderMapAnalytics(rows);
   const container = document.getElementById('mapContainer');
 
   try{
@@ -1049,7 +1173,7 @@ async function renderMap(){
     SM_MAP = new google.maps.Map(container, {zoom:11, center:{lat:22.57, lng:88.36}, mapTypeControl:false, streetViewControl:false});
     SM_MAP_INFOWINDOW = new google.maps.InfoWindow();
   }
-  google.maps.event.trigger(SM_MAP, 'resize'); // same reasoning as before — container may have been display:none
+  google.maps.event.trigger(SM_MAP, 'resize'); // container may have been display:none until this tab was opened
 
   SM_MAP_MARKERS.forEach(m=>m.setMap(null));
   SM_MAP_MARKERS = [];
@@ -1061,27 +1185,10 @@ async function renderMap(){
 
   const bounds = new google.maps.LatLngBounds();
   rows.forEach(r=>{
-    const pos = {lat:Number(r.preLat), lng:Number(r.preLng)};
-    const marker = new google.maps.Marker({
-      position: pos, map: SM_MAP, icon: smMapIcon(r.category, r.status),
-      title: `${r.submissionId} — ${r.category} — ${r.status}`
-    });
+    const pos = {lat:Number(r[latKey]), lng:Number(r[lngKey])};
+    const marker = new google.maps.Marker({ position: pos, map: SM_MAP, icon: smMapIcon(iconEmojiFn(r), colorFn(r)) });
     marker.addListener('click', ()=>{
-      const color = smMapColorForStatus(r.status);
-      SM_MAP_INFOWINDOW.setContent(`
-        <div style="font-family:'IBM Plex Sans',sans-serif; min-width:220px; max-width:260px;">
-          ${r.prePhotoUrl ? `<img src="${r.prePhotoUrl}" style="width:100%; height:120px; object-fit:cover; border-radius:6px; cursor:pointer; margin-bottom:8px;" onclick='smOpenBvLightbox(${JSON.stringify(r.prePhotoUrl)}, ${JSON.stringify(r.submissionId+" — "+r.category)})'>` : ''}
-          <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700;">${r.submissionId}</div>
-          <div style="font-size:14px; font-weight:700; margin-top:2px;">${r.category}</div>
-          <div style="font-size:11px; color:#666; margin:4px 0;">${r.preAddress||''}</div>
-          <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; color:#fff; background:${color};">${r.status}</div>
-          <div style="font-size:12px; margin-top:6px;"><b>Cost:</b> ₹${(Number(r.status==='Verified'?r.postApprovedCost:r.preCost)||0).toLocaleString('en-IN')}${r.status==='Verified'?' (approved)':' (estimated)'}</div>
-          <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
-            ${(r.status==='Pending Approval'||r.status==='Pending Installation') && CAN_APPROVE() ? `<button onclick="smApproveSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #1B7A43; color:#1B7A43; background:#fff; cursor:pointer;">✓ Approve</button><button onclick="smRejectSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #C0392B; color:#C0392B; background:#fff; cursor:pointer;">✕ Reject</button>` : ''}
-            <button onclick="showTab('history'); document.getElementById('histSearch').value='${r.submissionId}'; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in History</button>
-          </div>
-        </div>
-      `);
+      SM_MAP_INFOWINDOW.setContent(popupFn(r));
       SM_MAP_INFOWINDOW.open(SM_MAP, marker);
     });
     bounds.extend(pos);
@@ -1646,9 +1753,9 @@ function renderBetaverseDashboard(){
   el.innerHTML = `
     <div class="kpis">
       <div class="kpi kpi-click" onclick="switchApprovalFilter('')"><div class="v">${n}</div><div class="l">Total Submissions</div></div>
-      <div class="kpi kpi-click" onclick="switchApprovalFilter('unapproved')"><div class="v">${pending.length}</div><div class="l">⏳ Unapproved</div></div>
-      <div class="kpi kpi-click" onclick="switchApprovalFilter('approved')"><div class="v">${verified.length}</div><div class="l">✅ Approved</div></div>
-      <div class="kpi"><div class="v">₹${totalApprovedCost.toLocaleString('en-IN')}</div><div class="l">Total Approved Cost</div></div>
+      <div class="kpi kpi-click" onclick="switchApprovalFilter('pending')"><div class="v">${pending.length}</div><div class="l">⏳ Pending Approval</div></div>
+      <div class="kpi kpi-click" onclick="switchApprovalFilter('waitinstall')"><div class="v">${data.filter(r=>r.status==='Approved - Pending Installation').length}</div><div class="l">🔔 Awaiting Install</div></div>
+      <div class="kpi kpi-click" onclick="switchApprovalFilter('verified')"><div class="v">${verified.length}</div><div class="l">✅ Verified</div></div>
     </div>
     <div class="card insights-card">
       <h2>🔎 Key Insights</h2>
@@ -1928,25 +2035,28 @@ function renderBetaverseHistory(){
   }).sort((a,b)=>String(b.submissionId).localeCompare(String(a.submissionId)));
   const thead = document.querySelector('#histTable thead'), tbody = document.querySelector('#histTable tbody');
   const showActions = CAN_APPROVE();
-  thead.innerHTML = `<tr><th>ID</th><th>Category</th><th>Status</th><th>Measurement</th><th>Address</th><th>Submitted W×H</th><th>Submitted Area</th><th>Approved W×H</th><th>Approved Area</th><th>Submitted Cost</th><th>Approved Cost</th><th>Cost Variance</th><th>Auditor</th><th>Date</th><th>Map</th>${showActions ? '<th>Approval</th>' : ''}</tr>`;
-  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="${showActions?16:15}"><div class="empty">No matching submissions.</div></td></tr>`; return; }
+  thead.innerHTML = `<tr><th>ID</th><th>Category</th><th>Status</th><th>Measurement</th><th>Address</th><th>Category Details</th><th>Submitted W×H</th><th>Submitted Area</th><th>Approved W×H</th><th>Approved Area</th><th>Auditor</th><th>Date</th><th>Map</th>${showActions ? '<th>Approval</th>' : ''}</tr>`;
+  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="${showActions?14:13}"><div class="empty">No matching submissions.</div></td></tr>`; return; }
   tbody.innerHTML = rows.map(r=>{
     const isVerified = r.status==='Verified';
     const isPending = r.status==='Pending Approval' || r.status==='Pending Installation';
-    const costDiff = isVerified ? ((Number(r.postApprovedCost)||0) - (Number(r.preCost)||0)) : null;
     const isManual = String(r.preMeasureMethod||'').includes('Manual');
+    const catDetails = [
+      r.vehicleNumber ? `🚗 ${r.vehicleNumber}` : '',
+      (r.routeFrom||r.routeTo) ? `${r.routeFrom||'?'} → ${r.routeTo||'?'}` : '',
+      r.outletName ? `🏪 ${r.outletName}${r.ownerName?' ('+r.ownerName+')':''}` : '',
+      r.landmark ? `📍 ${r.landmark}` : ''
+    ].filter(Boolean).join('<br>') || '—';
     return `<tr${isManual ? ' style="background:var(--red-bg);"' : (isPending ? ' style="background:#FFFBF0;"' : '')}>
       <td class="mono">${r.submissionId}</td><td>${r.category}</td>
       <td>${smStatusBadge(r.status)}</td>
       <td>${isManual ? `<span style="color:var(--red); font-weight:700; font-size:11px;">⚠️ MANUAL — needs review</span>` : `<span style="color:var(--green); font-size:11px;">✅ Distance-corrected</span>`}</td>
       <td>${r.preAddress||'—'}</td>
+      <td style="font-size:11px;">${catDetails}</td>
       <td class="mono">${r.preWidth&&r.preHeight ? `${r.preWidth}×${r.preHeight} ft` : '—'}</td>
       <td>${r.preArea} ${r.preAreaUnit||'sq ft'}</td>
       <td class="mono">${isVerified && r.postWidth&&r.postHeight ? `${r.postWidth}×${r.postHeight} ft` : '—'}</td>
       <td>${isVerified ? r.postArea+' sq ft' : '—'}</td>
-      <td>₹${(Number(r.preCost)||0).toLocaleString('en-IN')}</td>
-      <td>${isVerified ? '₹'+(Number(r.postApprovedCost)||0).toLocaleString('en-IN') : '—'}</td>
-      <td>${costDiff===null ? '—' : `<span style="font-weight:700; color:${costDiff<=0?'var(--green)':'var(--red)'};">${costDiff>0?'+':''}₹${costDiff.toLocaleString('en-IN')}</span>`}</td>
       <td>${r.preAuditor||'—'}</td>
       <td class="mono">${r.preDate||''}</td>
       <td>${mapLinkHtml(r.preMapsLink)}</td>
@@ -2339,8 +2449,7 @@ function renderBetaversePhotos(){
           <div class="detail-row"><span class="detail-label">Submission ID</span><span class="detail-val">${r.submissionId}</span></div>
           <div class="detail-row"><span class="detail-label">Category</span><span class="detail-val">${r.category}</span></div>
           <div class="detail-row"><span class="detail-label">Submitted Area</span><span class="detail-val">${r.preArea} sq ft</span></div>
-          ${isVerified ? `<div class="detail-row"><span class="detail-label">Approved Area</span><span class="detail-val">${r.postArea} sq ft</span></div>
-          <div class="detail-row"><span class="detail-label">Approved Cost</span><span class="detail-val">₹${(Number(r.postApprovedCost)||0).toLocaleString('en-IN')}</span></div>` : `<div class="detail-row"><span class="detail-label">Submitted Cost</span><span class="detail-val">₹${(Number(r.preCost)||0).toLocaleString('en-IN')}</span></div>`}
+          ${isVerified ? `<div class="detail-row"><span class="detail-label">Approved Area</span><span class="detail-val">${r.postArea} sq ft</span></div>` : ''}
           <div class="detail-row"><span class="detail-label">Auditor</span><span class="detail-val">${r.preAuditor||'—'}</span></div>
         </div>
         <div class="photo-card-footer">
