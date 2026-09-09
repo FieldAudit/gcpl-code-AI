@@ -339,7 +339,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.48.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.50.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -358,12 +358,14 @@ table.data tr:hover td{background:var(--paper-2);}
   <div class="module-toggle" id="moduleToggle" style="margin-top:8px;">
     <button class="active" data-mod="retail" onclick="switchModule('retail')">🏪 Retail Audit</button>
     <button data-mod="db" id="dbModuleBtn" onclick="switchModule('db')">📦 DB Stock Audit</button>
-    <button data-mod="betaverse" onclick="switchModule('betaverse')">📐 Ad Manager</button>
+    <button data-mod="betaverse" onclick="switchModule('betaverse')">📐 Ad Manager <span id="pendingApprovalBadge" style="display:none; background:var(--red); color:#fff; border-radius:10px; padding:1px 7px; font-size:10px; font-weight:700; margin-left:4px;">0</span></button>
   </div>
   <div class="module-toggle" id="betaverseApprovalToggle" style="display:none;">
     <button class="active" data-appr="" onclick="switchApprovalFilter('')">All</button>
-    <button data-appr="unapproved" onclick="switchApprovalFilter('unapproved')">⏳ Unapproved</button>
-    <button data-appr="approved" onclick="switchApprovalFilter('approved')">✅ Approved</button>
+    <button data-appr="pending" onclick="switchApprovalFilter('pending')">⏳ Pending Approval</button>
+    <button data-appr="waitinstall" onclick="switchApprovalFilter('waitinstall')">🔔 Awaiting Install</button>
+    <button data-appr="verified" onclick="switchApprovalFilter('verified')">✅ Verified</button>
+    <button data-appr="rejected" onclick="switchApprovalFilter('rejected')">✕ Rejected</button>
   </div>
   <nav class="tabs">
     <button class="active" data-tab="dash" onclick="showTab('dash')">Dashboard</button>
@@ -755,7 +757,23 @@ function enterApp(){
   } else {
     loadData().then(()=>{ renderDashboard(); finish(); });
   }
+  if(CAN_APPROVE()) refreshPendingApprovalBadge();
   startVersionWatcher();
+}
+/* Notification-bell-style count on the Ad Manager module button itself —
+   fetched independently of which module is currently open, and only for
+   roles that can actually act on it, so a Sales/Manager login never sees
+   an approval count they have no way to do anything about. */
+function refreshPendingApprovalBadge(){
+  if(!betaverseConfigured()) return;
+  fetch(`${BETAVERSE_SCRIPT_URL}?action=getPendingApprovalsCount&_t=${Date.now()}`, {cache:'no-store'})
+    .then(r=>r.json()).then(res=>{
+      const badge = document.getElementById('pendingApprovalBadge');
+      if(!badge) return;
+      const count = res.count || 0;
+      badge.textContent = count;
+      badge.style.display = count > 0 ? 'inline-block' : 'none';
+    }).catch(()=>{});
 }
 
 /* Detects when a NEWER dashboard.html has been deployed to GitHub Pages
@@ -764,7 +782,7 @@ function enterApp(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.48.0';
+const FRONTEND_VERSION = 'v6.50.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1410,7 +1428,11 @@ function renderDashboard(){
 }
 function betaverseFilteredData(){
   if(!APPROVAL_FILTER) return ALL_DATA;
-  return ALL_DATA.filter(r => APPROVAL_FILTER==='approved' ? r.status==='Verified' : r.status!=='Verified');
+  if(APPROVAL_FILTER==='pending') return ALL_DATA.filter(r=>r.status==='Pending Approval');
+  if(APPROVAL_FILTER==='waitinstall') return ALL_DATA.filter(r=>r.status==='Approved - Pending Installation');
+  if(APPROVAL_FILTER==='verified') return ALL_DATA.filter(r=>r.status==='Verified');
+  if(APPROVAL_FILTER==='rejected') return ALL_DATA.filter(r=>r.status==='Rejected');
+  return ALL_DATA;
 }
 function renderBetaverseDashboard(){
   const el = document.getElementById('dashContent');
@@ -1685,21 +1707,55 @@ function renderHistory(){
   else if(MODULE==='db') renderDBHistory();
   else renderRetailHistory();
 }
+/* Badge for the new 4-state approval flow — Pending Approval (needs an
+   Admin/Marketing decision), Approved (waiting on the field team to go
+   confirm installation), Rejected, or fully Verified. */
+function smStatusBadge(status){
+  if(status === 'Pending Approval') return `<span class="tag" style="background:#FFF4E5; color:var(--amber-dark,#C97F0E);">⏳ Pending Approval</span>`;
+  if(status === 'Approved - Pending Installation') return `<span class="tag" style="background:#E7F0FF; color:#2255CC;">🔔 Approved — awaiting install</span>`;
+  if(status === 'Rejected') return `<span class="tag" style="background:var(--red-bg); color:var(--red);">✕ Rejected</span>`;
+  if(status === 'Verified') return `<span class="tag tag-yes">✅ Verified</span>`;
+  return `<span class="tag">${status||'—'}</span>`;
+}
+const CAN_APPROVE = () => SESSION && (SESSION.role === 'Admin' || SESSION.role === 'Marketing');
+async function smApproveSubmission(submissionId){
+  if(!confirm(`Approve ${submissionId}? The field auditor will then be able to confirm installation.`)) return;
+  try{
+    const r = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'approveSubmission', submissionId, approverName:SESSION.name, token:SESSION.token})}, 15000);
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message||'Could not approve');
+    toast(`${submissionId} approved ✅`);
+    await loadData(); renderBetaverseHistory(); renderBetaverseDashboard(); refreshPendingApprovalBadge();
+  }catch(e){ toast(e.message||'Could not approve', true); }
+}
+async function smRejectSubmission(submissionId){
+  const reason = prompt(`Reason for rejecting ${submissionId}?`, '');
+  if(reason === null) return;
+  try{
+    const r = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'rejectSubmission', submissionId, approverName:SESSION.name, reason, token:SESSION.token})}, 15000);
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message||'Could not reject');
+    toast(`${submissionId} rejected`);
+    await loadData(); renderBetaverseHistory(); renderBetaverseDashboard(); refreshPendingApprovalBadge();
+  }catch(e){ toast(e.message||'Could not reject', true); }
+}
 function renderBetaverseHistory(){
   const q = document.getElementById('histSearch').value.toLowerCase();
   const rows = betaverseFilteredData().filter(r=>{
-    return !q || [r.preAddress,r.preCity,r.preAuditor,r.submissionId,r.category].join(' ').toLowerCase().includes(q);
+    return !q || [r.preAddress,r.preCity,r.preAuditor,r.submissionId,r.category,r.vehicleNumber,r.outletName,r.ownerPhone].join(' ').toLowerCase().includes(q);
   }).sort((a,b)=>String(b.submissionId).localeCompare(String(a.submissionId)));
   const thead = document.querySelector('#histTable thead'), tbody = document.querySelector('#histTable tbody');
-  thead.innerHTML = `<tr><th>ID</th><th>Category</th><th>Status</th><th>Measurement</th><th>Address</th><th>Submitted W×H</th><th>Submitted Area</th><th>Approved W×H</th><th>Approved Area</th><th>Submitted Cost</th><th>Approved Cost</th><th>Cost Variance</th><th>Auditor</th><th>Date</th><th>Map</th></tr>`;
-  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="15"><div class="empty">No matching submissions.</div></td></tr>`; return; }
+  const showActions = CAN_APPROVE();
+  thead.innerHTML = `<tr><th>ID</th><th>Category</th><th>Status</th><th>Measurement</th><th>Address</th><th>Submitted W×H</th><th>Submitted Area</th><th>Approved W×H</th><th>Approved Area</th><th>Submitted Cost</th><th>Approved Cost</th><th>Cost Variance</th><th>Auditor</th><th>Date</th><th>Map</th>${showActions ? '<th>Approval</th>' : ''}</tr>`;
+  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="${showActions?16:15}"><div class="empty">No matching submissions.</div></td></tr>`; return; }
   tbody.innerHTML = rows.map(r=>{
     const isVerified = r.status==='Verified';
+    const isPending = r.status==='Pending Approval';
     const costDiff = isVerified ? ((Number(r.postApprovedCost)||0) - (Number(r.preCost)||0)) : null;
     const isManual = String(r.preMeasureMethod||'').includes('Manual');
-    return `<tr${isManual ? ' style="background:var(--red-bg);"' : ''}>
+    return `<tr${isManual ? ' style="background:var(--red-bg);"' : (isPending ? ' style="background:#FFFBF0;"' : '')}>
       <td class="mono">${r.submissionId}</td><td>${r.category}</td>
-      <td><span class="tag ${isVerified?'tag-yes':'tag-no'}">${isVerified?'✅ Approved':'⏳ Unapproved'}</span></td>
+      <td>${smStatusBadge(r.status)}</td>
       <td>${isManual ? `<span style="color:var(--red); font-weight:700; font-size:11px;">⚠️ MANUAL — needs review</span>` : `<span style="color:var(--green); font-size:11px;">✅ Distance-corrected</span>`}</td>
       <td>${r.preAddress||'—'}</td>
       <td class="mono">${r.preWidth&&r.preHeight ? `${r.preWidth}×${r.preHeight} ft` : '—'}</td>
@@ -1712,6 +1768,7 @@ function renderBetaverseHistory(){
       <td>${r.preAuditor||'—'}</td>
       <td class="mono">${r.preDate||''}</td>
       <td>${mapLinkHtml(r.preMapsLink)}</td>
+      ${showActions ? `<td>${isPending ? `<div style="display:flex; gap:4px;"><button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--green); border-color:var(--green);" onclick="smApproveSubmission('${r.submissionId}')">✓ Approve</button><button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--red); border-color:var(--red);" onclick="smRejectSubmission('${r.submissionId}')">✕ Reject</button></div>` : (r.status==='Rejected' && r.rejectionReason ? `<span style="font-size:10px; color:var(--slate);" title="${String(r.rejectionReason).replace(/"/g,'&quot;')}">Reason: ${r.rejectionReason}</span>` : (r.approvedBy ? `<span style="font-size:10px; color:var(--slate);">by ${r.approvedBy}</span>` : '—'))}</td>` : ''}
     </tr>`;
   }).join('');
 }
@@ -2069,7 +2126,7 @@ function renderBetaversePhotos(){
       <div style="display:grid; grid-template-columns:1fr 1fr;">
         <div>
           <div style="position:relative;">
-            ${preImg ? `<img class="thumb" src="${preImg}" style="aspect-ratio:1/1; cursor:pointer;" onclick="document.getElementById('lightboxImg').src=this.src; document.getElementById('lightboxCaption').textContent='Before — ${r.submissionId}'; document.getElementById('photoLightbox').classList.add('show');">` : `<div style="aspect-ratio:1/1; background:var(--paper-2); display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--slate);">No photo</div>`}
+            ${preImg ? `<img class="thumb" src="${preImg}" style="aspect-ratio:1/1; cursor:pointer;" onclick='smOpenBvLightbox(this.src, ${JSON.stringify("Before — "+r.submissionId+((r.preWidth&&r.preHeight)?" · "+r.preWidth+" ft × "+r.preHeight+" ft":"")+(r.preAddress?" · "+r.preAddress:""))})'>` : `<div style="aspect-ratio:1/1; background:var(--paper-2); display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--slate);">No photo</div>`}
             <span class="type-tag" style="position:absolute; top:6px; left:6px; background:#FFF4E5; color:var(--amber-dark, #C97F0E);">BEFORE</span>
             ${r.preRefPhotoUrl ? `<span style="position:absolute; top:6px; right:6px; background:rgba(18,23,43,.75); color:#fff; font-size:9px; padding:2px 6px; border-radius:8px;">📐 Marked-up</span>` : ''}
           </div>
@@ -2081,7 +2138,7 @@ function renderBetaversePhotos(){
         </div>
         <div>
           <div style="position:relative;">
-            ${postImg ? `<img class="thumb" src="${postImg}" style="aspect-ratio:1/1; cursor:pointer;" onclick="document.getElementById('lightboxImg').src=this.src; document.getElementById('lightboxCaption').textContent='After — ${r.submissionId}'; document.getElementById('photoLightbox').classList.add('show');">` : `<div style="aspect-ratio:1/1; background:var(--paper-2); display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--slate); text-align:center; padding:8px;">Not yet installed/verified</div>`}
+            ${postImg ? `<img class="thumb" src="${postImg}" style="aspect-ratio:1/1; cursor:pointer;" onclick='smOpenBvLightbox(this.src, ${JSON.stringify("After - "+r.submissionId+((r.postWidth&&r.postHeight)?" - "+r.postWidth+" ft x "+r.postHeight+" ft":""))})'>` : `<div style="aspect-ratio:1/1; background:var(--paper-2); display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--slate); text-align:center; padding:8px;">Not yet installed/verified</div>`}
             <span class="type-tag" style="position:absolute; top:6px; left:6px; background:${isVerified?'var(--green-bg)':'#eee'}; color:${isVerified?'var(--green)':'#999'};">AFTER</span>
             ${r.postRefPhotoUrl ? `<span style="position:absolute; top:6px; right:6px; background:rgba(18,23,43,.75); color:#fff; font-size:9px; padding:2px 6px; border-radius:8px;">📐 Marked-up</span>` : ''}
           </div>
@@ -2317,6 +2374,15 @@ function shiftGalleryThumb(btn, dir){
   gallery.querySelector('.gallery-count').textContent = `${imgIdx+1}/${p.urls.length}`;
 }
 
+/* Dedicated opener for Ad Manager's before/after cards — built as a real
+   function call (not a raw onclick string) specifically so the caption
+   text (which can contain an address with its own quotes/punctuation)
+   never has to be hand-escaped into an HTML attribute. */
+function smOpenBvLightbox(url, caption){
+  document.getElementById('lightboxImg').src = url;
+  document.getElementById('lightboxCaption').textContent = caption;
+  document.getElementById('photoLightbox').classList.add('show');
+}
 function closeLightbox(e){
   if(e.target.id==='photoLightbox' || e.target.classList.contains('photo-lightbox-close')){
     document.getElementById('photoLightbox').classList.remove('show');
