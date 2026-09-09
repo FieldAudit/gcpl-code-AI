@@ -339,7 +339,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.51.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.52.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -369,6 +369,7 @@ table.data tr:hover td{background:var(--paper-2);}
   </div>
   <nav class="tabs">
     <button class="active" data-tab="dash" onclick="showTab('dash')">Dashboard</button>
+    <button data-tab="approvals" id="approvalsTabBtn" onclick="showTab('approvals')" style="display:none;">🔔 Approvals</button>
     <button data-tab="history" onclick="showTab('history')">History</button>
     <button data-tab="photos" onclick="showTab('photos')">Photos</button>
     <button data-tab="master" id="masterTabBtn" onclick="showTab('master')" style="display:none;">Master Data</button>
@@ -394,6 +395,14 @@ table.data tr:hover td{background:var(--paper-2);}
         </div>
       </div>
       <div id="dashContent"><div class="empty"><b>Loading analytics…</b>Fetching audit data from the sheet.</div></div>
+    </section>
+
+    <section id="tab-approvals" style="display:none;">
+      <div class="card">
+        <h2 style="margin-bottom:4px;">Sites Waiting on Your Decision</h2>
+        <p style="font-size:13px; color:var(--slate); margin-bottom:16px;">Only Admin and Marketing can approve or reject a proposed site — nothing here has been decided yet.</p>
+        <div id="approvalsList"><div class="empty"><b>Loading…</b></div></div>
+      </div>
     </section>
 
     <section id="tab-history" style="display:none;">
@@ -782,7 +791,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.51.0';
+const FRONTEND_VERSION = 'v6.52.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -855,6 +864,7 @@ function switchModule(mod){
   MODULE = mod;
   document.querySelectorAll('#moduleToggle button').forEach(b=>b.classList.toggle('active', b.dataset.mod===mod));
   document.getElementById('betaverseApprovalToggle').style.display = mod==='betaverse' ? 'flex' : 'none';
+  document.getElementById('approvalsTabBtn').style.display = (mod==='betaverse' && CAN_APPROVE()) ? 'inline-block' : 'none';
   APPROVAL_FILTER = '';
   document.getElementById('histCity').innerHTML = '<option value="">All cities</option>'; // rebuild filter options for the new dataset
   document.getElementById('histSearch').placeholder = mod==='db' ? 'Search distributor, city…' : mod==='betaverse' ? 'Search address, city, auditor…' : 'Search outlet, city, distributor…';
@@ -862,7 +872,7 @@ function switchModule(mod){
   loadData().then(()=>{
     const activeTab = document.querySelector('nav.tabs button.active');
     const name = activeTab ? activeTab.dataset.tab : 'dash';
-    if(name==='dash') renderDashboard(); else if(name==='history') renderHistory(); else if(name==='photos'){ loadPhotosData().then(renderPhotos); }
+    if(name==='dash') renderDashboard(); else if(name==='approvals') renderApprovals(); else if(name==='history') renderHistory(); else if(name==='photos'){ loadPhotosData().then(renderPhotos); }
   });
 }
 function switchApprovalFilter(val){
@@ -904,9 +914,10 @@ function switchSourceTab(tab){
 }
 
 function showTab(name){
-  ['dash','history','photos','master','team'].forEach(t=>{ document.getElementById('tab-'+t).style.display = (t===name)?'block':'none'; });
+  ['dash','approvals','history','photos','master','team'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   if(name==='dash') renderDashboard();
+  if(name==='approvals') renderApprovals();
   if(name==='history') renderHistory();
   if(name==='photos') loadPhotosData().then(renderPhotos);
   if(name==='master') loadMasterData();
@@ -915,6 +926,39 @@ function showTab(name){
     document.getElementById('teamJourneyView').style.display='none';
     loadTeamData().then(renderTeamGrid);
   }
+}
+/* Clear, single-purpose approval screen — a big card per pending site
+   with the decision buttons right there, no horizontal scrolling or
+   hunting through a wide table required. This is the ONLY place
+   approve/reject lives now; the History table stays a read-only record. */
+function renderApprovals(){
+  const el = document.getElementById('approvalsList');
+  const pending = (MODULE==='betaverse' ? ALL_DATA : []).filter(r => r.status==='Pending Approval' || r.status==='Pending Installation');
+  if(!pending.length){ el.innerHTML = `<div class="empty"><b>Nothing waiting</b>Every submitted site has already been approved or rejected.</div>`; return; }
+  el.innerHTML = pending.map(r => `
+    <div class="card" style="border:1.5px solid #FFD98F; background:#FFFBF0; margin-bottom:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:700;">${r.submissionId}</div>
+          <div style="font-size:16px; font-weight:700; margin-top:2px;">${r.category}</div>
+          <div style="font-size:13px; color:var(--slate); margin-top:4px;">${r.preAddress||'—'}</div>
+        </div>
+        ${r.prePhotoUrl ? `<img src="${r.prePhotoUrl}" style="width:90px; height:90px; object-fit:cover; border-radius:8px; flex-shrink:0;">` : ''}
+      </div>
+      <div class="detail-list" style="margin-top:12px;">
+        <div class="detail-row"><span class="detail-label">Submitted Area</span><span class="detail-val">${r.preWidth&&r.preHeight ? `${r.preWidth}×${r.preHeight} ft = `:''}${r.preArea} ${r.preAreaUnit||'sq ft'}</span></div>
+        <div class="detail-row"><span class="detail-label">Estimated Cost</span><span class="detail-val">₹${(Number(r.preCost)||0).toLocaleString('en-IN')}</span></div>
+        <div class="detail-row"><span class="detail-label">Auditor</span><span class="detail-val">${r.preAuditor||'—'} · ${r.prePhone||''}</span></div>
+        <div class="detail-row"><span class="detail-label">Measurement Method</span><span class="detail-val">${r.preMeasureMethod||'—'}</span></div>
+        <div class="detail-row"><span class="detail-label">Submitted On</span><span class="detail-val">${r.preDate||''}</span></div>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button class="btn btn-primary btn-block" style="background:var(--green); border-color:var(--green);" onclick="smApproveSubmission('${r.submissionId}')">✓ Approve this site</button>
+        <button class="btn btn-outline btn-block" style="color:var(--red); border-color:var(--red);" onclick="smRejectSubmission('${r.submissionId}')">✕ Reject</button>
+        ${r.preMapsLink ? `<a class="btn btn-outline" href="${r.preMapsLink}" target="_blank" style="white-space:nowrap;">📍 View location</a>` : ''}
+      </div>
+    </div>
+  `).join('');
 }
 
 /* Clickable analytics: every KPI card and every chart segment jumps
@@ -1733,7 +1777,7 @@ async function smApproveSubmission(submissionId){
     const res = await r.json();
     if(!res.success) throw new Error(res.message||'Could not approve');
     toast(`${submissionId} approved ✅`);
-    await loadData(); renderBetaverseHistory(); renderBetaverseDashboard(); refreshPendingApprovalBadge();
+    await loadData(); renderApprovals(); renderBetaverseHistory(); renderBetaverseDashboard(); refreshPendingApprovalBadge();
   }catch(e){ toast(e.message||'Could not approve', true); }
 }
 async function smRejectSubmission(submissionId){
@@ -1744,7 +1788,7 @@ async function smRejectSubmission(submissionId){
     const res = await r.json();
     if(!res.success) throw new Error(res.message||'Could not reject');
     toast(`${submissionId} rejected`);
-    await loadData(); renderBetaverseHistory(); renderBetaverseDashboard(); refreshPendingApprovalBadge();
+    await loadData(); renderApprovals(); renderBetaverseHistory(); renderBetaverseDashboard(); refreshPendingApprovalBadge();
   }catch(e){ toast(e.message||'Could not reject', true); }
 }
 function renderBetaverseHistory(){
