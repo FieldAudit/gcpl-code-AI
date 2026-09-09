@@ -16,8 +16,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root{
   /* "Ultimate" tech-gradient palette — matches survey app's default look */
@@ -341,7 +339,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.53.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.54.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -410,7 +408,7 @@ table.data tr:hover td{background:var(--paper-2);}
 
     <section id="tab-map" style="display:none;">
       <div class="card">
-        <div class="filters" style="margin-bottom:12px;">
+        <div class="filters" style="margin-bottom:6px;">
           <select id="mapCategoryFilter" onchange="renderMap()"><option value="">All ad types</option></select>
           <span style="display:inline-flex; align-items:center; gap:16px; font-size:12px; color:var(--slate); margin-left:12px;">
             <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#F5A623; margin-right:4px;"></span>Pending Approval</span>
@@ -419,6 +417,7 @@ table.data tr:hover td{background:var(--paper-2);}
             <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#C0392B; margin-right:4px;"></span>Rejected</span>
           </span>
         </div>
+        <p style="font-size:11px; color:var(--slate); margin-bottom:12px;">Pin colour = approval status · pin icon = ad type (🏗️ Hoarding · 🎨 Wall · 📰 Poster · 🏪 POSM · 🚌 Bus/Auto/Toto · 🚇 Metro · 🚆 Train) · click any pin for photo, cost, and details.</p>
         <div id="mapContainer" style="height:560px; border-radius:12px; overflow:hidden; border:1px solid var(--border-2);"></div>
       </div>
     </section>
@@ -809,7 +808,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.53.0';
+const FRONTEND_VERSION = 'v6.54.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -982,23 +981,52 @@ function renderApprovals(){
 }
 
 /* ============================================================
-   MAP TAB — every Ad Manager site plotted by its own lat/long, colour-
-   coded by status, filterable by ad category. A vendor's claim that an
-   ad is "somewhere in that area" is never enough to judge coverage —
-   seeing the actual spread of pending vs approved vs verified sites on
-   a real map is what makes a coverage gap or a cluster of stalled
-   approvals visible at a glance, not buried in a table.
+   MAP TAB — every Ad Manager site plotted by its own lat/long on Google
+   Maps, icon shows the AD TYPE, colour shows the STATUS, and clicking any
+   pin opens its photo, cost, and approval state right there. A vendor's
+   claim that an ad is "somewhere in that area" is never enough to judge
+   coverage — seeing the actual spread of pending vs approved vs verified
+   sites is what makes a coverage gap or a stalled cluster of approvals
+   visible at a glance, not buried in a table.
    ============================================================ */
-let SM_MAP = null; // the Leaflet map instance, created once and reused
+let SM_MAP = null; // the google.maps.Map instance, created once and reused
 let SM_MAP_MARKERS = [];
+let SM_MAP_INFOWINDOW = null;
 function smMapColorForStatus(status){
   if(status==='Pending Approval' || status==='Pending Installation') return '#F5A623';
   if(status==='Approved - Pending Installation') return '#2255CC';
   if(status==='Verified') return '#1B7A43';
   if(status==='Rejected') return '#C0392B';
-  return '#888';
+  return '#888888';
 }
-function renderMap(){
+/* One emoji per ad type so the pin itself tells you what kind of site it
+   is at a glance, without opening it — colour (status) and icon (type)
+   are two independent signals layered on the same marker. */
+function smMapEmojiForCategory(category){
+  const c = String(category||'').toLowerCase();
+  if(c.includes('hoarding') || c.includes('billboard')) return '🏗️';
+  if(c.includes('wall')) return '🎨';
+  if(c.includes('poster')) return '📰';
+  if(c.includes('posm') || c.includes('retail')) return '🏪';
+  if(c.includes('bus') || c.includes('auto') || c.includes('toto')) return '🚌';
+  if(c.includes('metro')) return '🚇';
+  if(c.includes('train')) return '🚆';
+  return '📍';
+}
+/* Builds a small SVG pin as a data-URI — a coloured circle (status) with
+   the category emoji centred inside — so every marker carries both
+   signals without needing a legend lookup for each one. */
+function smMapIcon(category, status){
+  const color = smMapColorForStatus(status);
+  const emoji = smMapEmojiForCategory(category);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36"><circle cx="18" cy="18" r="15" fill="${color}" stroke="#fff" stroke-width="2.5"/><text x="18" y="24" font-size="16" text-anchor="middle">${emoji}</text></svg>`;
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(36, 36),
+    anchor: new google.maps.Point(18, 18)
+  };
+}
+async function renderMap(){
   if(MODULE !== 'betaverse') return;
   const sel = document.getElementById('mapCategoryFilter');
   if(sel.options.length <= 1){
@@ -1007,49 +1035,61 @@ function renderMap(){
   }
   const catFilter = sel.value;
   const rows = ALL_DATA.filter(r => r.preLat && r.preLng && (!catFilter || r.category===catFilter));
+  const container = document.getElementById('mapContainer');
+
+  try{
+    await loadGoogleMaps();
+  }catch(e){
+    container.innerHTML = `<div class="map-placeholder">Map failed to load — check the GOOGLE_MAPS_JS_KEY restrictions in Google Cloud Console.</div>`;
+    return;
+  }
+  if(!document.getElementById('mapContainer')) return; // navigated away while script loaded
 
   if(!SM_MAP){
-    SM_MAP = L.map('mapContainer');
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors', maxZoom: 19
-    }).addTo(SM_MAP);
+    SM_MAP = new google.maps.Map(container, {zoom:11, center:{lat:22.57, lng:88.36}, mapTypeControl:false, streetViewControl:false});
+    SM_MAP_INFOWINDOW = new google.maps.InfoWindow();
   }
-  // Leaflet needs a fresh size recalculation any time its container was
-  // hidden (display:none) while data changed — otherwise it renders into
-  // a collapsed 0×0 box the first time this tab is actually shown.
-  setTimeout(()=>SM_MAP.invalidateSize(), 50);
+  google.maps.event.trigger(SM_MAP, 'resize'); // same reasoning as before — container may have been display:none
 
-  SM_MAP_MARKERS.forEach(m=>SM_MAP.removeLayer(m));
+  SM_MAP_MARKERS.forEach(m=>m.setMap(null));
   SM_MAP_MARKERS = [];
 
   if(!rows.length){
-    SM_MAP.setView([22.57, 88.36], 11); // sensible default (Kolkata) when nothing to show yet
+    SM_MAP.setCenter({lat:22.57, lng:88.36}); SM_MAP.setZoom(11);
     return;
   }
 
+  const bounds = new google.maps.LatLngBounds();
   rows.forEach(r=>{
-    const color = smMapColorForStatus(r.status);
-    const marker = L.circleMarker([Number(r.preLat), Number(r.preLng)], {
-      radius: 9, fillColor: color, fillOpacity: 0.9, color: '#fff', weight: 2
-    }).addTo(SM_MAP);
-    const popupHtml = `
-      <div style="font-family:'IBM Plex Sans',sans-serif; min-width:200px;">
-        <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700;">${r.submissionId}</div>
-        <div style="font-size:14px; font-weight:700; margin-top:2px;">${r.category}</div>
-        <div style="font-size:11px; color:#666; margin:4px 0;">${r.preAddress||''}</div>
-        <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; color:#fff; background:${color};">${r.status}</div>
-        <div style="margin-top:8px; display:flex; gap:6px;">
-          ${(r.status==='Pending Approval'||r.status==='Pending Installation') && CAN_APPROVE() ? `<button onclick="smApproveSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #1B7A43; color:#1B7A43; background:#fff; cursor:pointer;">✓ Approve</button><button onclick="smRejectSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #C0392B; color:#C0392B; background:#fff; cursor:pointer;">✕ Reject</button>` : ''}
-          <button onclick="showTab('history'); document.getElementById('histSearch').value='${r.submissionId}'; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in History</button>
+    const pos = {lat:Number(r.preLat), lng:Number(r.preLng)};
+    const marker = new google.maps.Marker({
+      position: pos, map: SM_MAP, icon: smMapIcon(r.category, r.status),
+      title: `${r.submissionId} — ${r.category} — ${r.status}`
+    });
+    marker.addListener('click', ()=>{
+      const color = smMapColorForStatus(r.status);
+      SM_MAP_INFOWINDOW.setContent(`
+        <div style="font-family:'IBM Plex Sans',sans-serif; min-width:220px; max-width:260px;">
+          ${r.prePhotoUrl ? `<img src="${r.prePhotoUrl}" style="width:100%; height:120px; object-fit:cover; border-radius:6px; cursor:pointer; margin-bottom:8px;" onclick='smOpenBvLightbox(${JSON.stringify(r.prePhotoUrl)}, ${JSON.stringify(r.submissionId+" — "+r.category)})'>` : ''}
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700;">${r.submissionId}</div>
+          <div style="font-size:14px; font-weight:700; margin-top:2px;">${r.category}</div>
+          <div style="font-size:11px; color:#666; margin:4px 0;">${r.preAddress||''}</div>
+          <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; color:#fff; background:${color};">${r.status}</div>
+          <div style="font-size:12px; margin-top:6px;"><b>Cost:</b> ₹${(Number(r.status==='Verified'?r.postApprovedCost:r.preCost)||0).toLocaleString('en-IN')}${r.status==='Verified'?' (approved)':' (estimated)'}</div>
+          <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+            ${(r.status==='Pending Approval'||r.status==='Pending Installation') && CAN_APPROVE() ? `<button onclick="smApproveSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #1B7A43; color:#1B7A43; background:#fff; cursor:pointer;">✓ Approve</button><button onclick="smRejectSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #C0392B; color:#C0392B; background:#fff; cursor:pointer;">✕ Reject</button>` : ''}
+            <button onclick="showTab('history'); document.getElementById('histSearch').value='${r.submissionId}'; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in History</button>
+          </div>
         </div>
-      </div>
-    `;
-    marker.bindPopup(popupHtml);
+      `);
+      SM_MAP_INFOWINDOW.open(SM_MAP, marker);
+    });
+    bounds.extend(pos);
     SM_MAP_MARKERS.push(marker);
   });
-  const group = L.featureGroup(SM_MAP_MARKERS);
-  SM_MAP.fitBounds(group.getBounds().pad(0.2), {maxZoom: 15});
+  if(rows.length > 1) SM_MAP.fitBounds(bounds); else { SM_MAP.setCenter(bounds.getCenter()); SM_MAP.setZoom(15); }
 }
+
 
 /* Clickable analytics: every KPI card and every chart segment jumps
    straight to the History tab, pre-filtered to whatever it represents —
