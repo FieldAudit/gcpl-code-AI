@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.46.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.47.0</div></div>
   </div>
 </header>
 
@@ -2699,10 +2699,27 @@ function renderSmMainMenu(){
       <p>Re-visit an already-approved site to confirm the ad is STILL genuinely displayed — an independent, photo-verified spot-check.</p>
     </div>
     <div class="menu-choice" onclick="smStartMySubmissions()">
-      <h3>📋 My Submissions</h3>
+      <h3>📋 My Submissions <span id="smPendingVerifyBadge" style="display:none; background:var(--red); color:#fff; border-radius:10px; padding:1px 8px; font-size:11px; font-weight:700; margin-left:6px; vertical-align:middle;">0</span></h3>
       <p>Browse your own past site measurements — handy if you don't remember a Submission ID by heart.</p>
     </div>
   `;
+  smRefreshPendingVerifyBadge();
+}
+/* Notification-bell count for THIS auditor — how many of their own
+   submissions are now Approved and waiting on them specifically to go
+   confirm the installation. Silently does nothing if the fetch fails —
+   it's a helpful nudge, not something that should ever block the menu
+   from rendering. */
+function smRefreshPendingVerifyBadge(){
+  if(!smConfigured() || !CHECKIN_PHONE) return;
+  fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getMyPendingVerifications&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 8000)
+    .then(r=>r.json()).then(res=>{
+      const badge = document.getElementById('smPendingVerifyBadge');
+      if(!badge) return;
+      const count = res.count || 0;
+      badge.textContent = count;
+      badge.style.display = count > 0 ? 'inline-block' : 'none';
+    }).catch(()=>{});
 }
 
 /* ---- Running Status Check — the anti-fraud spot-check flow ---- */
@@ -3521,6 +3538,19 @@ async function smLookupSubmission(){
     const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getSubmission&id=${encodeURIComponent(id)}`, {}, 10000);
     const j = await r.json();
     if(!j.success) throw new Error(j.message||'Not found');
+    // Catch this BEFORE opening the whole verify form — better to tell the
+    // auditor upfront than let them fill in a photo + measurement only to
+    // have the final submit rejected by the same check on the backend.
+    if(j.submission.Status === 'Pending Approval'){
+      toast('This site is still waiting on Admin/Marketing approval — check back once it\'s approved.', true);
+      btn.disabled=false; btn.textContent='Find Submission';
+      return;
+    }
+    if(j.submission.Status === 'Rejected'){
+      toast('This site was rejected and cannot be verified.'+(j.submission.RejectionReason?(' Reason: '+j.submission.RejectionReason):''), true);
+      btn.disabled=false; btn.textContent='Find Submission';
+      return;
+    }
     SM_VERIFY = {submission:j.submission, geo:null, photoRaw:null, measurement:null};
     smRenderVerifyForm();
   }catch(e){
@@ -3658,16 +3688,33 @@ async function smRenderMySubmissions(){
     const j = await r.json();
     const subs = j.submissions || [];
     if(!subs.length){ listEl.innerHTML = `<p style="color:var(--slate); font-size:13px;">No submissions yet — your first "New Site Measurement" will show up here.</p>`; return; }
-    listEl.innerHTML = subs.map(s=>`
-      <div class="menu-choice" onclick="smJumpToVerify('${s.submissionId}')" style="border:1.5px solid var(--border-2); border-radius:14px; padding:14px; margin-bottom:12px; cursor:pointer; background:var(--card);">
+    // Sites approved and waiting on THIS auditor to go confirm installation
+    // are the most actionable thing here — surfaced first, with a clear
+    // banner, rather than buried in whatever order they happened to submit.
+    const readyToVerify = subs.filter(s=>s.status==='Approved - Pending Installation');
+    const rest = subs.filter(s=>s.status!=='Approved - Pending Installation');
+    const sorted = [...readyToVerify, ...rest];
+    const badgeFor = (status)=>{
+      if(status==='Pending Approval') return {bg:'#FFF4E5', fg:'var(--amber-dark)', label:'⏳ Pending Approval'};
+      if(status==='Approved - Pending Installation') return {bg:'#E7F0FF', fg:'#2255CC', label:'🔔 Go verify installation'};
+      if(status==='Rejected') return {bg:'var(--red-bg)', fg:'var(--red)', label:'✕ Rejected'};
+      if(status==='Verified') return {bg:'var(--green-bg)', fg:'var(--green)', label:'✅ Verified'};
+      return {bg:'#eee', fg:'#666', label:status||''};
+    };
+    const banner = readyToVerify.length ? `<div class="addr-note got" style="margin-bottom:12px; font-weight:700;">🔔 ${readyToVerify.length} site${readyToVerify.length===1?'':'s'} approved — go confirm installation to complete the audit.</div>` : '';
+    listEl.innerHTML = banner + sorted.map(s=>{
+      const b = badgeFor(s.status);
+      const clickable = s.status === 'Approved - Pending Installation' || s.status === 'Verified';
+      return `
+      <div class="menu-choice" ${clickable ? `onclick="smJumpToVerify('${s.submissionId}')"` : ''} style="border:1.5px solid ${s.status==='Approved - Pending Installation' ? '#2255CC' : 'var(--border-2)'}; border-radius:14px; padding:14px; margin-bottom:12px; cursor:${clickable?'pointer':'default'}; background:var(--card);">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <b style="font-family:'IBM Plex Mono',monospace; font-size:13px;">${s.submissionId}</b>
-          <span style="display:inline-block; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:700; text-transform:uppercase; background:${s.status==='Verified'?'var(--green-bg)':'#FFF4E5'}; color:${s.status==='Verified'?'var(--green)':'var(--amber-dark)'};">${s.status}</span>
+          <span style="display:inline-block; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:700; text-transform:uppercase; background:${b.bg}; color:${b.fg};">${b.label}</span>
         </div>
         <p style="margin:6px 0 0; font-size:13px; color:var(--slate);">${s.category} · ${s.area||'—'} sq ft · ₹${s.cost||0}</p>
         <p style="margin:2px 0 0; font-size:12px; color:var(--slate);">${s.address||''}${s.city?', '+s.city:''} · ${s.date||''}</p>
       </div>
-    `).join('');
+    `;}).join('');
   }catch(e){
     listEl.innerHTML = `<p style="color:var(--red); font-size:13px;">Could not load submissions — check your connection.</p>`;
   }
