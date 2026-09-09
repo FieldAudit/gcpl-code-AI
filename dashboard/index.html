@@ -16,6 +16,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root{
   /* "Ultimate" tech-gradient palette — matches survey app's default look */
@@ -339,7 +341,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.52.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.53.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -370,6 +372,7 @@ table.data tr:hover td{background:var(--paper-2);}
   <nav class="tabs">
     <button class="active" data-tab="dash" onclick="showTab('dash')">Dashboard</button>
     <button data-tab="approvals" id="approvalsTabBtn" onclick="showTab('approvals')" style="display:none;">🔔 Approvals</button>
+    <button data-tab="map" id="mapTabBtn" onclick="showTab('map')" style="display:none;">🗺️ Map</button>
     <button data-tab="history" onclick="showTab('history')">History</button>
     <button data-tab="photos" onclick="showTab('photos')">Photos</button>
     <button data-tab="master" id="masterTabBtn" onclick="showTab('master')" style="display:none;">Master Data</button>
@@ -402,6 +405,21 @@ table.data tr:hover td{background:var(--paper-2);}
         <h2 style="margin-bottom:4px;">Sites Waiting on Your Decision</h2>
         <p style="font-size:13px; color:var(--slate); margin-bottom:16px;">Only Admin and Marketing can approve or reject a proposed site — nothing here has been decided yet.</p>
         <div id="approvalsList"><div class="empty"><b>Loading…</b></div></div>
+      </div>
+    </section>
+
+    <section id="tab-map" style="display:none;">
+      <div class="card">
+        <div class="filters" style="margin-bottom:12px;">
+          <select id="mapCategoryFilter" onchange="renderMap()"><option value="">All ad types</option></select>
+          <span style="display:inline-flex; align-items:center; gap:16px; font-size:12px; color:var(--slate); margin-left:12px;">
+            <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#F5A623; margin-right:4px;"></span>Pending Approval</span>
+            <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#2255CC; margin-right:4px;"></span>Awaiting Install</span>
+            <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#1B7A43; margin-right:4px;"></span>Verified</span>
+            <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#C0392B; margin-right:4px;"></span>Rejected</span>
+          </span>
+        </div>
+        <div id="mapContainer" style="height:560px; border-radius:12px; overflow:hidden; border:1px solid var(--border-2);"></div>
       </div>
     </section>
 
@@ -791,7 +809,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.52.0';
+const FRONTEND_VERSION = 'v6.53.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -865,6 +883,7 @@ function switchModule(mod){
   document.querySelectorAll('#moduleToggle button').forEach(b=>b.classList.toggle('active', b.dataset.mod===mod));
   document.getElementById('betaverseApprovalToggle').style.display = mod==='betaverse' ? 'flex' : 'none';
   document.getElementById('approvalsTabBtn').style.display = (mod==='betaverse' && CAN_APPROVE()) ? 'inline-block' : 'none';
+  document.getElementById('mapTabBtn').style.display = (mod==='betaverse') ? 'inline-block' : 'none';
   APPROVAL_FILTER = '';
   document.getElementById('histCity').innerHTML = '<option value="">All cities</option>'; // rebuild filter options for the new dataset
   document.getElementById('histSearch').placeholder = mod==='db' ? 'Search distributor, city…' : mod==='betaverse' ? 'Search address, city, auditor…' : 'Search outlet, city, distributor…';
@@ -872,7 +891,7 @@ function switchModule(mod){
   loadData().then(()=>{
     const activeTab = document.querySelector('nav.tabs button.active');
     const name = activeTab ? activeTab.dataset.tab : 'dash';
-    if(name==='dash') renderDashboard(); else if(name==='approvals') renderApprovals(); else if(name==='history') renderHistory(); else if(name==='photos'){ loadPhotosData().then(renderPhotos); }
+    if(name==='dash') renderDashboard(); else if(name==='approvals') renderApprovals(); else if(name==='map') renderMap(); else if(name==='history') renderHistory(); else if(name==='photos'){ loadPhotosData().then(renderPhotos); }
   });
 }
 function switchApprovalFilter(val){
@@ -914,10 +933,11 @@ function switchSourceTab(tab){
 }
 
 function showTab(name){
-  ['dash','approvals','history','photos','master','team'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
+  ['dash','approvals','map','history','photos','master','team'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   if(name==='dash') renderDashboard();
   if(name==='approvals') renderApprovals();
+  if(name==='map') renderMap();
   if(name==='history') renderHistory();
   if(name==='photos') loadPhotosData().then(renderPhotos);
   if(name==='master') loadMasterData();
@@ -943,7 +963,7 @@ function renderApprovals(){
           <div style="font-size:16px; font-weight:700; margin-top:2px;">${r.category}</div>
           <div style="font-size:13px; color:var(--slate); margin-top:4px;">${r.preAddress||'—'}</div>
         </div>
-        ${r.prePhotoUrl ? `<img src="${r.prePhotoUrl}" style="width:90px; height:90px; object-fit:cover; border-radius:8px; flex-shrink:0;">` : ''}
+        ${r.prePhotoUrl ? `<img src="${r.prePhotoUrl}" style="width:90px; height:90px; object-fit:cover; border-radius:8px; flex-shrink:0; cursor:pointer;" onclick='smOpenBvLightbox(this.src, ${JSON.stringify(r.submissionId+" — "+r.category)})'>` : ''}
       </div>
       <div class="detail-list" style="margin-top:12px;">
         <div class="detail-row"><span class="detail-label">Submitted Area</span><span class="detail-val">${r.preWidth&&r.preHeight ? `${r.preWidth}×${r.preHeight} ft = `:''}${r.preArea} ${r.preAreaUnit||'sq ft'}</span></div>
@@ -959,6 +979,76 @@ function renderApprovals(){
       </div>
     </div>
   `).join('');
+}
+
+/* ============================================================
+   MAP TAB — every Ad Manager site plotted by its own lat/long, colour-
+   coded by status, filterable by ad category. A vendor's claim that an
+   ad is "somewhere in that area" is never enough to judge coverage —
+   seeing the actual spread of pending vs approved vs verified sites on
+   a real map is what makes a coverage gap or a cluster of stalled
+   approvals visible at a glance, not buried in a table.
+   ============================================================ */
+let SM_MAP = null; // the Leaflet map instance, created once and reused
+let SM_MAP_MARKERS = [];
+function smMapColorForStatus(status){
+  if(status==='Pending Approval' || status==='Pending Installation') return '#F5A623';
+  if(status==='Approved - Pending Installation') return '#2255CC';
+  if(status==='Verified') return '#1B7A43';
+  if(status==='Rejected') return '#C0392B';
+  return '#888';
+}
+function renderMap(){
+  if(MODULE !== 'betaverse') return;
+  const sel = document.getElementById('mapCategoryFilter');
+  if(sel.options.length <= 1){
+    const cats = [...new Set(ALL_DATA.map(r=>r.category).filter(Boolean))];
+    cats.forEach(c=>{ const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+  }
+  const catFilter = sel.value;
+  const rows = ALL_DATA.filter(r => r.preLat && r.preLng && (!catFilter || r.category===catFilter));
+
+  if(!SM_MAP){
+    SM_MAP = L.map('mapContainer');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors', maxZoom: 19
+    }).addTo(SM_MAP);
+  }
+  // Leaflet needs a fresh size recalculation any time its container was
+  // hidden (display:none) while data changed — otherwise it renders into
+  // a collapsed 0×0 box the first time this tab is actually shown.
+  setTimeout(()=>SM_MAP.invalidateSize(), 50);
+
+  SM_MAP_MARKERS.forEach(m=>SM_MAP.removeLayer(m));
+  SM_MAP_MARKERS = [];
+
+  if(!rows.length){
+    SM_MAP.setView([22.57, 88.36], 11); // sensible default (Kolkata) when nothing to show yet
+    return;
+  }
+
+  rows.forEach(r=>{
+    const color = smMapColorForStatus(r.status);
+    const marker = L.circleMarker([Number(r.preLat), Number(r.preLng)], {
+      radius: 9, fillColor: color, fillOpacity: 0.9, color: '#fff', weight: 2
+    }).addTo(SM_MAP);
+    const popupHtml = `
+      <div style="font-family:'IBM Plex Sans',sans-serif; min-width:200px;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700;">${r.submissionId}</div>
+        <div style="font-size:14px; font-weight:700; margin-top:2px;">${r.category}</div>
+        <div style="font-size:11px; color:#666; margin:4px 0;">${r.preAddress||''}</div>
+        <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; color:#fff; background:${color};">${r.status}</div>
+        <div style="margin-top:8px; display:flex; gap:6px;">
+          ${(r.status==='Pending Approval'||r.status==='Pending Installation') && CAN_APPROVE() ? `<button onclick="smApproveSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #1B7A43; color:#1B7A43; background:#fff; cursor:pointer;">✓ Approve</button><button onclick="smRejectSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #C0392B; color:#C0392B; background:#fff; cursor:pointer;">✕ Reject</button>` : ''}
+          <button onclick="showTab('history'); document.getElementById('histSearch').value='${r.submissionId}'; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in History</button>
+        </div>
+      </div>
+    `;
+    marker.bindPopup(popupHtml);
+    SM_MAP_MARKERS.push(marker);
+  });
+  const group = L.featureGroup(SM_MAP_MARKERS);
+  SM_MAP.fitBounds(group.getBounds().pad(0.2), {maxZoom: 15});
 }
 
 /* Clickable analytics: every KPI card and every chart segment jumps
@@ -1777,7 +1867,7 @@ async function smApproveSubmission(submissionId){
     const res = await r.json();
     if(!res.success) throw new Error(res.message||'Could not approve');
     toast(`${submissionId} approved ✅`);
-    await loadData(); renderApprovals(); renderBetaverseHistory(); renderBetaverseDashboard(); refreshPendingApprovalBadge();
+    await loadData(); renderApprovals(); renderBetaverseHistory(); renderBetaverseDashboard(); refreshPendingApprovalBadge(); if(SM_MAP) renderMap();
   }catch(e){ toast(e.message||'Could not approve', true); }
 }
 async function smRejectSubmission(submissionId){
@@ -1788,7 +1878,7 @@ async function smRejectSubmission(submissionId){
     const res = await r.json();
     if(!res.success) throw new Error(res.message||'Could not reject');
     toast(`${submissionId} rejected`);
-    await loadData(); renderApprovals(); renderBetaverseHistory(); renderBetaverseDashboard(); refreshPendingApprovalBadge();
+    await loadData(); renderApprovals(); renderBetaverseHistory(); renderBetaverseDashboard(); refreshPendingApprovalBadge(); if(SM_MAP) renderMap();
   }catch(e){ toast(e.message||'Could not reject', true); }
 }
 function renderBetaverseHistory(){
