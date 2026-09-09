@@ -339,7 +339,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.50.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.51.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -782,7 +782,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.50.0';
+const FRONTEND_VERSION = 'v6.51.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1428,7 +1428,12 @@ function renderDashboard(){
 }
 function betaverseFilteredData(){
   if(!APPROVAL_FILTER) return ALL_DATA;
-  if(APPROVAL_FILTER==='pending') return ALL_DATA.filter(r=>r.status==='Pending Approval');
+  // "Pending Installation" is the OLD status string from before the
+  // approval workflow existed — submissions made before that update
+  // still carry it in the sheet, and treating it as equivalent to
+  // "Pending Approval" here means they still show up under a filter
+  // instead of silently vanishing from every tab except "All".
+  if(APPROVAL_FILTER==='pending') return ALL_DATA.filter(r=>r.status==='Pending Approval' || r.status==='Pending Installation');
   if(APPROVAL_FILTER==='waitinstall') return ALL_DATA.filter(r=>r.status==='Approved - Pending Installation');
   if(APPROVAL_FILTER==='verified') return ALL_DATA.filter(r=>r.status==='Verified');
   if(APPROVAL_FILTER==='rejected') return ALL_DATA.filter(r=>r.status==='Rejected');
@@ -1711,7 +1716,10 @@ function renderHistory(){
    Admin/Marketing decision), Approved (waiting on the field team to go
    confirm installation), Rejected, or fully Verified. */
 function smStatusBadge(status){
-  if(status === 'Pending Approval') return `<span class="tag" style="background:#FFF4E5; color:var(--amber-dark,#C97F0E);">⏳ Pending Approval</span>`;
+  // "Pending Installation" is the OLD pre-approval-workflow status string
+  // — treated the same as "Pending Approval" here so old submissions get
+  // a proper badge instead of falling through to the generic fallback.
+  if(status === 'Pending Approval' || status === 'Pending Installation') return `<span class="tag" style="background:#FFF4E5; color:var(--amber-dark,#C97F0E);">⏳ Pending Approval</span>`;
   if(status === 'Approved - Pending Installation') return `<span class="tag" style="background:#E7F0FF; color:#2255CC;">🔔 Approved — awaiting install</span>`;
   if(status === 'Rejected') return `<span class="tag" style="background:var(--red-bg); color:var(--red);">✕ Rejected</span>`;
   if(status === 'Verified') return `<span class="tag tag-yes">✅ Verified</span>`;
@@ -1750,7 +1758,7 @@ function renderBetaverseHistory(){
   if(!rows.length){ tbody.innerHTML = `<tr><td colspan="${showActions?16:15}"><div class="empty">No matching submissions.</div></td></tr>`; return; }
   tbody.innerHTML = rows.map(r=>{
     const isVerified = r.status==='Verified';
-    const isPending = r.status==='Pending Approval';
+    const isPending = r.status==='Pending Approval' || r.status==='Pending Installation';
     const costDiff = isVerified ? ((Number(r.postApprovedCost)||0) - (Number(r.preCost)||0)) : null;
     const isManual = String(r.preMeasureMethod||'').includes('Manual');
     return `<tr${isManual ? ' style="background:var(--red-bg);"' : (isPending ? ' style="background:#FFFBF0;"' : '')}>
