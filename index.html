@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.48.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.51.0</div></div>
   </div>
 </header>
 
@@ -1054,7 +1054,7 @@ function lookupDBMaster(dbCode){
     cityEl.readOnly = true; cityEl.value=''; cityEl.placeholder='Looking up…';
     try{
       if(!configured()) throw new Error('__NOCFG__');
-      const r = await fetchWithTimeout(`${SCRIPT_URL}?action=lookupDB&dbCode=${encodeURIComponent(dbCode)}`, {}, 8000);
+      const r = await fetchWithTimeout(`${SCRIPT_URL}?action=lookupDB&dbCode=${encodeURIComponent(dbCode)}`, {}, 18000);
       const j = await r.json();
       if(j.success){
         nameEl.value = j.dbName || '';
@@ -1290,7 +1290,14 @@ async function lookupCheckinPhone(phone, prefix){
   statusEl.className='addr-note'; statusEl.textContent='Checking master list…';
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=lookupSO&phone=${encodeURIComponent(phone)}`, {}, 8000);
+    // 18s, not 8s — this is often the FIRST network call in a field
+    // session, on whatever mobile signal happens to be available right
+    // then. An 8s budget was failing on genuinely working connections
+    // just because round-trip latency alone (not backend processing) ate
+    // into it on weaker mobile data — this gives real weak-signal
+    // conditions a fair chance to still complete instead of erroring out
+    // on latency alone.
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=lookupSO&phone=${encodeURIComponent(phone)}`, {}, 18000);
     const j = await r.json();
     if(j.success && j.name){
       CHECKIN_PHONE = phone; CHECKIN_NAME = j.name;
@@ -1346,7 +1353,7 @@ async function startIdentityScan(prefix){
   if(saved && saved.phone && saved.name && configured()){
     try{
       const today = localDateStr();
-      const r = await fetchWithTimeout(`${SCRIPT_URL}?action=checkinStatus&phone=${encodeURIComponent(saved.phone)}&date=${today}`, {}, 8000);
+      const r = await fetchWithTimeout(`${SCRIPT_URL}?action=checkinStatus&phone=${encodeURIComponent(saved.phone)}&date=${today}`, {}, 18000);
       const j = await r.json();
       if(j.checkedIn){
         CHECKIN_PHONE = saved.phone; CHECKIN_NAME = saved.name;
@@ -1356,7 +1363,7 @@ async function startIdentityScan(prefix){
         // path) — same reasoning as the fresh check-in flow: fetch once
         // while network is already being used for checkinStatus, not
         // again on every single audit submit later in the day.
-        fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(saved.phone)}`, {}, 8000)
+        fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(saved.phone)}`, {}, 18000)
           .then(r=>r.json()).then(cj=>{ if(cj.enrolled && cj.credentialIds && cj.credentialIds.length) CHECKIN_CREDENTIAL_IDS = cj.credentialIds; })
           .catch(()=>{});
         return;
@@ -1404,12 +1411,12 @@ async function checkTodayCheckin(prefix){
   document.getElementById(ids.content).insertAdjacentHTML('beforeend', '');
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=checkinStatus&phone=${encodeURIComponent(CHECKIN_PHONE)}&date=${today}`, {}, 8000);
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=checkinStatus&phone=${encodeURIComponent(CHECKIN_PHONE)}&date=${today}`, {}, 18000);
     const j = await r.json();
     if(j.checkedIn){
       CHECKIN_DONE = true; CHECKIN_TIME = j.time;
       renderCheckinDoneAll();
-      fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 8000)
+      fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 18000)
         .then(r2=>r2.json()).then(cj=>{ if(cj.enrolled && cj.credentialIds && cj.credentialIds.length) CHECKIN_CREDENTIAL_IDS = cj.credentialIds; })
         .catch(()=>{});
     } else {
@@ -1555,7 +1562,7 @@ async function doSubmitCheckin(prefix){
   let wasNewEnrollment = false;
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    const credRes = await fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 8000);
+    const credRes = await fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 18000);
     const credJson = await credRes.json();
     if(credJson.enrolled && credJson.credentialIds && credJson.credentialIds.length){
       bioResult = await verifyBiometricDevice(credJson.credentialIds);
@@ -2269,7 +2276,7 @@ async function rahJ91ZuNL8Y2px8iYciYeHN8sfSh5eXH8(){
       // Cache miss (e.g. page was reloaded without re-running check-in
       // detection) — fall back to fetching, but this is now the
       // exception, not something every single submit pays for.
-      const credRes = await fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 8000);
+      const credRes = await fetchWithTimeout(`${SCRIPT_URL}?action=getBiometricCredentials&phone=${encodeURIComponent(CHECKIN_PHONE)}`, {}, 18000);
       const credJson = await credRes.json();
       if(!credJson.enrolled || !credJson.credentialIds || !credJson.credentialIds.length){
         toast('No fingerprint/Face unlock enrolled for this phone yet — complete check-in first', true);
@@ -2692,7 +2699,7 @@ function renderSmMainMenu(){
     </div>
     <div class="menu-choice" onclick="smStartVerify()">
       <h3>✅ Verify Installation</h3>
-      <p>After the ad has been put up, confirm how much of the submitted site actually got the ad and the approved cost — linked to an existing Submission ID.</p>
+      <p>After the ad has been put up, confirm how much of the submitted site actually got the ad — linked to an existing Submission ID.</p>
     </div>
     <div class="menu-choice" onclick="smStartStatusCheck()">
       <h3>🔄 Check Running Status</h3>
@@ -2728,39 +2735,70 @@ function smStartStatusCheck(){
   if(!smRequireCheckin()) return;
   document.getElementById('smWrap').innerHTML = `
     <div class="card">
-      <h2>Find a Submission to Check</h2>
-      <p style="font-size:12px; color:var(--slate); margin-top:6px;">Any auditor can spot-check any approved site — not just whoever installed it.</p>
-      <div class="field"><label>Submission ID <span class="req-mark">*</span></label><input type="text" id="smStatusIdInput" placeholder="e.g. BV260903-065612"></div>
-      <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="smLookupForStatusCheck()" id="smStatusLookupBtn">Find Submission</button>
+      <h2>Find a Site to Check</h2>
+      <p style="font-size:12px; color:var(--slate); margin-top:6px;">Any auditor can spot-check any approved site — not just whoever installed it. Search across everything the app has measured AND every site uploaded in bulk.</p>
+      <div class="field"><label>Search — Ad ID, Submission ID, location…</label><input type="text" id="smAdSearchInput" placeholder="Start typing…" oninput="smSearchAdsDebounced()"></div>
+      <div class="field"><label>Filter by Ad Type</label><select id="smAdSearchType" onchange="smSearchAllAds()"><option value="">All types</option>${SM_CATEGORY_LIST.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div>
+      <div id="smAdSearchResults" style="margin-top:12px;"></div>
     </div>
     <button class="btn btn-outline btn-block" onclick="renderSmMainMenu()">← Back to Ad Manager menu</button>
   `;
+  smSearchAllAds();
 }
-async function smLookupForStatusCheck(){
-  const id = document.getElementById('smStatusIdInput').value.trim();
-  if(!id){ toast('Enter a submission ID', true); return; }
-  const btn = document.getElementById('smStatusLookupBtn');
-  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Searching…';
+let SM_AD_SEARCH_TIMER = null;
+function smSearchAdsDebounced(){
+  clearTimeout(SM_AD_SEARCH_TIMER);
+  SM_AD_SEARCH_TIMER = setTimeout(smSearchAllAds, 300);
+}
+async function smSearchAllAds(){
+  const resultsEl = document.getElementById('smAdSearchResults');
+  const q = document.getElementById('smAdSearchInput').value.trim();
+  const adType = document.getElementById('smAdSearchType').value;
+  resultsEl.innerHTML = `<p style="font-size:12px; color:var(--slate);"><span class="spin"></span> Searching…</p>`;
   try{
     if(!smConfigured()) throw new Error('__NOCFG__');
-    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getSubmission&id=${encodeURIComponent(id)}`, {}, 10000);
+    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=searchAllAds&q=${encodeURIComponent(q)}&adType=${encodeURIComponent(adType)}`, {}, 15000);
+    const j = await r.json();
+    const results = j.results || [];
+    if(!results.length){ resultsEl.innerHTML = `<p style="font-size:12px; color:var(--slate);">No matching sites found — try a different search.</p>`; return; }
+    resultsEl.innerHTML = results.map(res=>`
+      <div class="menu-choice" onclick="smLookupForStatusCheckById(${JSON.stringify(res.id)})" style="border:1.5px solid var(--border-2); border-radius:12px; padding:12px; margin-bottom:8px; cursor:pointer; background:var(--card);">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <b style="font-family:'IBM Plex Mono',monospace; font-size:12px;">${res.id}</b>
+          <span style="font-size:10px; font-weight:700; text-transform:uppercase; padding:3px 8px; border-radius:10px; background:${res.source==='Uploaded list'?'#E7F0FF':'#FFF4E5'}; color:${res.source==='Uploaded list'?'#2255CC':'var(--amber-dark)'};">${res.source}</span>
+        </div>
+        <p style="margin:4px 0 0; font-size:12px; color:var(--slate);">${res.adType} · ${res.location||'—'}</p>
+      </div>
+    `).join('');
+  }catch(e){
+    resultsEl.innerHTML = `<p style="font-size:12px; color:var(--red);">Could not search — check your connection.</p>`;
+  }
+}
+function smLookupForStatusCheckById(id){
+  smLookupForStatusCheck(id);
+}
+async function smLookupForStatusCheck(idOverride){
+  const id = idOverride || '';
+  if(!id){ toast('Select a site from the search results first', true); return; }
+  document.getElementById('smAdSearchResults').innerHTML = `<p style="font-size:12px; color:var(--slate);"><span class="spin"></span> Loading…</p>`;
+  try{
+    if(!smConfigured()) throw new Error('__NOCFG__');
+    // getAdJourney works identically for BOTH an app-native Submission ID
+    // and a bulk-uploaded Ad ID — one lookup covers both sources, so this
+    // search-driven flow never needs to know or care which kind of ID was
+    // actually clicked.
+    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAdJourney&id=${encodeURIComponent(id)}`, {}, 15000);
     const j = await r.json();
     if(!j.success) throw new Error(j.message||'Not found');
-    // Fetched separately from the main lookup above — a failure here
-    // (e.g. an older deployed backend without this action yet) should
-    // never block showing the submission that WAS found successfully;
-    // it just means the history list shows as empty instead.
-    let history = [];
-    try{
-      const histR = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getStatusCheckHistory&id=${encodeURIComponent(id)}`, {}, 10000);
-      const histJ = await histR.json();
-      history = histJ.checks || [];
-    }catch(_histErr){ history = []; }
-    SM_STATUS_CHECK = {submission:j.submission, history, geo:null, photoRaw:null};
+    if(j.source === 'Unknown'){ toast('Could not find that site — it may have been removed.', true); smSearchAllAds(); return; }
+    SM_STATUS_CHECK = {
+      submission: {SubmissionID:j.id, Category:j.adType, PreAddress:j.location, Status:j.source},
+      history: j.checks || [], geo:null, photoRaw:null
+    };
     smRenderStatusCheckForm();
   }catch(e){
-    toast(e.message||'Could not find that submission', true);
-    btn.disabled=false; btn.textContent='Find Submission';
+    toast(e.message||'Could not find that site', true);
+    smSearchAllAds();
   }
 }
 function smRenderStatusCheckForm(){
@@ -2859,6 +2897,10 @@ async function smSubmitStatusCheck(){
 }
 
 /* ---- Measurement tool: reference-object calibration + manual fallback ---- */
+// Canonical ad-category list — shared between "New Site Measurement"'s
+// category picker and "Check Running Status"'s search filter, so the two
+// can never silently drift apart into two different category sets.
+const SM_CATEGORY_LIST = ['Billboard / Hoarding','Wall Painting','Poster','POSM','Bus Ad','Auto Ad','Toto Ad','Metro Ad','Train Ad'];
 const SM_REFERENCE_OBJECTS = [
   {label:'A4 sheet — long edge (29.7 cm)', cm:29.7},
   {label:'A4 sheet — short edge (21 cm)', cm:21},
@@ -3211,8 +3253,8 @@ function smStartPreAudit(){
   if(!smRequireCheckin()) return;
   SM_PRE = {category:'', geo:null, photoRaw:null, measurement:null};
   const wrap = document.getElementById('smWrap');
-  const categories = ['Billboard / Hoarding','Wall Painting','Hand-painted / Localized Wall Ad','Bus Ad','Metro Ad','Train Ad','POSM Audit'];
-  const catIcon = c => c.includes('Billboard')?'🛑':c.includes('Painting')?'🎨':c.includes('Hand-painted')?'🏚️':c.includes('Bus')?'🚌':c.includes('Metro')?'🚇':c.includes('Train')?'🚆':'🏷️';
+  const categories = SM_CATEGORY_LIST;
+  const catIcon = c => c.includes('Billboard')?'🛑':c.includes('Wall')?'🎨':c.includes('Poster')?'📰':c.includes('POSM')?'🏪':c.includes('Bus')?'🚌':c.includes('Auto')?'🛺':c.includes('Toto')?'🛺':c.includes('Metro')?'🚇':c.includes('Train')?'🚆':'🏷️';
   wrap.innerHTML = `
     <div class="card">
       <h2>1. Site Category <span class="req-mark">*</span></h2>
@@ -3229,6 +3271,7 @@ function smStartPreAudit(){
       <div class="field"><label>Address</label><textarea id="sm_pre_address" rows="2" placeholder="Auto-filled, edit if needed"></textarea></div>
       <div class="field"><label>City</label><input type="text" id="sm_pre_city"></div>
     </div>
+    <div class="card locked-until-address" id="smPreCategoryFieldsCard" style="display:none;"></div>
     <div class="card locked-until-address" id="smPrePhotoCard">
       <h2>3. Site Photo &amp; Measurement <span class="req-mark">*</span></h2>
       <p style="font-size:12px; color:var(--slate); margin:12px 0 10px;">Capture a clear photo of the site — you'll measure it with a tape measure next (recommended), with a photo-based estimate as backup if no tape is available.</p>
@@ -3237,19 +3280,61 @@ function smStartPreAudit(){
       <div id="smPreMeasureArea"></div>
     </div>
     <div class="card locked-until-address" id="smPreCostCard">
-      <h2>4. Cost &amp; Auditor</h2>
+      <h2>4. Auditor</h2>
       <div class="field"><label>Auditor Name</label><input type="text" id="sm_pre_auditor" value="${CHECKIN_NAME||''}"></div>
-      <div class="field"><label>Cost (₹)</label><input type="number" id="sm_pre_cost" step="0.01"></div>
     </div>
     <button class="btn btn-primary btn-block" onclick="smSubmitPreAudit()" id="smPreSubmitBtn">Submit Site Measurement</button>
     <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="renderSmMainMenu()">← Back to Ad Manager menu</button>
   `;
 }
+/* Which extra, category-specific fields this site needs — kept as one
+   lookup so the form-building and the submit-payload code can't drift
+   out of sync with each other about which category needs what. */
+function smCategoryFieldSet(cat){
+  if(cat==='Bus Ad' || cat==='Auto Ad' || cat==='Toto Ad') return 'vehicle';
+  if(cat==='Metro Ad' || cat==='Train Ad') return 'route';
+  if(cat==='POSM') return 'posm';
+  if(cat==='Wall Painting') return 'landmark';
+  return 'none';
+}
+function smRenderCategoryFields(cat){
+  const card = document.getElementById('smPreCategoryFieldsCard');
+  const kind = smCategoryFieldSet(cat);
+  if(kind==='none'){ card.style.display='none'; card.innerHTML=''; return; }
+  card.style.display='block';
+  if(kind==='vehicle'){
+    card.innerHTML = `
+      <h2>Vehicle &amp; Route <span class="req-mark">*</span></h2>
+      <div class="field"><label>Vehicle Number</label><input type="text" id="sm_pre_vehicle" placeholder="e.g. WB 11A 9606"></div>
+      <div class="field"><label>Route — From</label><input type="text" id="sm_pre_route_from" placeholder="e.g. Howrah Maidan"></div>
+      <div class="field"><label>Route — To</label><input type="text" id="sm_pre_route_to" placeholder="e.g. Kona Highway"></div>
+    `;
+  } else if(kind==='route'){
+    card.innerHTML = `
+      <h2>Route <span class="req-mark">*</span></h2>
+      <div class="field"><label>Route — From</label><input type="text" id="sm_pre_route_from" placeholder="e.g. Howrah"></div>
+      <div class="field"><label>Route — To</label><input type="text" id="sm_pre_route_to" placeholder="e.g. Bandel"></div>
+    `;
+  } else if(kind==='posm'){
+    card.innerHTML = `
+      <h2>Outlet Details <span class="req-mark">*</span></h2>
+      <div class="field"><label>Outlet / Business Name</label><input type="text" id="sm_pre_outlet"></div>
+      <div class="field"><label>Owner Name</label><input type="text" id="sm_pre_owner"></div>
+      <div class="field"><label>Owner Phone</label><input type="tel" id="sm_pre_owner_phone"></div>
+    `;
+  } else if(kind==='landmark'){
+    card.innerHTML = `
+      <h2>Landmark</h2>
+      <div class="field"><label>Nearby Landmark</label><input type="text" id="sm_pre_landmark" placeholder="e.g. Near Innoraft office"></div>
+    `;
+  }
+}
 function smSelectCategory(cat, el){
   SM_PRE.category = cat;
   document.querySelectorAll('#smCategoryGrid > div').forEach(c=>{ c.style.borderColor='var(--border-2)'; c.style.background='var(--card)'; });
   el.style.borderColor='var(--amber)'; el.style.background='var(--paper-2)';
-  const needsMeasurement = cat==='Billboard / Hoarding' || cat==='Wall Painting' || cat==='Hand-painted / Localized Wall Ad';
+  smRenderCategoryFields(cat);
+  const needsMeasurement = cat==='Billboard / Hoarding' || cat==='Wall Painting';
   const photoCard = document.getElementById('smPrePhotoCard');
   if(needsMeasurement){
     photoCard.innerHTML = `
@@ -3259,6 +3344,8 @@ function smSelectCategory(cat, el){
       <p style="font-size:11px; color:var(--slate); margin:14px 0 6px; text-align:center;">For a wall painting or POSM you CAN physically reach:</p>
       <button class="btn btn-outline btn-block" onclick="document.getElementById('smA4PhotoInput').click()" style="opacity:.85;">📄 Measure using an A4 sheet against the wall</button>
       <input type="file" id="smA4PhotoInput" accept="image/*" capture="environment" style="display:none" onchange="smOnPreSitePhoto(event)">
+      <p style="font-size:11px; color:var(--slate); margin:14px 0 6px; text-align:center;">Already know the size?</p>
+      <button class="btn btn-outline btn-block" onclick="smStartManualWH()">✏️ Enter Width &amp; Height Manually</button>
       <div id="smARFallbackNote" style="display:none;"></div>
       <div id="smPreMeasureArea"></div>
       <div id="smPrePhotoSection" style="display:none; margin-top:16px; padding-top:16px; border-top:1.5px dashed var(--border-2);">
@@ -3269,10 +3356,11 @@ function smSelectCategory(cat, el){
       </div>
     `;
   } else {
-    // Bus/Metro/Train/POSM: the point is confirming the ad is genuinely
-    // up and visible, not re-measuring a standard-size panel — so this
-    // skips the area-measurement tool and just needs a clear photo, since
-    // a timestamped, GPS-tagged photo IS the evidence that matters here.
+    // Bus/Auto/Toto/Metro/Train/POSM/Poster: the point is confirming the
+    // ad is genuinely up and visible, not re-measuring a standard-size
+    // panel — so this skips the area-measurement tool and just needs a
+    // clear photo, since a timestamped, GPS-tagged photo IS the evidence
+    // that matters here.
     photoCard.innerHTML = `
       <h2>3. Site Photo — Proof of Display <span class="req-mark">*</span></h2>
       <p style="font-size:12px; color:var(--slate); margin:12px 0 10px;">Photograph the ad clearly and visibly displayed, with enough surroundings that the location is obviously recognisable.</p>
@@ -3283,6 +3371,33 @@ function smSelectCategory(cat, el){
     `;
     SM_PRE.measurement = {area:'', method:'Presence-only (no area measurement needed for this category)', width:'', height:''};
   }
+}
+/* Simplest possible measurement path — the person already knows the
+   size (a standard hoarding size, a vendor spec sheet, whatever) and just
+   wants to type it in, no tool, no photo-tapping. Still requires a plain
+   evidence photo afterwards, same as every other method. */
+function smStartManualWH(){
+  document.getElementById('smPreMeasureArea').innerHTML = `
+    <div class="card" style="margin-top:14px;">
+      <div class="field"><label>Width (feet) <span class="req-mark">*</span></label><input type="number" id="smManualWHWidth" step="0.1" oninput="smUpdateManualWHArea()"></div>
+      <div class="field"><label>Height (feet) <span class="req-mark">*</span></label><input type="number" id="smManualWHHeight" step="0.1" oninput="smUpdateManualWHArea()"></div>
+      <div class="addr-note" id="smManualWHArea" style="font-size:15px; font-weight:700;">0 sq ft</div>
+      <button class="btn btn-dark btn-block" style="margin-top:10px;" onclick="smConfirmManualWH()">Use this measurement</button>
+    </div>
+  `;
+}
+function smUpdateManualWHArea(){
+  const w = Number(document.getElementById('smManualWHWidth').value)||0;
+  const h = Number(document.getElementById('smManualWHHeight').value)||0;
+  document.getElementById('smManualWHArea').textContent = (w*h).toFixed(1) + ' sq ft';
+}
+function smConfirmManualWH(){
+  const w = Number(document.getElementById('smManualWHWidth').value)||0;
+  const h = Number(document.getElementById('smManualWHHeight').value)||0;
+  if(!w || !h){ toast('Enter both width and height', true); return; }
+  SM_PRE.measurement = {area:(w*h).toFixed(1), method:'Manual width/height entry (typed directly)', width:w, height:h};
+  document.getElementById('smPreMeasureArea').innerHTML = `<div class="addr-note got" style="font-size:15px; font-weight:700; margin-top:10px;">✅ ${SM_PRE.measurement.area} sq ft locked in (manual entry)</div>`;
+  document.getElementById('smPrePhotoSection').style.display = 'block';
 }
 function smCapturePreLocation(){
   if(!navigator.geolocation){ toast('Geolocation not supported', true); return; }
@@ -3295,6 +3410,7 @@ function smCapturePreLocation(){
     document.getElementById('smPreGeoStatus').textContent = `✅ ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     document.getElementById('smPrePhotoCard').classList.remove('locked-until-address');
     document.getElementById('smPreCostCard').classList.remove('locked-until-address');
+    document.getElementById('smPreCategoryFieldsCard').classList.remove('locked-until-address');
     setBtnIdle(btn, '📍 Re-capture Location');
     const base = await getBaseAddress(lat, lng);
     if(base.formatted) document.getElementById('sm_pre_address').value = base.formatted;
@@ -3489,7 +3605,14 @@ async function smSubmitPreAudit(){
     lat:SM_PRE.geo.lat, lng:SM_PRE.geo.lng, mapsLink:SM_PRE.geo.link,
     area:SM_PRE.measurement.area, areaUnit:'sq ft', measureMethod:SM_PRE.measurement.method,
     width: SM_PRE.measurement.width || '', height: SM_PRE.measurement.height || '',
-    cost: document.getElementById('sm_pre_cost').value, photo: stamped, refPhoto: stampedRef
+    photo: stamped, refPhoto: stampedRef,
+    vehicleNumber: (document.getElementById('sm_pre_vehicle')||{}).value || '',
+    routeFrom: (document.getElementById('sm_pre_route_from')||{}).value || '',
+    routeTo: (document.getElementById('sm_pre_route_to')||{}).value || '',
+    outletName: (document.getElementById('sm_pre_outlet')||{}).value || '',
+    ownerName: (document.getElementById('sm_pre_owner')||{}).value || '',
+    ownerPhone: (document.getElementById('sm_pre_owner_phone')||{}).value || '',
+    landmark: (document.getElementById('sm_pre_landmark')||{}).value || ''
   };
   try{
     if(!smConfigured()) throw new Error('__NOCFG__');
@@ -3568,13 +3691,12 @@ function smRenderVerifyForm(){
       <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--border-2); font-size:13px;"><span style="color:var(--slate);">Category</span><span style="font-weight:600;">${s.Category}</span></div>
       <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--border-2); font-size:13px;"><span style="color:var(--slate);">Address</span><span style="font-weight:600;">${s.PreAddress||'—'}</span></div>
       <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--border-2); font-size:13px;"><span style="color:var(--slate);">Submitted Area</span><span style="font-weight:600;">${s.PreArea} ${s.PreAreaUnit}</span></div>
-      <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span style="color:var(--slate);">Submitted Cost</span><span style="font-weight:600;">₹${s.PreCost}</span></div>
+      <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span style="color:var(--slate);">Measurement Method</span><span style="font-weight:600;">${s.PreMeasureMethod||'—'}</span></div>
     </div>
     ${alreadyVerified ? `
       <div class="card">
         <h2>Already Verified</h2>
         <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span style="color:var(--slate);">Approved Area</span><span style="font-weight:600;">${s.PostArea} sq ft</span></div>
-        <div class="detail-row" style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span style="color:var(--slate);">Approved Cost</span><span style="font-weight:600;">₹${s.PostApprovedCost}</span></div>
       </div>
       <button class="btn btn-outline btn-block" onclick="renderSmMainMenu()">← Back to menu</button>
     ` : `
@@ -3606,7 +3728,6 @@ function smRenderVerifyForm(){
             <option>Other (see remarks)</option>
           </select>
         </div>
-        <div class="field"><label>Approved Cost (₹)</label><input type="number" id="sm_verify_cost" step="0.01"></div>
         <div class="field"><label>Remarks</label><textarea id="sm_verify_remarks" rows="2" placeholder="Optional notes"></textarea></div>
       </div>
       <button class="btn btn-primary btn-block" onclick="smSubmitVerification()" id="smVerifySubmitBtn">Submit Verification</button>
@@ -3658,7 +3779,7 @@ async function smSubmitVerification(){
     auditorName: document.getElementById('sm_verify_auditor').value, phone: CHECKIN_PHONE,
     lat:SM_VERIFY.geo.lat, lng:SM_VERIFY.geo.lng, mapsLink:SM_VERIFY.geo.link,
     area:SM_VERIFY.measurement.area, width: SM_VERIFY.measurement.width || '', height: SM_VERIFY.measurement.height || '',
-    approvedCost: document.getElementById('sm_verify_cost').value,
+    approvedCost: '',
     condition, remarks: document.getElementById('sm_verify_remarks').value, photo: stamped, refPhoto: stampedRef
   };
   try{
@@ -3711,7 +3832,7 @@ async function smRenderMySubmissions(){
           <b style="font-family:'IBM Plex Mono',monospace; font-size:13px;">${s.submissionId}</b>
           <span style="display:inline-block; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:700; text-transform:uppercase; background:${b.bg}; color:${b.fg};">${b.label}</span>
         </div>
-        <p style="margin:6px 0 0; font-size:13px; color:var(--slate);">${s.category} · ${s.area||'—'} sq ft · ₹${s.cost||0}</p>
+        <p style="margin:6px 0 0; font-size:13px; color:var(--slate);">${s.category} · ${s.area||'—'} sq ft</p>
         <p style="margin:2px 0 0; font-size:12px; color:var(--slate);">${s.address||''}${s.city?', '+s.city:''} · ${s.date||''}</p>
       </div>
     `;}).join('');
