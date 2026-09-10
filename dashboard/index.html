@@ -341,7 +341,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.60.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.61.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -895,7 +895,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.60.0';
+const FRONTEND_VERSION = 'v6.61.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -976,7 +976,8 @@ function switchModule(mod){
     document.querySelector('nav.tabs').style.display = 'none';
     document.getElementById('mktExpenseSection').style.display = 'block';
     document.querySelectorAll('.tabs + section, section[id^="tab-"]').forEach(s=>s.style.display='none');
-    loadMktExpenseData();
+    startModuleSwitchProgress();
+    loadMktExpenseData().finally(finishModuleSwitchProgress);
     return;
   }
   document.querySelector('nav.tabs').style.display = 'flex';
@@ -988,11 +989,36 @@ function switchModule(mod){
   document.getElementById('histCity').innerHTML = '<option value="">All cities</option>'; // rebuild filter options for the new dataset
   document.getElementById('histSearch').placeholder = mod==='db' ? 'Search distributor, city…' : mod==='betaverse' ? 'Search address, city, auditor…' : 'Search outlet, city, distributor…';
   document.getElementById('histSearch').value = '';
+  startModuleSwitchProgress();
   loadData().then(()=>{
+    finishModuleSwitchProgress();
     const activeTab = document.querySelector('nav.tabs button.active');
     const name = activeTab ? activeTab.dataset.tab : 'dash';
     if(name==='dash') renderDashboard(); else if(name==='approvals') renderApprovals(); else if(name==='map') renderMap(); else if(name==='history') renderHistory(); else if(name==='photos'){ loadPhotosData().then(renderPhotos); }
-  });
+  }).catch(()=>{ hideLoadProgress(); });
+}
+/* Switching modules/tabs used to just go blank for a couple of seconds
+   while loadData() awaited its fetch, with nothing on screen to say
+   why — reusing the SAME progress ring the login screen already shows
+   (rather than a bare spinner) makes the wait feel accounted-for instead
+   of like the app froze. Animated climb, same reasoning as the export
+   progress bar: Apps Script can't report real progress mid-request. */
+let MODULE_SWITCH_TIMER = null;
+function startModuleSwitchProgress(){
+  clearInterval(MODULE_SWITCH_TIMER);
+  let pct = 0;
+  showLoadProgress(0, 'Loading module…');
+  MODULE_SWITCH_TIMER = setInterval(()=>{
+    const remaining = 90 - pct;
+    pct += Math.max(1, remaining * 0.15);
+    if(pct > 90) pct = 90;
+    showLoadProgress(pct, pct < 40 ? 'Loading module…' : pct < 75 ? 'Fetching latest data…' : 'Almost there…');
+  }, 120);
+}
+function finishModuleSwitchProgress(){
+  clearInterval(MODULE_SWITCH_TIMER);
+  showLoadProgress(100, 'Done');
+  setTimeout(hideLoadProgress, 250);
 }
 function switchApprovalFilter(val){
   APPROVAL_FILTER = val;
@@ -2167,6 +2193,16 @@ async function loadAdJourney(){
     const checks = j.checks || [];
     const runningCount = checks.filter(c=>c.isRunning==='Yes').length;
     const notRunningCount = checks.filter(c=>c.isRunning==='No').length;
+    // Week/month/year audit-frequency counts — "how many times has this
+    // actually been checked recently" answers a different question than
+    // the full history list below (which can be long): is this site
+    // being kept an eye on lately, or has it gone quiet?
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7*86400000);
+    const monthAgo = new Date(now.getFullYear(), now.getMonth()-1, now.getDate());
+    const yearAgo = new Date(now.getFullYear()-1, now.getMonth(), now.getDate());
+    const countSince = since => checks.filter(c=>{ const d = new Date(c.date); return !isNaN(d) && d >= since; }).length;
+    const weekCount = countSince(weekAgo), monthCount = countSince(monthAgo), yearCount = countSince(yearAgo);
     const header = `
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding-bottom:12px; border-bottom:1.5px solid var(--border-2); margin-bottom:12px;">
         <div>
@@ -2177,6 +2213,12 @@ async function loadAdJourney(){
           <span style="background:var(--green-bg); color:var(--green); font-weight:700; font-size:12px; padding:5px 12px; border-radius:14px;">✅ ${runningCount} OK</span>
           <span style="background:var(--red-bg); color:var(--red); font-weight:700; font-size:12px; padding:5px 12px; border-radius:14px;">🚩 ${notRunningCount} Not running</span>
         </div>
+      </div>
+      <div style="display:flex; gap:24px; padding-bottom:12px; margin-bottom:12px; flex-wrap:wrap;">
+        <div><span style="font-size:20px; font-weight:800;">${weekCount}</span><span style="font-size:11px; color:var(--slate); margin-left:6px;">audits this week</span></div>
+        <div><span style="font-size:20px; font-weight:800;">${monthCount}</span><span style="font-size:11px; color:var(--slate); margin-left:6px;">audits this month</span></div>
+        <div><span style="font-size:20px; font-weight:800;">${yearCount}</span><span style="font-size:11px; color:var(--slate); margin-left:6px;">audits this year</span></div>
+        <div><span style="font-size:20px; font-weight:800;">${checks.length}</span><span style="font-size:11px; color:var(--slate); margin-left:6px;">audits all-time</span></div>
       </div>`;
     if(!checks.length){
       el.innerHTML = header + `<div class="empty">No status checks logged against this site yet — it hasn't been spot-checked in the field.</div>`;
@@ -2495,8 +2537,12 @@ function renderBetaverseHistory(){
   }).sort((a,b)=>String(b.submissionId).localeCompare(String(a.submissionId)));
   const thead = document.querySelector('#histTable thead'), tbody = document.querySelector('#histTable tbody');
   const showActions = CAN_APPROVE();
-  thead.innerHTML = `<tr><th>ID</th><th>Category</th><th>Status</th><th>Measurement</th><th>Address</th><th>Category Details</th><th>Submitted W×H</th><th>Submitted Area</th><th>Approved W×H</th><th>Approved Area</th><th>Auditor</th><th>Date</th><th>Map</th>${showActions ? '<th>Approval</th>' : ''}</tr>`;
-  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="${showActions?14:13}"><div class="empty">No matching submissions.</div></td></tr>`; return; }
+  // How many times each site has ever been status-checked — a fast glance
+  // at which sites are actually being kept an eye on vs. never revisited.
+  const checkCounts = {};
+  (BETAVERSE_STATUS_CHECKS||[]).forEach(c=>{ checkCounts[c.submissionId] = (checkCounts[c.submissionId]||0)+1; });
+  thead.innerHTML = `<tr><th>Image</th><th>ID</th><th>Category</th><th>Status</th><th>Measurement</th><th>Address</th><th>Category Details</th><th>Submitted W×H</th><th>Submitted Area</th><th>Approved W×H</th><th>Approved Area</th><th>Auditor</th><th>Date</th><th>Audit Count</th><th>Map</th>${showActions ? '<th>Approval</th>' : ''}</tr>`;
+  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="${showActions?16:15}"><div class="empty">No matching submissions.</div></td></tr>`; return; }
   tbody.innerHTML = rows.map(r=>{
     const isVerified = r.status==='Verified';
     const isPending = r.status==='Pending Approval' || r.status==='Pending Installation';
@@ -2507,8 +2553,11 @@ function renderBetaverseHistory(){
       r.outletName ? `🏪 ${r.outletName}${r.ownerName?' ('+r.ownerName+')':''}` : '',
       r.landmark ? `📍 ${r.landmark}` : ''
     ].filter(Boolean).join('<br>') || '—';
+    const checkCount = checkCounts[r.submissionId] || 0;
     return `<tr${isManual ? ' style="background:var(--red-bg);"' : (isPending ? ' style="background:#FFFBF0;"' : '')}>
-      <td class="mono">${r.submissionId}</td><td>${r.category}</td>
+      <td>${r.prePhotoUrl ? `<img src="${r.prePhotoUrl}" style="width:48px; height:48px; object-fit:cover; border-radius:6px; cursor:pointer;" onclick='smOpenBvLightbox(${JSON.stringify(r.prePhotoUrl)}, ${JSON.stringify(r.submissionId+" — "+r.category)})'>` : '<div style="width:48px; height:48px; border-radius:6px; background:var(--paper-2);"></div>'}</td>
+      <td class="mono"><a href="javascript:void(0)" onclick="openAdJourneyFromHistory('${r.submissionId}')" style="color:var(--amber); text-decoration:underline; font-weight:700;" title="View full journey">${r.submissionId}</a></td>
+      <td>${r.category}</td>
       <td>${smStatusBadge(r.status)}</td>
       <td>${isManual ? `<span style="color:var(--red); font-weight:700; font-size:11px;">⚠️ MANUAL — needs review</span>` : `<span style="color:var(--green); font-size:11px;">✅ Distance-corrected</span>`}</td>
       <td>${r.preAddress||'—'}</td>
@@ -2519,10 +2568,19 @@ function renderBetaverseHistory(){
       <td>${isVerified ? r.postArea+' sq ft' : '—'}</td>
       <td>${r.preAuditor||'—'}</td>
       <td class="mono">${r.preDate||''}</td>
+      <td style="text-align:center;"><a href="javascript:void(0)" onclick="openAdJourneyFromHistory('${r.submissionId}')" style="font-weight:700; color:${checkCount?'var(--green)':'var(--slate)'};">${checkCount} 🔍</a></td>
       <td>${mapLinkHtml(r.preMapsLink)}</td>
       ${showActions ? `<td>${isPending ? `<div style="display:flex; gap:4px;"><button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--green); border-color:var(--green);" onclick="smApproveSubmission('${r.submissionId}')">✓ Approve</button><button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--red); border-color:var(--red);" onclick="smRejectSubmission('${r.submissionId}')">✕ Reject</button></div>` : (r.status==='Rejected' && r.rejectionReason ? `<span style="font-size:10px; color:var(--slate);" title="${String(r.rejectionReason).replace(/"/g,'&quot;')}">Reason: ${r.rejectionReason}</span>` : (r.approvedBy ? `<span style="font-size:10px; color:var(--slate);">by ${r.approvedBy}</span>` : '—'))}</td>` : ''}
     </tr>`;
   }).join('');
+}
+/* Jumps straight to the Ad Journey card at the top of this same tab and
+   runs the search for this ID — clicking any row's ID or audit-count
+   answers "what's this site's whole history" without retyping anything. */
+function openAdJourneyFromHistory(id){
+  document.getElementById('adJourneyInput').value = id;
+  loadAdJourney();
+  document.getElementById('adJourneyCard').scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 function renderRetailHistory(){
@@ -2540,8 +2598,8 @@ function renderRetailHistory(){
   });
   const thead = document.querySelector('#histTable thead');
   const tbody = document.querySelector('#histTable tbody');
-  thead.innerHTML = `<tr><th>Date</th><th>Outlet</th><th>City</th><th>Distributor</th><th>Auditor</th><th>Distribution</th><th>POSM</th><th>Invoice GST</th><th>Visibility</th><th>Lat, Long</th><th>Map</th></tr>`;
-  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="11"><div class="empty"><b>No matching audits</b>Try a different search or filter.</div></td></tr>`; return; }
+  thead.innerHTML = `<tr><th>Date</th><th>Outlet</th><th>City</th><th>Distributor</th><th>Auditor</th><th>Distribution</th><th>POSM</th><th>Invoice GST</th><th>Visibility</th><th>Lat, Long</th><th>Map</th><th>Invoice PDF</th></tr>`;
+  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="12"><div class="empty"><b>No matching audits</b>Try a different search or filter.</div></td></tr>`; return; }
   tbody.innerHTML = rows.map(r=>`<tr>
     <td class="mono">${r.date||''}</td><td>${r.outletName||''}</td><td>${r.city||''}</td><td>${r.distributor||''}</td><td>${r.auditor||''}</td>
     <td><span class="tag ${r.q1_distribution==='Yes'?'tag-yes':'tag-no'}">${r.q1_distribution||'—'}</span></td>
@@ -2550,6 +2608,7 @@ function renderRetailHistory(){
     <td>${r.q8_visibilityRating?r.q8_visibilityRating+'★':'—'}</td>
     <td class="mono">${r.lat&&r.lng?(Number(r.lat).toFixed(5)+', '+Number(r.lng).toFixed(5)):'—'}</td>
     <td>${mapLinkHtml(mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink))}</td>
+    <td>${r.invoicePdfUrl ? `<a class="btn btn-outline" href="${r.invoicePdfUrl}" target="_blank" style="white-space:nowrap;">🧾 View (${r.billCount||'?'})</a>` : '<span style="color:var(--slate);">— none</span>'}</td>
   </tr>`).join('');
 }
 
