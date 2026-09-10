@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.51.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.52.0</div></div>
   </div>
 </header>
 
@@ -1170,6 +1170,74 @@ window.addEventListener('error', (e)=>{
 window.addEventListener('unhandledrejection', (e)=>{
   logClientError('Unhandled promise rejection: ' + (e.reason && e.reason.message || e.reason), e.reason && e.reason.stack, 'unhandledrejection');
 });
+
+/* ============================================================
+   Bill/invoice PDF attach — retry + a localStorage "pending uploads"
+   queue, because losing this silently is exactly the failure the person
+   using this app cares most about: the auditor DID submit their bills,
+   the audit row DID save, but if this one background call ever failed
+   (a bad moment of signal is common in the field), the PDF link just
+   stayed blank forever with nothing visible to the auditor and no way
+   to know it needed retrying. Now: try 3 times with a short pause
+   between attempts; if all 3 still fail, save the whole payload to
+   localStorage instead of discarding it, and try again automatically
+   the next time this app loads (flushPendingBillUploads, called once at
+   startup) — so a bad connection at submit time delays the PDF landing
+   on the row, but never permanently loses it as long as the auditor
+   opens the app again at some point on a working connection.
+   ============================================================ */
+const PENDING_BILLS_KEY = 'fieldaudit_pending_bill_uploads_v1';
+function queuePendingBillUpload(payload){
+  try{
+    const list = JSON.parse(localStorage.getItem(PENDING_BILLS_KEY) || '[]');
+    list.push({payload, queuedAt: Date.now()});
+    localStorage.setItem(PENDING_BILLS_KEY, JSON.stringify(list));
+  }catch(_e){} // if even localStorage itself is unavailable, there's genuinely nothing further this can do
+}
+async function attachBillsPDFWithRetry(payload, attemptsLeft){
+  if(attemptsLeft === undefined) attemptsLeft = 3;
+  for(let i = 0; i < attemptsLeft; i++){
+    try{
+      const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)}, 30000);
+      const res = await r.json();
+      if(res && res.success) return true;
+      // A JSON error response (not a network failure) usually means the
+      // audit row itself can't be found — retrying the exact same call
+      // won't fix that, so stop burning through retries pointlessly now.
+      break;
+    }catch(_e){
+      if(i < attemptsLeft - 1) await new Promise(res=>setTimeout(res, 2000 * (i+1)));
+    }
+  }
+  return false;
+}
+/* Runs once when the app opens — flushes whatever's left in the pending
+   queue from a previous session. Each item gets its own fresh 3 tries;
+   anything that still fails just stays queued for the NEXT app open
+   rather than being dropped, since a submission's proof photos are
+   worth trying for as long as it takes. */
+async function flushPendingBillUploads(){
+  let list;
+  try{ list = JSON.parse(localStorage.getItem(PENDING_BILLS_KEY) || '[]'); }catch(_e){ return; }
+  if(!list.length || !configured()) return;
+  const stillPending = [];
+  for(const item of list){
+    const ok = await attachBillsPDFWithRetry(item.payload, 3).catch(()=>false);
+    if(!ok) stillPending.push(item);
+  }
+  try{ localStorage.setItem(PENDING_BILLS_KEY, JSON.stringify(stillPending)); }catch(_e){}
+}
+/* The submit-time caller (not the flush-queue caller above) is the one
+   that queues on failure — a single helper so both retry sites keep this
+   in sync rather than each half-implementing their own queue logic. */
+async function attachBillsPDFAndQueueOnFailure(payload){
+  const ok = await attachBillsPDFWithRetry(payload, 3);
+  if(!ok){
+    queuePendingBillUpload(payload);
+    logClientError('attachBillsPDF failed after retries — queued for later', '', 'attach-bills-pdf-queued');
+  }
+  return ok;
+}
 
 /* ============================================================
    DEVICE BIOMETRIC — fingerprint / Face ID / Face unlock via the browser's
@@ -2457,9 +2525,7 @@ async function submitAudit(){
         LAST_AUDIT_PDF_DATAURI = invoicePdf; LAST_AUDIT_PDF_FILENAME = fileNameBase+'.pdf';
         document.getElementById('stampActions').style.display = invoicePdf ? 'flex' : 'none';
         if(configured() && invoicePdf){
-          await fetchWithTimeout(SCRIPT_URL, {method:'POST', body: JSON.stringify({
-            action:'attachBillsPDF', auditId, invoicePdf, billCount: stampedInvoices.length, module:'retail'
-          })}, 30000);
+          await attachBillsPDFAndQueueOnFailure({ action:'attachBillsPDF', auditId, invoicePdf, billCount: stampedInvoices.length, module:'retail' });
         }
       }catch(err){
         logClientError(err.message, err.stack, 'background-pdf-attach');
@@ -2634,9 +2700,7 @@ async function submitDBStockAudit(){
         LAST_AUDIT_PDF_DATAURI = dbPdf; LAST_AUDIT_PDF_FILENAME = dbFileNameBase+'.pdf';
         document.getElementById('stampActions').style.display = dbPdf ? 'flex' : 'none';
         if(configured() && dbPdf){
-          await fetchWithTimeout(SCRIPT_URL, {method:'POST', body: JSON.stringify({
-            action:'attachBillsPDF', auditId, invoicePdf: dbPdf, module:'db'
-          })}, 30000);
+          await attachBillsPDFAndQueueOnFailure({ action:'attachBillsPDF', auditId, invoicePdf: dbPdf, module:'db' });
         }
       }catch(err){
         logClientError(err.message, err.stack, 'background-pdf-attach-db');
@@ -2679,6 +2743,7 @@ document.getElementById('f_date').value = localDateStr();
 document.getElementById('db_date').value = localDateStr();
 if(!configured()) document.getElementById('cfgWarning').style.display='block';
 loadDBMasterCache();
+flushPendingBillUploads(); // catch up on any bill/invoice PDF that failed to attach in a previous session
 
 /* ============================================================
    SMARTMEASURE MODULE — Outdoor Ad (OOH) Site Audit.
