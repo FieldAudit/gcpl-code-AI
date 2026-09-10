@@ -270,6 +270,7 @@ table.data tr:hover td{background:var(--paper-2);}
 
 /* ---- Master Data tab ---- */
 .hint{font-size:12.5px; color:var(--slate); margin-bottom:12px; line-height:1.5;}
+.req-mark{color:var(--red); font-weight:700;}
 .master-textarea{width:100%; min-height:160px; padding:12px; border:1.5px solid var(--border-2); border-radius:4px; font-family:'IBM Plex Mono'; font-size:12.5px; resize:vertical; background:var(--paper); color:var(--ink);}
 .master-actions{display:flex; align-items:center; gap:12px; margin-top:12px;}
 .master-count{font-size:12.5px; color:var(--slate);}
@@ -340,7 +341,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.56.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.60.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -360,6 +361,7 @@ table.data tr:hover td{background:var(--paper-2);}
     <button class="active" data-mod="retail" onclick="switchModule('retail')">🏪 Retail Audit</button>
     <button data-mod="db" id="dbModuleBtn" onclick="switchModule('db')">📦 DB Stock Audit</button>
     <button data-mod="betaverse" onclick="switchModule('betaverse')">📐 Ad Manager <span id="pendingApprovalBadge" style="display:none; background:var(--red); color:#fff; border-radius:10px; padding:1px 7px; font-size:10px; font-weight:700; margin-left:4px;">0</span></button>
+    <button data-mod="mktexpense" id="mktExpenseModuleBtn" onclick="switchModule('mktexpense')" style="display:none;">💰 Marketing Expense</button>
   </div>
   <div class="module-toggle" id="betaverseApprovalToggle" style="display:none;">
     <button class="active" data-appr="" onclick="switchApprovalFilter('')">All</button>
@@ -416,6 +418,15 @@ table.data tr:hover td{background:var(--paper-2);}
     </section>
 
     <section id="tab-history" style="display:none;">
+      <div class="card" id="adJourneyCard" style="display:none;">
+        <h2>🔍 Ad Journey — full history of one site</h2>
+        <p style="font-size:12px; color:var(--slate); margin-top:4px;">Works for any Submission ID or uploaded Ad ID — every status-check ever logged against it, oldest to newest.</p>
+        <div class="filters" style="margin-top:10px;">
+          <input type="text" id="adJourneyInput" placeholder="Ad ID or Submission ID…" onkeydown="if(event.key==='Enter') loadAdJourney();">
+          <button class="btn btn-dark" onclick="loadAdJourney()">Show Journey</button>
+        </div>
+        <div id="adJourneyResult" style="margin-top:14px;"></div>
+      </div>
       <div class="card">
         <div class="filters">
           <input type="text" id="histSearch" placeholder="Search outlet, city, distributor…" oninput="renderHistory()">
@@ -460,7 +471,7 @@ table.data tr:hover td{background:var(--paper-2);}
     </section>
 
     <section id="tab-master" style="display:none;">
-      <div class="card">
+      <div class="card" id="dbMasterCard">
         <h2>DB Master — DB Code, DB Name, DB City</h2>
         <div class="hint">Field auditors auto-fill DB Name/City by typing a DB Code on the DB Stock Audit form,
           matched against this list. Paste rows below (one DB per line, values separated by a comma or Tab —
@@ -474,7 +485,7 @@ table.data tr:hover td{background:var(--paper-2);}
           <span class="master-count" id="dbMasterCount"></span>
         </div>
       </div>
-      <div class="card">
+      <div class="card" id="soMasterCard">
         <h2>SO Master — Phone Number, SO Name</h2>
         <div class="hint">Field auditors auto-fill their Name by typing their 10-digit phone number on the DB
           Stock Audit form — the Name field itself can't be typed into directly, so this list is the only way
@@ -485,6 +496,18 @@ table.data tr:hover td{background:var(--paper-2);}
         <div class="master-actions">
           <button class="btn btn-dark" onclick="saveMasterData('so')" id="saveSoMasterBtn">Save SO Master</button>
           <span class="master-count" id="soMasterCount"></span>
+        </div>
+      </div>
+      <div class="card" id="uploadedAdsCard" style="display:none;">
+        <h2>📤 Upload Existing Ad Sites (Excel)</h2>
+        <div class="hint">For ads already running in the field, installed before this app existed — upload an
+          Excel with 3 columns: <span class="mono">Ad ID, Ad Type, Location</span> (headers must match, any
+          order). Each one becomes searchable in the field app's "Check Running Status", ready for its first
+          spot-check. Uploading again only adds NEW Ad IDs — it never touches ones already uploaded.</div>
+        <input type="file" id="adsExcelInput" accept=".xlsx,.xls,.csv" style="margin:12px 0;">
+        <div class="master-actions">
+          <button class="btn btn-dark" onclick="uploadAdsExcel()" id="uploadAdsBtn">Upload</button>
+          <span class="master-count" id="uploadAdsResult"></span>
         </div>
       </div>
     </section>
@@ -499,6 +522,76 @@ table.data tr:hover td{background:var(--paper-2);}
       <div id="teamJourneyView" style="display:none;"></div>
     </section>
   </main>
+
+  <div id="mktExpenseSection" style="display:none; padding:0 24px 24px;">
+    <div class="card" id="mktExpenseStaleBanner" style="margin-bottom:16px;"></div>
+    <div class="module-toggle" style="margin-bottom:16px;">
+      <button class="active" data-mex="analytics" onclick="switchMktExpenseTab('analytics')">📊 Analytics</button>
+      <button data-mex="entry" onclick="switchMktExpenseTab('entry')">➕ Add Entry</button>
+      <button data-mex="upload" onclick="switchMktExpenseTab('upload')">📤 Upload Excel</button>
+    </div>
+
+    <div id="mex-analytics">
+      <div class="kpi-row" id="mexKpiRow" style="display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;"></div>
+      <div style="display:grid; grid-template-columns:1.3fr 1fr; gap:16px; margin-bottom:16px;">
+        <div class="card"><h2>Monthly Spend Trend</h2><div style="height:300px;"><canvas id="mexMonthlyChart"></canvas></div></div>
+        <div class="card"><h2>By Activity Category</h2><div style="height:300px;"><canvas id="mexCatChart"></canvas></div></div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+        <div class="card"><h2>By Brand</h2><div style="height:280px;"><canvas id="mexBrandChart"></canvas></div></div>
+        <div class="card"><h2>By Activity Type</h2><div style="height:280px;"><canvas id="mexActivityChart"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="filters">
+          <input type="text" id="mexSearch" placeholder="Search description, agency, PO…" oninput="renderMktExpenseTable()">
+          <select id="mexBrandFilter" onchange="renderMktExpenseTable()"><option value="">All brands</option></select>
+          <select id="mexActFilter" onchange="renderMktExpenseTable()"><option value="">All activities</option></select>
+          <button class="btn btn-dark" onclick="exportMktExpenseReport()">⬇ Export coloured report</button>
+        </div>
+        <div class="table-wrap"><table class="data" id="mexTable"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <div id="mex-entry" style="display:none;">
+      <div class="card" style="max-width:640px;">
+        <h2>Add One Expense Entry</h2>
+        <p class="hint">Pick the head, fill the amount for one month, and submit — this becomes one line in the tracker, same as a row in the Excel.</p>
+        <div class="field"><label>Description <span class="req-mark">*</span></label><input type="text" id="mexDescription" placeholder="e.g. Hoarding Ranchi 3 sites"></div>
+        <div class="field"><label>Brand <span class="req-mark">*</span></label><select id="mexBrand"></select></div>
+        <div class="field"><label>Activity <span class="req-mark">*</span></label><select id="mexActivity"></select></div>
+        <div class="field"><label>Activity Category <span class="req-mark">*</span></label><select id="mexActivityCategory"><option value="ATL">ATL</option><option value="BTL">BTL</option><option value="DIGITAL">DIGITAL</option></select></div>
+        <div class="field"><label>Agency</label><input type="text" id="mexAgency" list="mexAgencyList"><datalist id="mexAgencyList"></datalist></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="field"><label>PO Number</label><input type="text" id="mexPoNumber"></div>
+          <div class="field"><label>PO Date</label><input type="date" id="mexPoDate"></div>
+        </div>
+        <div class="field"><label>PO Amount (total, optional)</label><input type="number" id="mexPoAmount" placeholder="e.g. 195000"></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="field"><label>Month <span class="req-mark">*</span></label><select id="mexMonth">
+            <option value="Apr">April</option><option value="May">May</option><option value="Jun">June</option><option value="Jul">July</option>
+            <option value="Aug">August</option><option value="Sep">September</option><option value="Oct">October</option><option value="Nov">November</option>
+            <option value="Dec">December</option><option value="Jan">January</option><option value="Feb">February</option><option value="Mar">March</option>
+          </select></div>
+          <div class="field"><label>Amount for this month (₹) <span class="req-mark">*</span></label><input type="number" id="mexAmount" placeholder="e.g. 65000"></div>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="submitMktExpenseEntry()" id="mexSubmitBtn" style="margin-top:10px;">Submit Entry</button>
+      </div>
+    </div>
+
+    <div id="mex-upload" style="display:none;">
+      <div class="card" style="max-width:640px;">
+        <h2>📤 Upload Full Excel (replaces all data)</h2>
+        <div class="hint">Columns expected (any order, flexible names): Description, Product Category / Brand, Activity, Activity Category, Agency,
+          PO Number, PO Date, PO Amount, and month columns (Apr, May, Jun … or April, May, June …). This <b>replaces the entire tracker</b> —
+          exactly like copying a fresh master over the old one. Whoever uploads is recorded as the last updater.</div>
+        <input type="file" id="mexExcelInput" accept=".xlsx,.xls,.csv" style="margin:12px 0;">
+        <div class="master-actions">
+          <button class="btn btn-dark" onclick="uploadMktExpenseExcel()" id="mexUploadBtn">Upload &amp; Replace</button>
+          <span class="master-count" id="mexUploadResult"></span>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -730,6 +823,7 @@ function enterApp(){
   document.getElementById('whoRole').textContent = SESSION.role || '';
   document.getElementById('masterTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
   document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
+  document.getElementById('mktExpenseModuleBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
   // Only Admin sees BOTH sources and gets the toggle to switch between them.
   // Sales is scoped to ONLY "GCPL Stock Audit" (the external sheet, which is
   // their own submissions from the separate GCPL app) — no "3PA Audit" tab
@@ -801,7 +895,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.56.0';
+const FRONTEND_VERSION = 'v6.60.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -873,6 +967,20 @@ let APPROVAL_FILTER = '';
 function switchModule(mod){
   MODULE = mod;
   document.querySelectorAll('#moduleToggle button').forEach(b=>b.classList.toggle('active', b.dataset.mod===mod));
+  if(mod === 'mktexpense'){
+    // A completely different kind of data (no photos, no GPS, no field
+    // submissions) — doesn't fit the Dashboard/History/Photos/Map tab
+    // system at all, so it gets its own self-contained section instead
+    // of trying to force it into that structure.
+    document.getElementById('betaverseApprovalToggle').style.display = 'none';
+    document.querySelector('nav.tabs').style.display = 'none';
+    document.getElementById('mktExpenseSection').style.display = 'block';
+    document.querySelectorAll('.tabs + section, section[id^="tab-"]').forEach(s=>s.style.display='none');
+    loadMktExpenseData();
+    return;
+  }
+  document.querySelector('nav.tabs').style.display = 'flex';
+  document.getElementById('mktExpenseSection').style.display = 'none';
   document.getElementById('betaverseApprovalToggle').style.display = mod==='betaverse' ? 'flex' : 'none';
   document.getElementById('approvalsTabBtn').style.display = (mod==='betaverse' && CAN_APPROVE()) ? 'inline-block' : 'none';
   document.getElementById('mapTabBtn').style.display = 'inline-block';
@@ -1396,6 +1504,19 @@ async function exportJourney(){
 
 /* ---- Master Data (Admin only) ---- */
 async function loadMasterData(){
+  document.getElementById('dbMasterCard').style.display = (MODULE==='betaverse') ? 'none' : 'block';
+  document.getElementById('soMasterCard').style.display = (MODULE==='betaverse') ? 'none' : 'block';
+  document.getElementById('uploadedAdsCard').style.display = (MODULE==='betaverse') ? 'block' : 'none';
+  if(MODULE === 'betaverse'){
+    document.getElementById('uploadAdsResult').textContent = 'Loading…';
+    try{
+      const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getUploadedAds&_t=${Date.now()}`, {cache:'no-store'}, 15000);
+      const res = await r.json();
+      const count = (res.ads||[]).length;
+      document.getElementById('uploadAdsResult').textContent = `${count} ad${count===1?'':'s'} already on file`;
+    }catch(e){ document.getElementById('uploadAdsResult').textContent = 'Could not load count'; }
+    return;
+  }
   document.getElementById('dbMasterCount').textContent = 'Loading…';
   document.getElementById('soMasterCount').textContent = 'Loading…';
   try{
@@ -1418,6 +1539,44 @@ async function loadMasterData(){
   }catch(e){
     document.getElementById('dbMasterCount').textContent = 'Could not load';
     document.getElementById('soMasterCount').textContent = 'Could not load';
+  }
+}
+/* Parses the selected Excel/CSV file client-side (SheetJS — already
+   loaded for exports) and sends the rows straight to uploadAdsList().
+   Header matching is deliberately case/spacing-insensitive ("Ad ID",
+   "AdID", "ad_id" all work) since this file usually comes from whoever
+   happens to maintain the vendor's own site list, not from this app. */
+async function uploadAdsExcel(){
+  const fileInput = document.getElementById('adsExcelInput');
+  const file = fileInput.files[0];
+  if(!file){ toast('Choose an Excel/CSV file first', true); return; }
+  const btn = document.getElementById('uploadAdsBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Reading file…';
+  try{
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, {type:'array'});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(sheet, {defval:''});
+    if(!raw.length) throw new Error('No rows found in that file');
+    const norm = s => String(s||'').toLowerCase().replace(/[^a-z]/g,'');
+    const findKey = (row, candidates) => Object.keys(row).find(k => candidates.includes(norm(k)));
+    const sample = raw[0];
+    const idKey = findKey(sample, ['adid','id']);
+    const typeKey = findKey(sample, ['adtype','type']);
+    const locKey = findKey(sample, ['location','address']);
+    if(!idKey) throw new Error('Could not find an "Ad ID" column — check the file\'s header row.');
+    const rows = raw.map(r=>({ adId: r[idKey], adType: typeKey ? r[typeKey] : '', location: locKey ? r[locKey] : '' })).filter(r=>r.adId);
+    if(!rows.length) throw new Error('No rows had a value in the Ad ID column');
+    btn.innerHTML = '<span class="spin"></span> Uploading…';
+    const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'uploadAdsList', rows, role:SESSION.role, uploadedBy:SESSION.name})}, 30000).then(r=>r.json());
+    if(!res.success) throw new Error(res.message || 'Upload failed');
+    toast(`✅ ${res.added} ad${res.added===1?'':'s'} added${res.skipped?`, ${res.skipped} already on file (skipped)`:''}`);
+    fileInput.value = '';
+    loadMasterData();
+  }catch(e){
+    toast(e.message || 'Could not upload that file', true);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Upload';
   }
 }
 
@@ -1727,14 +1886,11 @@ function renderBetaverseDashboard(){
   if(!n){ el.innerHTML = `<div class="empty"><b>No submissions yet</b>Once the field team submits site measurements, analytics appear here.</div>`; return; }
   const verified = data.filter(r=>r.status==='Verified');
   const pending = data.filter(r=>r.status!=='Verified');
-  const totalApprovedCost = verified.reduce((s,r)=>s+(Number(r.postApprovedCost)||0),0);
   const insights = [];
   const byCategory = {}; data.forEach(r=>{ byCategory[r.category]=(byCategory[r.category]||0)+1; });
   const topCat = Object.entries(byCategory).sort((a,b)=>b[1]-a[1])[0];
   if(topCat) insights.push({icon:'🏆', text:`<b>${topCat[0]}</b> is the most-submitted category (${topCat[1]} site${topCat[1]===1?'':'s'}).`});
   insights.push({icon: pending.length>verified.length?'⏳':'✅', text:`<b>${pending.length}</b> site${pending.length===1?'':'s'} still awaiting approval/verification.`});
-  const overBudget = verified.filter(r=>(Number(r.postApprovedCost)||0) > (Number(r.preCost)||0));
-  if(overBudget.length) insights.push({icon:'⚠️', text:`<b>${overBudget.length}</b> approved site${overBudget.length===1?'':'s'} came in ABOVE the originally submitted cost.`});
   const shrunk = verified.filter(r=>(Number(r.preArea)||0)>0 && (Number(r.postArea)||0) < (Number(r.preArea)||0)*0.9);
   if(shrunk.length) insights.push({icon:'📉', text:`<b>${shrunk.length}</b> site${shrunk.length===1?'':'s'} installed less area than originally measured (under 90%).`});
   const manualEntries = data.filter(r=>String(r.preMeasureMethod||'').includes('Manual'));
@@ -1989,9 +2145,313 @@ function generateDBInsights(rows, distributors, byDate, bagFields, kgFields){
 }
 
 function renderHistory(){
+  document.getElementById('adJourneyCard').style.display = (MODULE==='betaverse') ? 'block' : 'none';
   if(MODULE==='betaverse') renderBetaverseHistory();
   else if(MODULE==='db') renderDBHistory();
   else renderRetailHistory();
+}
+/* Renders a full dated timeline for one ad — every status-check logged
+   against it, oldest to newest, each with its own photo. This is what
+   turns a pile of individual check-ins into an actual "how has this site
+   behaved over its whole contract period" story a manager can act on,
+   instead of hunting through the History table row by row. */
+async function loadAdJourney(){
+  const id = document.getElementById('adJourneyInput').value.trim();
+  const el = document.getElementById('adJourneyResult');
+  if(!id){ toast('Enter an Ad ID or Submission ID first', true); return; }
+  el.innerHTML = `<div class="empty"><b>Loading…</b></div>`;
+  try{
+    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAdJourney&id=${encodeURIComponent(id)}&_t=${Date.now()}`, {cache:'no-store'}, 15000);
+    const j = await r.json();
+    if(!j.success || j.source==='Unknown'){ el.innerHTML = `<div class="empty">No record found for "${id}" — check the ID and try again.</div>`; return; }
+    const checks = j.checks || [];
+    const runningCount = checks.filter(c=>c.isRunning==='Yes').length;
+    const notRunningCount = checks.filter(c=>c.isRunning==='No').length;
+    const header = `
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding-bottom:12px; border-bottom:1.5px solid var(--border-2); margin-bottom:12px;">
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-weight:700;">${j.id}</div>
+          <div style="font-size:13px; color:var(--slate); margin-top:2px;">${j.adType||'—'} · ${j.location||'—'} · <span style="font-weight:700;">${j.source}</span></div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <span style="background:var(--green-bg); color:var(--green); font-weight:700; font-size:12px; padding:5px 12px; border-radius:14px;">✅ ${runningCount} OK</span>
+          <span style="background:var(--red-bg); color:var(--red); font-weight:700; font-size:12px; padding:5px 12px; border-radius:14px;">🚩 ${notRunningCount} Not running</span>
+        </div>
+      </div>`;
+    if(!checks.length){
+      el.innerHTML = header + `<div class="empty">No status checks logged against this site yet — it hasn't been spot-checked in the field.</div>`;
+      return;
+    }
+    const timeline = checks.map(c=>`
+      <div style="display:flex; gap:12px; padding:10px 0; border-bottom:1px dashed var(--border-2);">
+        ${c.photoUrl ? `<img src="${c.photoUrl}" style="width:70px; height:70px; object-fit:cover; border-radius:8px; cursor:pointer; flex-shrink:0;" onclick="document.getElementById('lightboxImg').src=this.src; document.getElementById('lightboxCaption').textContent=${JSON.stringify(j.id+' — '+c.date)}; document.getElementById('photoLightbox').classList.add('show');">` : `<div style="width:70px; height:70px; border-radius:8px; background:var(--paper-2); flex-shrink:0;"></div>`}
+        <div style="flex:1;">
+          <div style="display:flex; justify-content:space-between;">
+            <b style="font-size:13px;">${c.date}</b>
+            <span style="font-weight:700; font-size:12px; color:${c.isRunning==='Yes'?'var(--green)':'var(--red)'};">${c.isRunning==='Yes'?'✅ Running':'🚩 NOT running'}</span>
+          </div>
+          <div style="font-size:12px; color:var(--slate); margin-top:2px;">Checked by ${c.checkedBy||'—'}${c.notes?' · '+c.notes:''}</div>
+          ${c.mapsLink ? `<a href="${c.mapsLink}" target="_blank" style="font-size:11px; color:var(--amber);">📍 View location</a>` : ''}
+        </div>
+      </div>`).join('');
+    el.innerHTML = header + timeline;
+  }catch(e){
+    el.innerHTML = `<div class="empty">Could not load — check your connection and try again.</div>`;
+  }
+}
+
+/* ============================================================
+   MARKETING EXPENSE TRACKER — a self-contained module (not the usual
+   Dashboard/History/Photos/Map tabs, since none of those concepts apply
+   to spend data) with its own three-way tab: Analytics, Add Entry, and
+   Upload Excel. Two ways to change the data — a one-line form or a full
+   Excel replace — both stamp the same "last updated by/when" record so
+   the staleness banner is accurate regardless of which route was used.
+   ============================================================ */
+let MEX_DATA = null; // {rows, options, meta} from the last successful load
+const MEX_MONTH_LABELS = {Apr:'Apr',May:'May',Jun:'Jun',Jul:'Jul',Aug:'Aug',Sep:'Sep',Oct:'Oct',Nov:'Nov',Dec:'Dec',Jan:'Jan',Feb:'Feb',Mar:'Mar'};
+const MEX_MONTH_ORDER = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
+
+function switchMktExpenseTab(tab){
+  document.querySelectorAll('#mktExpenseSection .module-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.mex===tab));
+  ['analytics','entry','upload'].forEach(t=> document.getElementById('mex-'+t).style.display = (t===tab) ? 'block' : 'none');
+}
+
+async function loadMktExpenseData(){
+  document.getElementById('mexKpiRow').innerHTML = `<div class="empty"><b>Loading…</b></div>`;
+  try{
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=getMktExpenseData&token=${encodeURIComponent(SESSION.token)}&_t=${Date.now()}`, {cache:'no-store'}, 20000);
+    const j = await r.json();
+    if(!j.success) throw new Error(j.message || 'Could not load expense data');
+    MEX_DATA = j;
+    renderMktExpenseStaleBanner(j.meta);
+    populateMktExpenseDropdowns(j.options);
+    renderMktExpenseAnalytics(j.rows);
+    renderMktExpenseTable();
+  }catch(e){
+    document.getElementById('mexKpiRow').innerHTML = `<div class="empty">Could not load — ${e.message||'check your connection'}.</div>`;
+  }
+}
+
+/* "Kab se update nahi hua" — a plain, unmissable banner naming exactly
+   who last touched this data, when, and how (manual entry vs Excel
+   upload), turning amber/red the longer it's been — a dashboard tab that
+   *looks* live but silently hasn't been touched in weeks is worse than
+   one that's honest about being stale. */
+function renderMktExpenseStaleBanner(meta){
+  const el = document.getElementById('mktExpenseStaleBanner');
+  if(!meta || !meta.lastUpdatedDate){
+    el.innerHTML = `<div style="display:flex; align-items:center; gap:10px; color:var(--red); font-weight:700;">🔴 No data has ever been entered or uploaded for this tracker yet.</div>`;
+    return;
+  }
+  const last = new Date(meta.lastUpdatedDate);
+  const days = Math.floor((Date.now() - last.getTime()) / 86400000);
+  const color = days > 30 ? 'var(--red)' : days > 14 ? 'var(--amber)' : 'var(--green)';
+  const dot = days > 30 ? '🔴' : days > 14 ? '🟡' : '🟢';
+  const staleNote = days > 30 ? ` — this hasn't been updated in over a month` : days > 14 ? ` — getting stale, consider an update` : '';
+  el.innerHTML = `<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+    <span style="font-weight:700; color:${color};">${dot} Last updated by ${meta.lastUpdatedBy || 'Unknown'} on ${last.toLocaleString()} (${days===0?'today':days+' day'+(days===1?'':'s')+' ago'})</span>
+    <span style="font-size:12px; color:var(--slate);">via ${meta.lastUpdateSource || 'Unknown'}${staleNote}</span>
+  </div>`;
+}
+
+function populateMktExpenseDropdowns(options){
+  const brandSel = document.getElementById('mexBrand');
+  const actSel = document.getElementById('mexActivity');
+  const brandFilter = document.getElementById('mexBrandFilter');
+  const actFilter = document.getElementById('mexActFilter');
+  const agencyList = document.getElementById('mexAgencyList');
+  if(brandSel.options.length === 0){
+    options.brands.forEach(b=>{ brandSel.add(new Option(b,b)); brandFilter.add(new Option(b,b)); });
+    options.activities.forEach(a=>{ actSel.add(new Option(a,a)); actFilter.add(new Option(a,a)); });
+    options.agencies.forEach(a=> agencyList.appendChild(new Option(a,a)));
+  }
+}
+
+function mexFmtRupee(v){ return '₹' + Math.round(v).toLocaleString('en-IN'); }
+function mexFmtLakh(v){ return '₹' + (v/100000).toFixed(2) + 'L'; }
+
+function renderMktExpenseAnalytics(rows){
+  const n = rows.length;
+  let ytd=0, atl=0, btl=0, digital=0;
+  const byBrand={}, byActivity={}, byMonth={}; MEX_MONTH_ORDER.forEach(m=>byMonth[m]=0);
+  rows.forEach(r=>{
+    ytd += r.ytd;
+    const cat = String(r.activityCategory||'').toUpperCase();
+    if(cat==='ATL') atl+=r.ytd; else if(cat==='BTL') btl+=r.ytd; else if(cat==='DIGITAL') digital+=r.ytd;
+    byBrand[r.brand] = (byBrand[r.brand]||0)+r.ytd;
+    byActivity[r.activity] = (byActivity[r.activity]||0)+r.ytd;
+    MEX_MONTH_ORDER.forEach(m=> byMonth[m] += (r.months[m]||0));
+  });
+
+  document.getElementById('mexKpiRow').innerHTML = [
+    ['Total Entries', n, 'var(--ink)'],
+    ['YTD Spend', mexFmtLakh(ytd), 'var(--navy, #12172B)'],
+    ['ATL', mexFmtLakh(atl), '#C0392B'],
+    ['BTL', mexFmtLakh(btl), '#F5A623'],
+    ['Digital', mexFmtLakh(digital), '#2255CC'],
+  ].map(([label,val,color])=>`
+    <div class="card" style="text-align:center; padding:16px;">
+      <div style="font-size:22px; font-weight:800; color:${color};">${val}</div>
+      <div style="font-size:12px; color:var(--slate); margin-top:4px; text-transform:uppercase; letter-spacing:.5px;">${label}</div>
+    </div>`).join('');
+
+  Object.values(CHARTS).forEach(c=>c.destroy());
+  CHARTS.mexMonthly = new Chart(document.getElementById('mexMonthlyChart'), {
+    type:'line', data:{labels:MEX_MONTH_ORDER.map(m=>MEX_MONTH_LABELS[m]), datasets:[{label:'Spend (₹)', data:MEX_MONTH_ORDER.map(m=>byMonth[m]), borderColor:'#2255CC', backgroundColor:'rgba(34,85,204,0.1)', fill:true, tension:0.3}]},
+    options:{maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>mexFmtLakh(v)}}}}
+  });
+  CHARTS.mexCat = new Chart(document.getElementById('mexCatChart'), {
+    type:'doughnut', data:{labels:['ATL','BTL','Digital'], datasets:[{data:[atl,btl,digital], backgroundColor:['#C0392B','#F5A623','#2255CC']}]},
+    options:{maintainAspectRatio:false, plugins:{legend:{position:'bottom'}}}
+  });
+  const brandEntries = Object.entries(byBrand).sort((a,b)=>b[1]-a[1]);
+  CHARTS.mexBrand = new Chart(document.getElementById('mexBrandChart'), {
+    type:'bar', data:{labels:brandEntries.map(e=>e[0]), datasets:[{data:brandEntries.map(e=>e[1]), backgroundColor:'#1B7A43'}]},
+    options:{maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{ticks:{callback:v=>mexFmtLakh(v)}}}}
+  });
+  const actEntries = Object.entries(byActivity).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  CHARTS.mexActivity = new Chart(document.getElementById('mexActivityChart'), {
+    type:'bar', data:{labels:actEntries.map(e=>e[0]), datasets:[{data:actEntries.map(e=>e[1]), backgroundColor:'#F5A623'}]},
+    options:{maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{ticks:{callback:v=>mexFmtLakh(v)}}}}
+  });
+}
+
+function renderMktExpenseTable(){
+  if(!MEX_DATA) return;
+  const q = (document.getElementById('mexSearch').value||'').toLowerCase();
+  const brandF = document.getElementById('mexBrandFilter').value;
+  const actF = document.getElementById('mexActFilter').value;
+  const rows = MEX_DATA.rows.filter(r=>{
+    if(brandF && r.brand!==brandF) return false;
+    if(actF && r.activity!==actF) return false;
+    if(q && !(String(r.description).toLowerCase().includes(q) || String(r.agency).toLowerCase().includes(q) || String(r.poNumber).toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const thead = document.querySelector('#mexTable thead');
+  const tbody = document.querySelector('#mexTable tbody');
+  thead.innerHTML = `<tr><th>Description</th><th>Brand</th><th>Activity</th><th>Category</th><th>Agency</th><th>PO Number</th><th>YTD (₹)</th><th>Updated By</th></tr>`;
+  tbody.innerHTML = rows.length ? rows.map(r=>`
+    <tr>
+      <td>${r.description}</td><td>${r.brand}</td><td>${r.activity}</td><td>${r.activityCategory||''}</td>
+      <td>${r.agency||''}</td><td class="mono">${r.poNumber||''}</td><td style="font-weight:700;">${mexFmtRupee(r.ytd)}</td><td>${r.lastUpdatedBy||''}</td>
+    </tr>`).join('') : `<tr><td colspan="8"><div class="empty">No entries match this filter.</div></td></tr>`;
+}
+
+async function submitMktExpenseEntry(){
+  const description = document.getElementById('mexDescription').value.trim();
+  const brand = document.getElementById('mexBrand').value;
+  const activity = document.getElementById('mexActivity').value;
+  const activityCategory = document.getElementById('mexActivityCategory').value;
+  const month = document.getElementById('mexMonth').value;
+  const amount = document.getElementById('mexAmount').value;
+  if(!description || !brand || !activity || !month || !amount){ toast('Description, Brand, Activity, Month, and Amount are required', true); return; }
+  const btn = document.getElementById('mexSubmitBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Submitting…';
+  try{
+    const payload = {
+      action:'submitMktExpenseEntry', token:SESSION.token, userName:SESSION.name,
+      description, brand, activity, activityCategory, month, amount,
+      agency: document.getElementById('mexAgency').value.trim(),
+      poNumber: document.getElementById('mexPoNumber').value.trim(),
+      poDate: document.getElementById('mexPoDate').value,
+      poAmount: document.getElementById('mexPoAmount').value,
+      fy: '2026-27'
+    };
+    const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body:JSON.stringify(payload)}, 20000);
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message || 'Could not submit');
+    toast('✅ Entry added');
+    ['mexDescription','mexAgency','mexPoNumber','mexPoDate','mexPoAmount','mexAmount'].forEach(id=>document.getElementById(id).value='');
+    switchMktExpenseTab('analytics');
+    loadMktExpenseData();
+  }catch(e){
+    toast(e.message || 'Could not submit', true);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Submit Entry';
+  }
+}
+
+async function uploadMktExpenseExcel(){
+  const fileInput = document.getElementById('mexExcelInput');
+  const file = fileInput.files[0];
+  if(!file){ toast('Choose an Excel/CSV file first', true); return; }
+  const btn = document.getElementById('mexUploadBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Reading file…';
+  try{
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, {type:'array'});
+    // The source tracker has a 2-row header (a title/subtotal row, then
+    // the real column headers) — sheet_to_json's own header-guess would
+    // misread row 1 as the header. Read as a raw array-of-arrays instead
+    // and find the real header row ourselves by looking for "Description".
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const aoa = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+    const norm = s => String(s||'').toLowerCase().replace(/[^a-z]/g,'');
+    let headerRowIdx = aoa.findIndex(row => row.some(c => norm(c)==='description'));
+    if(headerRowIdx === -1) headerRowIdx = 0;
+    const headerRow = aoa[headerRowIdx];
+    const dataRows = aoa.slice(headerRowIdx+1);
+    const findCol = candidates => headerRow.findIndex(h => candidates.includes(norm(h)));
+    const col = {
+      description: findCol(['description']),
+      brand: findCol(['productcategory','brand','category']),
+      activity: findCol(['activity']),
+      activityCategory: findCol(['acitivitycategory','activitycategory','category2']),
+      agency: findCol(['agency']),
+      poNumber: findCol(['ponumber']),
+      poDate: findCol(['podate']),
+      poAmount: findCol(['poamount']),
+    };
+    const monthCol = {};
+    MEX_MONTH_ORDER.forEach(m=>{
+      const full = {Apr:'april',May:'may',Jun:'june',Jul:'july',Aug:'august',Sep:'september',Oct:'october',Nov:'november',Dec:'december',Jan:'january',Feb:'february',Mar:'march'}[m];
+      monthCol[m] = findCol([m.toLowerCase(), full]);
+    });
+    if(col.description === -1) throw new Error('Could not find a "Description" column — check the file\'s header row.');
+    const rows = dataRows.filter(row => row[col.description]).map(row=>{
+      const r = {
+        description: row[col.description] || '', brand: col.brand>-1?row[col.brand]:'', activity: col.activity>-1?row[col.activity]:'',
+        activityCategory: col.activityCategory>-1?row[col.activityCategory]:'', agency: col.agency>-1?row[col.agency]:'',
+        poNumber: col.poNumber>-1?row[col.poNumber]:'', poDate: col.poDate>-1?row[col.poDate]:'', poAmount: col.poAmount>-1?row[col.poAmount]:'',
+      };
+      MEX_MONTH_ORDER.forEach(m=>{ r[m] = monthCol[m]>-1 ? (Number(row[monthCol[m]])||0) : 0; });
+      return r;
+    });
+    if(!rows.length) throw new Error('No data rows found under the header row');
+    if(!confirm(`This will REPLACE the entire tracker with ${rows.length} rows from this file. Continue?`)) { btn.disabled=false; btn.textContent='Upload & Replace'; return; }
+    btn.innerHTML = '<span class="spin"></span> Uploading…';
+    const res = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'uploadMktExpenseExcel', token:SESSION.token, userName:SESSION.name, rows, fy:'2026-27'})}, 30000).then(r=>r.json());
+    if(!res.success) throw new Error(res.message || 'Upload failed');
+    toast(`✅ ${res.count} rows uploaded — tracker replaced`);
+    fileInput.value = '';
+    switchMktExpenseTab('analytics');
+    loadMktExpenseData();
+  }catch(e){
+    toast(e.message || 'Could not upload that file', true);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Upload & Replace';
+  }
+}
+
+async function exportMktExpenseReport(){
+  startExportProgress();
+  try{
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=exportReport&token=${encodeURIComponent(SESSION.token)}&module=mktexpense&_t=${Date.now()}`, {cache:'no-store'}, 60000);
+    const res = await r.json();
+    if(!res.success || !res.base64) throw new Error(res.message || 'Export failed');
+    const bytes = atob(res.base64);
+    const arr = new Uint8Array(bytes.length);
+    for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
+    const blob = new Blob([arr], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=res.filename||'MarketingExpenseReport.xlsx'; a.click();
+    URL.revokeObjectURL(url);
+    finishExportProgress();
+  }catch(e){
+    document.getElementById('exportOverlay').classList.remove('show');
+    toast(e.message || 'Could not export', true);
+  }
 }
 /* Badge for the new 4-state approval flow — Pending Approval (needs an
    Admin/Marketing decision), Approved (waiting on the field team to go
@@ -2010,7 +2470,7 @@ const CAN_APPROVE = () => SESSION && (SESSION.role === 'Admin' || SESSION.role =
 async function smApproveSubmission(submissionId){
   if(!confirm(`Approve ${submissionId}? The field auditor will then be able to confirm installation.`)) return;
   try{
-    const r = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'approveSubmission', submissionId, approverName:SESSION.name, token:SESSION.token})}, 15000);
+    const r = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'approveSubmission', submissionId, approverName:SESSION.name, role:SESSION.role})}, 15000);
     const res = await r.json();
     if(!res.success) throw new Error(res.message||'Could not approve');
     toast(`${submissionId} approved ✅`);
@@ -2021,7 +2481,7 @@ async function smRejectSubmission(submissionId){
   const reason = prompt(`Reason for rejecting ${submissionId}?`, '');
   if(reason === null) return;
   try{
-    const r = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'rejectSubmission', submissionId, approverName:SESSION.name, reason, token:SESSION.token})}, 15000);
+    const r = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'rejectSubmission', submissionId, approverName:SESSION.name, reason, role:SESSION.role})}, 15000);
     const res = await r.json();
     if(!res.success) throw new Error(res.message||'Could not reject');
     toast(`${submissionId} rejected`);
@@ -2206,31 +2666,30 @@ function exportBetaverseAuditorReport(){
   const byAuditor = {};
   ALL_DATA.forEach(r=>{
     const key = r.preAuditor || 'Unknown';
-    if(!byAuditor[key]) byAuditor[key] = {submissions:0, verified:0, unapproved:0, totalSubmittedCost:0, totalApprovedCost:0, manualEntries:0, flaggedNotRunning:0};
+    if(!byAuditor[key]) byAuditor[key] = {submissions:0, verified:0, unapproved:0, manualEntries:0, flaggedNotRunning:0};
     const a = byAuditor[key];
     a.submissions++;
-    if(r.status==='Verified'){ a.verified++; a.totalApprovedCost += Number(r.postApprovedCost)||0; }
+    if(r.status==='Verified'){ a.verified++; }
     else a.unapproved++;
-    a.totalSubmittedCost += Number(r.preCost)||0;
     if(String(r.preMeasureMethod||'').includes('Manual')) a.manualEntries++;
     const check = latestCheckBySubmission[r.submissionId];
     if(check && check.isRunning==='No') a.flaggedNotRunning++;
   });
   const auditorAoa = [
-    ['Auditor','Total Submissions','Verified','Unapproved','Manual Entries (unverified)','Sites Flagged NOT Running','Total Submitted Cost (₹)','Total Approved Cost (₹)'],
-    ...Object.entries(byAuditor).map(([name,a])=>[name, a.submissions, a.verified, a.unapproved, a.manualEntries, a.flaggedNotRunning, a.totalSubmittedCost, a.totalApprovedCost])
+    ['Auditor','Total Submissions','Verified','Unapproved','Manual Entries (unverified)','Sites Flagged NOT Running'],
+    ...Object.entries(byAuditor).map(([name,a])=>[name, a.submissions, a.verified, a.unapproved, a.manualEntries, a.flaggedNotRunning])
   ];
   const wsAuditor = XLSX.utils.aoa_to_sheet(auditorAoa);
   wsAuditor['!cols'] = auditorAoa[0].map(h=>({wch: Math.max(14, String(h).length+2)}));
 
   // ---- Sheet 2: Full Detail (every field, incl. lat/long + address) ----
-  const detailHeaders = ['Submission ID','Category','Status','Auditor','Auditor Phone','Address','City','Latitude','Longitude','Maps Link','Submitted Width (ft)','Submitted Height (ft)','Submitted Area','Area Unit','Measurement Method','Submitted Cost (₹)','Submitted Date','Approved Width (ft)','Approved Height (ft)','Approved Area','Approved Cost (₹)','Site Condition','Verified By','Verified Date','Latest Status Check','Latest Check Date','Latest Check By'];
+  const detailHeaders = ['Submission ID','Category','Status','Auditor','Auditor Phone','Address','City','Latitude','Longitude','Maps Link','Submitted Width (ft)','Submitted Height (ft)','Submitted Area','Area Unit','Measurement Method','Submitted Date','Approved Width (ft)','Approved Height (ft)','Approved Area','Site Condition','Verified By','Verified Date','Latest Status Check','Latest Check Date','Latest Check By'];
   const detailAoa = [detailHeaders, ...ALL_DATA.map(r=>{
     const check = latestCheckBySubmission[r.submissionId];
     return [
       r.submissionId, r.category, r.status, r.preAuditor, r.prePhone, r.preAddress, r.preCity,
-      r.preLat, r.preLng, r.preMapsLink, r.preWidth||'', r.preHeight||'', r.preArea, r.preAreaUnit, r.preMeasureMethod, r.preCost, r.preDate,
-      r.status==='Verified' ? r.postWidth||'' : '', r.status==='Verified' ? r.postHeight||'' : '', r.status==='Verified' ? r.postArea : '', r.status==='Verified' ? r.postApprovedCost : '',
+      r.preLat, r.preLng, r.preMapsLink, r.preWidth||'', r.preHeight||'', r.preArea, r.preAreaUnit, r.preMeasureMethod, r.preDate,
+      r.status==='Verified' ? r.postWidth||'' : '', r.status==='Verified' ? r.postHeight||'' : '', r.status==='Verified' ? r.postArea : '',
       r.status==='Verified' ? r.postCondition||'' : '', r.status==='Verified' ? r.postAuditor : '', r.status==='Verified' ? r.postDate : '',
       check ? (check.isRunning==='Yes' ? 'Running' : 'NOT running') : 'Not checked yet', check ? check.date : '', check ? check.checkedBy : ''
     ];
