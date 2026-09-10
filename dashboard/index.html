@@ -271,6 +271,15 @@ table.data tr:hover td{background:var(--paper-2);}
 /* ---- Master Data tab ---- */
 .hint{font-size:12.5px; color:var(--slate); margin-bottom:12px; line-height:1.5;}
 .req-mark{color:var(--red); font-weight:700;}
+.mex-info{display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:var(--paper-2); color:var(--slate); font-size:12px; font-style:normal; cursor:pointer; flex-shrink:0;}
+.mex-info:hover{background:var(--amber); color:#fff;}
+.mex-info-modal{display:none; position:fixed; inset:0; background:rgba(18,23,43,.55); z-index:9000; align-items:center; justify-content:center;}
+.mex-info-modal.show{display:flex;}
+.mex-info-box{background:#fff; border-radius:14px; max-width:480px; width:90%; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,.3);}
+.mex-info-box h3{margin:0 0 12px; font-size:16px; color:var(--ink);}
+.mex-info-box p{margin:0 0 10px; font-size:13.5px; color:var(--slate); line-height:1.6;}
+.mex-info-box code{background:var(--paper-2); padding:2px 6px; border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:12px;}
+.mex-info-box .btn{margin-top:8px;}
 .master-textarea{width:100%; min-height:160px; padding:12px; border:1.5px solid var(--border-2); border-radius:4px; font-family:'IBM Plex Mono'; font-size:12.5px; resize:vertical; background:var(--paper); color:var(--ink);}
 .master-actions{display:flex; align-items:center; gap:12px; margin-top:12px;}
 .master-count{font-size:12.5px; color:var(--slate);}
@@ -341,7 +350,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.61.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.65.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -532,22 +541,25 @@ table.data tr:hover td{background:var(--paper-2);}
     </div>
 
     <div id="mex-analytics">
+      <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;"><span style="font-size:12px; font-weight:700; color:var(--slate); text-transform:uppercase; letter-spacing:.5px;">Overview</span><span class="mex-info" onclick="mexShowInfo('kpi')">ⓘ</span></div>
       <div class="kpi-row" id="mexKpiRow" style="display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;"></div>
       <div style="display:grid; grid-template-columns:1.3fr 1fr; gap:16px; margin-bottom:16px;">
-        <div class="card"><h2>Monthly Spend Trend</h2><div style="height:300px;"><canvas id="mexMonthlyChart"></canvas></div></div>
-        <div class="card"><h2>By Activity Category</h2><div style="height:300px;"><canvas id="mexCatChart"></canvas></div></div>
+        <div class="card"><h2 style="display:flex; align-items:center; gap:6px;">Monthly Spend Trend <span class="mex-info" onclick="mexShowInfo('monthly')">ⓘ</span></h2><div style="height:300px;"><canvas id="mexMonthlyChart"></canvas></div></div>
+        <div class="card"><h2 style="display:flex; align-items:center; gap:6px;">By Activity Category <span class="mex-info" onclick="mexShowInfo('actcat')">ⓘ</span></h2><div style="height:300px;"><canvas id="mexCatChart"></canvas></div></div>
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
-        <div class="card"><h2>By Brand</h2><div style="height:280px;"><canvas id="mexBrandChart"></canvas></div></div>
-        <div class="card"><h2>By Activity Type</h2><div style="height:280px;"><canvas id="mexActivityChart"></canvas></div></div>
+        <div class="card"><h2 style="display:flex; align-items:center; gap:6px;">By Product Category <span class="mex-info" onclick="mexShowInfo('brand')">ⓘ</span></h2><div style="height:280px;"><canvas id="mexBrandChart"></canvas></div></div>
+        <div class="card"><h2 style="display:flex; align-items:center; gap:6px;">By Activity Type <span class="mex-info" onclick="mexShowInfo('activity')">ⓘ</span></h2><div style="height:280px;"><canvas id="mexActivityChart"></canvas></div></div>
       </div>
       <div class="card">
         <div class="filters">
           <input type="text" id="mexSearch" placeholder="Search description, agency, PO…" oninput="renderMktExpenseTable()">
-          <select id="mexBrandFilter" onchange="renderMktExpenseTable()"><option value="">All brands</option></select>
+          <select id="mexBrandFilter" onchange="renderMktExpenseTable()"><option value="">All Product Categories</option></select>
           <select id="mexActFilter" onchange="renderMktExpenseTable()"><option value="">All activities</option></select>
-          <button class="btn btn-dark" onclick="exportMktExpenseReport()">⬇ Export coloured report</button>
+          <button class="btn btn-dark" onclick="exportMktExpenseReport()">⬇ Excel report</button>
+          <button class="btn btn-outline" onclick="exportMktExpensePPT()">📊 PPT report</button>
         </div>
+        <div id="mexFilteredSummary" style="display:none;"></div>
         <div class="table-wrap"><table class="data" id="mexTable"><thead></thead><tbody></tbody></table></div>
       </div>
     </div>
@@ -557,7 +569,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <h2>Add One Expense Entry</h2>
         <p class="hint">Pick the head, fill the amount for one month, and submit — this becomes one line in the tracker, same as a row in the Excel.</p>
         <div class="field"><label>Description <span class="req-mark">*</span></label><input type="text" id="mexDescription" placeholder="e.g. Hoarding Ranchi 3 sites"></div>
-        <div class="field"><label>Brand <span class="req-mark">*</span></label><select id="mexBrand"></select></div>
+        <div class="field"><label>Product Category <span class="req-mark">*</span></label><select id="mexBrand"></select></div>
         <div class="field"><label>Activity <span class="req-mark">*</span></label><select id="mexActivity"></select></div>
         <div class="field"><label>Activity Category <span class="req-mark">*</span></label><select id="mexActivityCategory"><option value="ATL">ATL</option><option value="BTL">BTL</option><option value="DIGITAL">DIGITAL</option></select></div>
         <div class="field"><label>Agency</label><input type="text" id="mexAgency" list="mexAgencyList"><datalist id="mexAgencyList"></datalist></div>
@@ -591,6 +603,14 @@ table.data tr:hover td{background:var(--paper-2);}
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="mex-info-modal" id="mexInfoModal" onclick="if(event.target===this) mexCloseInfo()">
+  <div class="mex-info-box">
+    <h3 id="mexInfoTitle"></h3>
+    <div id="mexInfoBody"></div>
+    <button class="btn btn-dark" onclick="mexCloseInfo()">Close</button>
   </div>
 </div>
 
@@ -895,7 +915,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.61.0';
+const FRONTEND_VERSION = 'v6.65.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2311,7 +2331,63 @@ function populateMktExpenseDropdowns(options){
 }
 
 function mexFmtRupee(v){ return '₹' + Math.round(v).toLocaleString('en-IN'); }
-function mexFmtLakh(v){ return '₹' + (v/100000).toFixed(2) + 'L'; }
+
+/* Every "ⓘ" on this tab opens the same modal with a different, honest
+   explanation of exactly what's being summed and how — so nobody ever
+   has to guess whether a chart includes rejected/pending rows, whether
+   YTD means "this financial year" or "since the sheet began", etc. */
+const MEX_INFO_TEXT = {
+  kpi: {
+    title: 'How these numbers are calculated',
+    body: `<p><b>Total Entries</b> — count of every row currently in the tracker (manual entries + the last uploaded Excel combined).</p>
+      <p><b>YTD Spend</b> — sum of every month column (Apr through Mar) across every row: <code>Σ(Apr+May+…+Mar)</code> for all rows. This is a running total for the fiscal year, not a projection.</p>
+      <p><b>ATL / BTL / Digital</b> — the same YTD sum, but split by each row's Activity Category. A row with no Activity Category set is excluded from all three (so these three won't always add up to exactly the Total).</p>`
+  },
+  monthly: {
+    title: 'Monthly Spend Trend — calculation',
+    body: `<p>For each month (Apr–Mar), this adds up that ONE month's column across every row currently matching your filters: <code>Σ(that month's value)</code> for all visible rows.</p>
+      <p>A month with no spend yet shows as ₹0 — it does not mean the month was skipped, just that nothing has been entered for it so far.</p>`
+  },
+  actcat: {
+    title: 'By Activity Category — calculation',
+    body: `<p>Same YTD sum as the Overview cards (every month added up, per row), grouped into three buckets by each row's <b>Activity Category</b> field: ATL, BTL, or Digital.</p>
+      <p>This chart respects whatever filters are currently applied above the table — selecting a Product Category or Activity narrows this chart too.</p>`
+  },
+  brand: {
+    title: 'By Product Category — calculation',
+    body: `<p>YTD total (every month summed) grouped by each row's <b>Product Category</b> field — Sattu, Spice, Core, Soya, Corporate, etc.</p>
+      <p>Product Category values are cleaned automatically on the way in (e.g. "Soya " and "Soya" are always treated as one) so a stray space in an upload never creates a duplicate slice.</p>`
+  },
+  activity: {
+    title: 'By Activity Type — calculation',
+    body: `<p>YTD total grouped by each row's <b>Activity</b> field — HOARDING, TRANSIT, PRINT, TVC, and so on. Shows the top 10 activities by spend.</p>
+      <p>This is the same underlying number as the Activity breakdown table in the exported report — this chart just shows it visually and only the top 10.</p>`
+  },
+  filtered: {
+    title: 'Filtered summary — calculation',
+    body: `<p>This strip only reflects rows matching your CURRENT Product Category / Activity filter selection (shown in the table below it), not the whole tracker.</p>
+      <p><b>YTD spend</b> — sum of all months for just these filtered rows. <b>Top agency</b> — whichever agency has the highest YTD spend within this filtered set specifically (a different agency may lead overall).</p>`
+  }
+};
+function mexShowInfo(key){
+  const info = MEX_INFO_TEXT[key];
+  if(!info) return;
+  document.getElementById('mexInfoTitle').textContent = info.title;
+  document.getElementById('mexInfoBody').innerHTML = info.body;
+  document.getElementById('mexInfoModal').classList.add('show');
+}
+function mexCloseInfo(){
+  document.getElementById('mexInfoModal').classList.remove('show');
+}
+/* Simple, independent per-value formatting — each number decides its own
+   unit purely from its own size, nothing shared across a row or chart.
+   ≥ ₹1,00,00,000 (1 Crore = 100 Lakh) shows in Crore; below that, Lakh.
+   e.g. ₹4,46,00,000 → "₹44.60Cr", ₹20,00,000 → "₹20.00L". */
+function mexFmtInr(v){
+  const abs = Math.abs(v);
+  if(abs >= 10000000) return '₹' + (v/10000000).toFixed(2) + 'Cr';
+  return '₹' + (v/100000).toFixed(2) + 'L';
+}
 
 function renderMktExpenseAnalytics(rows){
   const n = rows.length;
@@ -2326,12 +2402,15 @@ function renderMktExpenseAnalytics(rows){
     MEX_MONTH_ORDER.forEach(m=> byMonth[m] += (r.months[m]||0));
   });
 
+  // One shared unit for the 4 currency KPI cards, so ATL/BTL/Digital are
+  // always directly comparable to YTD Spend at a glance — never "YTD:
+  // ₹6.05Cr" next to "ATL: ₹35.00L" forcing a mental conversion.
   document.getElementById('mexKpiRow').innerHTML = [
-    ['Total Entries', n, 'var(--ink)'],
-    ['YTD Spend', mexFmtLakh(ytd), 'var(--navy, #12172B)'],
-    ['ATL', mexFmtLakh(atl), '#C0392B'],
-    ['BTL', mexFmtLakh(btl), '#F5A623'],
-    ['Digital', mexFmtLakh(digital), '#2255CC'],
+    ['Total Entries', String(n), 'var(--ink)'],
+    ['YTD Spend', mexFmtInr(ytd), 'var(--navy, #12172B)'],
+    ['ATL', mexFmtInr(atl), '#C0392B'],
+    ['BTL', mexFmtInr(btl), '#F5A623'],
+    ['Digital', mexFmtInr(digital), '#2255CC'],
   ].map(([label,val,color])=>`
     <div class="card" style="text-align:center; padding:16px;">
       <div style="font-size:22px; font-weight:800; color:${color};">${val}</div>
@@ -2340,22 +2419,22 @@ function renderMktExpenseAnalytics(rows){
 
   Object.values(CHARTS).forEach(c=>c.destroy());
   CHARTS.mexMonthly = new Chart(document.getElementById('mexMonthlyChart'), {
-    type:'line', data:{labels:MEX_MONTH_ORDER.map(m=>MEX_MONTH_LABELS[m]), datasets:[{label:'Spend (₹)', data:MEX_MONTH_ORDER.map(m=>byMonth[m]), borderColor:'#2255CC', backgroundColor:'rgba(34,85,204,0.1)', fill:true, tension:0.3}]},
-    options:{maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>mexFmtLakh(v)}}}}
+    type:'line', data:{labels:MEX_MONTH_ORDER.map(m=>MEX_MONTH_LABELS[m]), datasets:[{label:'Spend', data:MEX_MONTH_ORDER.map(m=>byMonth[m]), borderColor:'#2255CC', backgroundColor:'rgba(34,85,204,0.1)', fill:true, tension:0.3}]},
+    options:{maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>mexFmtInr(ctx.parsed.y)}}}, scales:{y:{ticks:{callback:v=>mexFmtInr(v)}}}}
   });
   CHARTS.mexCat = new Chart(document.getElementById('mexCatChart'), {
     type:'doughnut', data:{labels:['ATL','BTL','Digital'], datasets:[{data:[atl,btl,digital], backgroundColor:['#C0392B','#F5A623','#2255CC']}]},
-    options:{maintainAspectRatio:false, plugins:{legend:{position:'bottom'}}}
+    options:{maintainAspectRatio:false, plugins:{legend:{position:'bottom'}, tooltip:{callbacks:{label:ctx=>ctx.label+': '+mexFmtInr(ctx.parsed)}}}}
   });
   const brandEntries = Object.entries(byBrand).sort((a,b)=>b[1]-a[1]);
   CHARTS.mexBrand = new Chart(document.getElementById('mexBrandChart'), {
-    type:'bar', data:{labels:brandEntries.map(e=>e[0]), datasets:[{data:brandEntries.map(e=>e[1]), backgroundColor:'#1B7A43'}]},
-    options:{maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{ticks:{callback:v=>mexFmtLakh(v)}}}}
+    type:'bar', data:{labels:brandEntries.map(e=>e[0]), datasets:[{label:'Spend', data:brandEntries.map(e=>e[1]), backgroundColor:'#1B7A43'}]},
+    options:{maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>mexFmtInr(ctx.parsed.x)}}}, scales:{x:{ticks:{callback:v=>mexFmtInr(v)}}}}
   });
   const actEntries = Object.entries(byActivity).sort((a,b)=>b[1]-a[1]).slice(0,10);
   CHARTS.mexActivity = new Chart(document.getElementById('mexActivityChart'), {
-    type:'bar', data:{labels:actEntries.map(e=>e[0]), datasets:[{data:actEntries.map(e=>e[1]), backgroundColor:'#F5A623'}]},
-    options:{maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{ticks:{callback:v=>mexFmtLakh(v)}}}}
+    type:'bar', data:{labels:actEntries.map(e=>e[0]), datasets:[{label:'Spend', data:actEntries.map(e=>e[1]), backgroundColor:'#F5A623'}]},
+    options:{maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>mexFmtInr(ctx.parsed.x)}}}, scales:{x:{ticks:{callback:v=>mexFmtInr(v)}}}}
   });
 }
 
@@ -2370,14 +2449,38 @@ function renderMktExpenseTable(){
     if(q && !(String(r.description).toLowerCase().includes(q) || String(r.agency).toLowerCase().includes(q) || String(r.poNumber).toLowerCase().includes(q))) return false;
     return true;
   });
+  renderMktExpenseFilteredSummary(rows, brandF, actF);
   const thead = document.querySelector('#mexTable thead');
   const tbody = document.querySelector('#mexTable tbody');
-  thead.innerHTML = `<tr><th>Description</th><th>Brand</th><th>Activity</th><th>Category</th><th>Agency</th><th>PO Number</th><th>YTD (₹)</th><th>Updated By</th></tr>`;
+  thead.innerHTML = `<tr><th>Description</th><th>Product Category</th><th>Activity</th><th>Activity Category</th><th>Agency</th><th>PO Number</th><th>YTD (₹)</th><th>Updated By</th></tr>`;
   tbody.innerHTML = rows.length ? rows.map(r=>`
     <tr>
       <td>${r.description}</td><td>${r.brand}</td><td>${r.activity}</td><td>${r.activityCategory||''}</td>
       <td>${r.agency||''}</td><td class="mono">${r.poNumber||''}</td><td style="font-weight:700;">${mexFmtRupee(r.ytd)}</td><td>${r.lastUpdatedBy||''}</td>
     </tr>`).join('') : `<tr><td colspan="8"><div class="empty">No entries match this filter.</div></td></tr>`;
+}
+/* A compact, single-row analytics strip that appears right above the
+   table the moment a Product Category or Activity filter is picked — the
+   full charts above stay showing the WHOLE picture, while this answers
+   "okay, but what about just HOARDING" without losing that bigger
+   context. Disappears again once both filters are cleared, since with no
+   filter active it would just repeat the Overview cards above. */
+function renderMktExpenseFilteredSummary(rows, brandF, actF){
+  const el = document.getElementById('mexFilteredSummary');
+  if(!brandF && !actF){ el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const ytd = rows.reduce((s,r)=>s+r.ytd, 0);
+  const agencyCounts = {};
+  rows.forEach(r=>{ if(r.agency) agencyCounts[r.agency] = (agencyCounts[r.agency]||0)+r.ytd; });
+  const topAgency = Object.entries(agencyCounts).sort((a,b)=>b[1]-a[1])[0];
+  const label = [brandF, actF].filter(Boolean).join(' · ') || 'All';
+  el.innerHTML = `
+    <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; background:var(--paper-2); border-radius:10px; padding:14px 18px; margin-bottom:14px;">
+      <div style="font-weight:700; font-size:13px; display:flex; align-items:center; gap:6px;">🔎 ${label} <span class="mex-info" onclick="mexShowInfo('filtered')">ⓘ</span></div>
+      <div><span style="font-size:18px; font-weight:800;">${rows.length}</span><span style="font-size:11px; color:var(--slate); margin-left:5px;">entries</span></div>
+      <div><span style="font-size:18px; font-weight:800; color:var(--amber-dark, #C97F0E);">${mexFmtInr(ytd)}</span><span style="font-size:11px; color:var(--slate); margin-left:5px;">YTD spend</span></div>
+      ${topAgency ? `<div><span style="font-size:13px; font-weight:700;">${topAgency[0]}</span><span style="font-size:11px; color:var(--slate); margin-left:5px;">top agency (${mexFmtInr(topAgency[1])})</span></div>` : ''}
+    </div>`;
 }
 
 async function submitMktExpenseEntry(){
@@ -2478,10 +2581,16 @@ async function uploadMktExpenseExcel(){
 
 async function exportMktExpenseReport(){
   startExportProgress();
-  try{
+  const attempt = async () => {
     const r = await fetchWithTimeout(`${SCRIPT_URL}?action=exportReport&token=${encodeURIComponent(SESSION.token)}&module=mktexpense&_t=${Date.now()}`, {cache:'no-store'}, 60000);
     const res = await r.json();
     if(!res.success || !res.base64) throw new Error(res.message || 'Export failed');
+    return res;
+  };
+  try{
+    let res;
+    try{ res = await attempt(); }
+    catch(firstErr){ res = await attempt(); } // one silent retry — most failures here are a transient timeout, not a real problem with the data
     const bytes = atob(res.base64);
     const arr = new Uint8Array(bytes.length);
     for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
@@ -2492,8 +2601,90 @@ async function exportMktExpenseReport(){
     finishExportProgress();
   }catch(e){
     document.getElementById('exportOverlay').classList.remove('show');
-    toast(e.message || 'Could not export', true);
+    toast('Export failed after retrying — check your connection and try again in a moment: ' + (e.message||''), true);
   }
+}
+
+/* Built entirely client-side (pptxgenjs, already loaded for other export
+   flows) rather than round-tripping through Apps Script — the data is
+   already sitting in MEX_DATA from the last load, so this can never fail
+   because of a slow/unreachable backend the way a server-generated
+   export could. The only failure mode left is "no data loaded yet",
+   which is checked up front with a clear message instead of a silent
+   half-built file. */
+async function exportMktExpensePPT(){
+  if(!MEX_DATA || !MEX_DATA.rows){ toast('Data is still loading — please wait a moment and try again', true); return; }
+  startExportProgress();
+  try{
+    const rows = MEX_DATA.rows;
+    const NAVY='12172B', AMBER='F5A623', GREEN='1B7A43', BLUE='2255CC', RED='C0392B', CREAM='FAF8F1', SLATE='6B7280', PAPER2='F1ECE0';
+    let ytd=0, atl=0, btl=0, digital=0;
+    const byBrand={}, byActivity={}, byMonth={}; MEX_MONTH_ORDER.forEach(m=>byMonth[m]=0);
+    rows.forEach(r=>{
+      ytd += r.ytd;
+      const cat = String(r.activityCategory||'').toUpperCase();
+      if(cat==='ATL') atl+=r.ytd; else if(cat==='BTL') btl+=r.ytd; else if(cat==='DIGITAL') digital+=r.ytd;
+      byBrand[r.brand] = (byBrand[r.brand]||0)+r.ytd;
+      byActivity[r.activity] = (byActivity[r.activity]||0)+r.ytd;
+      MEX_MONTH_ORDER.forEach(m=> byMonth[m] += (r.months[m]||0));
+    });
+    const meta = MEX_DATA.meta || {};
+
+    const pptx = new PptxGenJS();
+    pptx.defineLayout({name:'WIDE', width:13.33, height:7.5});
+    pptx.layout = 'WIDE';
+
+    // ---- Title slide ----
+    let s = pptx.addSlide(); s.background={color:NAVY};
+    s.addText('MARKETING EXPENSE', {x:0.6,y:2.3,w:11,h:0.9, fontFace:'Cambria', fontSize:40, bold:true, color:'FFFFFF'});
+    s.addText('FY 2026-27 — Analytics Report', {x:0.6,y:3.15,w:11,h:0.5, fontFace:'Calibri', fontSize:18, color:AMBER});
+    s.addText(`Generated ${new Date().toLocaleString()}${meta.lastUpdatedBy ? ' · Data last updated by '+meta.lastUpdatedBy : ''}`, {x:0.6,y:6.7,w:11,h:0.4, fontFace:'Calibri', fontSize:11, italic:true, color:'CADCFC'});
+
+    // ---- KPI overview slide ----
+    s = pptx.addSlide(); s.background={color:CREAM};
+    s.addText('Overview', {x:0.5,y:0.3,w:8,h:0.5, fontFace:'Cambria', fontSize:24, bold:true, color:NAVY});
+    const kpis = [['Total Entries', String(rows.length), NAVY], ['YTD Spend', mexFmtInr(ytd), AMBER], ['ATL', mexFmtInr(atl), RED], ['BTL', mexFmtInr(btl), AMBER], ['Digital', mexFmtInr(digital), BLUE]];
+    kpis.forEach((k,i)=>{
+      const x = 0.5 + i*2.5;
+      s.addShape(pptx.ShapeType.roundRect, {x, y:1.2, w:2.3, h:1.5, fill:{color:'FFFFFF'}, line:{color:'E4DFCF', width:1}, rectRadius:0.08});
+      s.addText(k[1], {x, y:1.35, w:2.3, h:0.7, align:'center', fontFace:'Cambria', fontSize:22, bold:true, color:k[2]});
+      s.addText(k[0], {x, y:2.05, w:2.3, h:0.4, align:'center', fontFace:'Calibri', fontSize:11, color:SLATE});
+    });
+    s.addChart(pptx.ChartType.line, [{name:'Spend', labels:MEX_MONTH_ORDER, values:MEX_MONTH_ORDER.map(m=>byMonth[m])}],
+      {x:0.5, y:3.1, w:12.3, h:3.9, chartColors:[BLUE], showTitle:true, title:'Monthly Spend Trend (₹)', showLegend:false});
+
+    // ---- Category & Activity breakdown slide ----
+    s = pptx.addSlide(); s.background={color:CREAM};
+    s.addText('Where the Spend Is Going', {x:0.5,y:0.3,w:10,h:0.5, fontFace:'Cambria', fontSize:24, bold:true, color:NAVY});
+    const brandEntries = Object.entries(byBrand).sort((a,b)=>b[1]-a[1]);
+    const actEntries = Object.entries(byActivity).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    s.addChart(pptx.ChartType.bar, [{name:'By Product Category', labels:brandEntries.map(e=>e[0]), values:brandEntries.map(e=>e[1])}],
+      {x:0.4, y:1.0, w:6.1, h:6.0, chartColors:[GREEN], showTitle:true, title:'By Product Category (₹)', showLegend:false, barDir:'bar'});
+    s.addChart(pptx.ChartType.bar, [{name:'By Activity', labels:actEntries.map(e=>e[0]), values:actEntries.map(e=>e[1])}],
+      {x:6.8, y:1.0, w:6.1, h:6.0, chartColors:[AMBER], showTitle:true, title:'By Activity Type — Top 10 (₹)', showLegend:false, barDir:'bar'});
+
+    // ---- Top entries table slide ----
+    s = pptx.addSlide(); s.background={color:CREAM};
+    s.addText('Top 12 Entries by YTD Spend', {x:0.5,y:0.3,w:10,h:0.5, fontFace:'Cambria', fontSize:24, bold:true, color:NAVY});
+    const top12 = [...rows].sort((a,b)=>b.ytd-a.ytd).slice(0,12);
+    const tableRows = [
+      [{text:'Description', options:{bold:true, color:'FFFFFF', fill:{color:NAVY}}}, {text:'Product Category', options:{bold:true, color:'FFFFFF', fill:{color:NAVY}}}, {text:'Activity', options:{bold:true, color:'FFFFFF', fill:{color:NAVY}}}, {text:'Agency', options:{bold:true, color:'FFFFFF', fill:{color:NAVY}}}, {text:'YTD (₹)', options:{bold:true, color:'FFFFFF', fill:{color:NAVY}}}]
+    ].concat(top12.map((r,i)=>[
+      {text:String(r.description||'').slice(0,50)}, {text:r.brand||''}, {text:r.activity||''}, {text:r.agency||''},
+      {text:mexFmtRupee(r.ytd), options:{bold:true}}
+    ].map(c=> Object.assign(c, {options: Object.assign({fill:{color: i%2?PAPER2:'FFFFFF'}}, c.options||{})}))));
+    s.addTable(tableRows, {x:0.5, y:1.1, w:12.3, h:5.8, fontSize:11, fontFace:'Calibri', border:{type:'solid', color:'D8D2C4', pt:0.5}, autoPage:false});
+
+    await pptx.writeFile({fileName: `MarketingExpense_FY2026-27_${Utilities_formatDateSafe()}.pptx`});
+    finishExportProgress();
+  }catch(e){
+    document.getElementById('exportOverlay').classList.remove('show');
+    toast('Could not build the PPT: ' + (e.message||'unknown error'), true);
+  }
+}
+function Utilities_formatDateSafe(){
+  const d = new Date();
+  return d.getFullYear() + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0');
 }
 /* Badge for the new 4-state approval flow — Pending Approval (needs an
    Admin/Marketing decision), Approved (waiting on the field team to go
@@ -2991,7 +3182,14 @@ function renderPhotos(){
     const searchable = (p.name + ' ' + (p.details||[]).map(d=>d[1]).join(' ')).toLowerCase();
     const hit = !q || searchable.includes(q);
     const dateOk = (!photoFrom || (p.date||'') >= photoFrom) && (!photoTo || (p.date||'') <= photoTo);
-    return hit && (!typeFilter || p.type===typeFilter) && (!sourceFilter || p.source===sourceFilter) && dateOk;
+    // Enforced directly against the top-level 3PA/GCPL source tab here —
+    // not just relying on the Photos-tab-local dropdown having been synced
+    // to match it. That sync only ever ran at the moment someone clicked
+    // the toggle; loading straight into Photos, or any gap in that sync,
+    // let an External-sheet photo through while "3PA Audit" was selected,
+    // which is exactly the leak this closes regardless of dropdown state.
+    const sourceOk = (!sourceFilter || p.source===sourceFilter) && (MODULE!=='db' || !SOURCE_FILTER || p.source===SOURCE_FILTER);
+    return hit && (!typeFilter || p.type===typeFilter) && sourceOk && dateOk;
   });
   CURRENT_PHOTO_LIST = list;
   updateSelectedCountLabel();
