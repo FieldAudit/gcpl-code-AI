@@ -350,7 +350,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.70.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.73.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -954,7 +954,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.70.0';
+const FRONTEND_VERSION = 'v6.73.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2043,13 +2043,42 @@ function applyDashPreset(){
    over a period vs. finding a specific record). Picking "Custom range"
    automatically once the person edits From/To directly is handled by
    just leaving dashPreset as-is; it only matters for the preset buttons. */
+/* Parses a date value that could be ANY of several shapes into a
+   sortable/comparable timestamp — a proper JS Date already, a clean
+   "yyyy-MM-dd" string (what this app's OWN submissions always use), OR
+   free-text like "10/09/2026" or "10-09-2026" (what the EXTERNAL GCPL
+   sheet's own Google Form can contain, since a form respondent typed it
+   by hand in whatever format they use day-to-day). Returns null if truly
+   unparseable rather than guessing wrong. This is what date-range
+   filtering was actually missing — comparing "10/09/2026" as a STRING
+   against a "yyyy-MM-dd" input value never lines up correctly, silently
+   dropping every row whose date happened to be in that other format,
+   which is exactly what made a real submission look like it didn't
+   exist the moment a date filter was applied. */
+function parseDateFlexible(v){
+  if(!v) return null;
+  if(Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) return v;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); // yyyy-MM-dd (this app's own format) — checked first, unambiguous
+  if(m) return new Date(+m[1], +m[2]-1, +m[3]);
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/); // dd/mm/yyyy or dd-mm-yyyy — the common free-text form
+  if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+  const d = new Date(s); // last resort — whatever the JS Date parser itself can make sense of
+  return isNaN(d) ? null : d;
+}
+function dateToYMD(d){
+  if(!d) return '';
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
 function getDashFilteredData(){
   const from = document.getElementById('dashFrom').value;
   const to = document.getElementById('dashTo').value;
   let rows = ALL_DATA;
   if(from || to){
     rows = rows.filter(r=>{
-      const d = r.date || '';
+      const parsed = parseDateFlexible(r.date);
+      if(!parsed) return false; // a genuinely unparseable date can't be judged against a range — excluded rather than guessed into it
+      const d = dateToYMD(parsed);
       return (!from || d >= from) && (!to || d <= to);
     });
   }
@@ -2275,7 +2304,7 @@ async function loadAdJourney(){
     const weekAgo = new Date(now.getTime() - 7*86400000);
     const monthAgo = new Date(now.getFullYear(), now.getMonth()-1, now.getDate());
     const yearAgo = new Date(now.getFullYear()-1, now.getMonth(), now.getDate());
-    const countSince = since => checks.filter(c=>{ const d = new Date(c.date); return !isNaN(d) && d >= since; }).length;
+    const countSince = since => checks.filter(c=>{ const d = parseDateFlexible(c.date); return d && d >= since; }).length;
     const weekCount = countSince(weekAgo), monthCount = countSince(monthAgo), yearCount = countSince(yearAgo);
     const header = `
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding-bottom:12px; border-bottom:1.5px solid var(--border-2); margin-bottom:12px;">
@@ -3018,7 +3047,8 @@ function renderRetailHistory(){
   const histTo = document.getElementById('histTo').value;
   const rows = ALL_DATA.filter(r=>{
     const hit = !q || [r.outletName,r.city,r.distributor,r.auditor].join(' ').toLowerCase().includes(q);
-    const dateOk = (!histFrom || (r.date||'') >= histFrom) && (!histTo || (r.date||'') <= histTo);
+    const dOk = parseDateFlexible(r.date); const dYmd = dOk ? dateToYMD(dOk) : '';
+    const dateOk = (!histFrom && !histTo) || (dOk && (!histFrom || dYmd >= histFrom) && (!histTo || dYmd <= histTo));
     return hit && (!cf || r.city===cf) && dateOk;
   });
   const thead = document.querySelector('#histTable thead');
@@ -3047,7 +3077,8 @@ function renderDBHistory(){
   const histTo = document.getElementById('histTo').value;
   const rows = ALL_DATA.filter(r=>{
     const hit = !q || [r.dbName,r.dbCode,r.dbCity,r.soName].join(' ').toLowerCase().includes(q);
-    const dateOk = (!histFrom || (r.date||'') >= histFrom) && (!histTo || (r.date||'') <= histTo);
+    const dOk = parseDateFlexible(r.date); const dYmd = dOk ? dateToYMD(dOk) : '';
+    const dateOk = (!histFrom && !histTo) || (dOk && (!histFrom || dYmd >= histFrom) && (!histTo || dYmd <= histTo));
     const sourceOk = !SOURCE_FILTER || (r.source||'FieldAudit App') === SOURCE_FILTER;
     return hit && (!cf || r.dbCity===cf) && dateOk && sourceOk;
   });
@@ -3415,7 +3446,8 @@ function renderPhotos(){
   list = list.filter(p=>{
     const searchable = (p.name + ' ' + (p.details||[]).map(d=>d[1]).join(' ')).toLowerCase();
     const hit = !q || searchable.includes(q);
-    const dateOk = (!photoFrom || (p.date||'') >= photoFrom) && (!photoTo || (p.date||'') <= photoTo);
+    const pDate = parseDateFlexible(p.date); const pYmd = pDate ? dateToYMD(pDate) : '';
+    const dateOk = (!photoFrom && !photoTo) || (pDate && (!photoFrom || pYmd >= photoFrom) && (!photoTo || pYmd <= photoTo));
     // Enforced directly against the top-level 3PA/GCPL source tab here —
     // not just relying on the Photos-tab-local dropdown having been synced
     // to match it. That sync only ever ran at the moment someone clicked
