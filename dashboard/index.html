@@ -350,7 +350,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.68.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.70.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -371,6 +371,7 @@ table.data tr:hover td{background:var(--paper-2);}
     <button data-mod="db" id="dbModuleBtn" onclick="switchModule('db')">📦 DB Stock Audit</button>
     <button data-mod="betaverse" onclick="switchModule('betaverse')">📐 Ad Manager <span id="pendingApprovalBadge" style="display:none; background:var(--red); color:#fff; border-radius:10px; padding:1px 7px; font-size:10px; font-weight:700; margin-left:4px;">0</span></button>
     <button data-mod="mktexpense" id="mktExpenseModuleBtn" onclick="switchModule('mktexpense')" style="display:none;">💰 Marketing Expense</button>
+    <button data-mod="adaudit" id="adAuditModuleBtn" onclick="switchModule('adaudit')">🎯 Ad Audit</button>
   </div>
   <div class="module-toggle" id="betaverseApprovalToggle" style="display:none;">
     <button class="active" data-appr="" onclick="switchApprovalFilter('')">All</button>
@@ -601,6 +602,44 @@ table.data tr:hover td{background:var(--paper-2);}
           <button class="btn btn-dark" onclick="uploadMktExpenseExcel()" id="mexUploadBtn">Upload &amp; Replace</button>
           <span class="master-count" id="mexUploadResult"></span>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="adAuditSection" style="display:none; padding:0 24px 24px;">
+  <div class="module-toggle" style="margin-bottom:16px;">
+    <button class="active" data-aa="report" onclick="switchAdAuditTab('report')">📋 Ad Audit Report</button>
+    <button data-aa="import" onclick="switchAdAuditTab('import')">📤 Import Existing Ads</button>
+  </div>
+
+  <div id="aa-report">
+    <div class="kpi-row" id="aaKpiRow" style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;"></div>
+    <div class="card">
+      <div class="filters">
+        <input type="text" id="aaSearch" placeholder="Ad ID, Location, Vehicle, Route…" oninput="renderAdAuditTable()">
+        <select id="aaTypeFilter" onchange="renderAdAuditTable()"><option value="">All Ad Types</option></select>
+        <select id="aaRunningFilter" onchange="renderAdAuditTable()"><option value="">Running: All</option><option value="Yes">Running</option><option value="No">Not Running</option></select>
+        <select id="aaVerifyFilter" onchange="renderAdAuditTable()"><option value="">Verification: All</option><option value="Verified">Verified</option><option value="Unverified">Unverified</option></select>
+        <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">From <input type="date" id="aaFrom" onchange="loadAdAuditData()"></label>
+        <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">To <input type="date" id="aaTo" onchange="loadAdAuditData()"></label>
+        <button class="btn btn-dark" onclick="exportAdAuditReport()">⬇ Export Report</button>
+      </div>
+      <div class="table-wrap"><table class="data" id="aaTable"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <div id="aa-import" style="display:none;">
+    <div class="card" style="max-width:640px;">
+      <h2>📤 Import Existing Ads (Excel)</h2>
+      <div class="hint">For advertising assets already on the ground, before this app ever measured them.
+        Columns expected (any order, flexible names): <b>Ad ID</b> and <b>Location ID</b> are required — every other
+        column (Ad Type, Location Name, Height, Width, Vehicle Number, Route From, Route To) is optional and can be
+        filled in later through an actual audit. Uploading again only adds NEW Ad IDs — duplicates are always skipped.</div>
+      <input type="file" id="aaExcelInput" accept=".xlsx,.xls,.csv" style="margin:12px 0;">
+      <div class="master-actions">
+        <button class="btn btn-dark" onclick="uploadAdMasterExcel()" id="aaUploadBtn">Upload</button>
+        <span class="master-count" id="aaUploadResult"></span>
       </div>
     </div>
   </div>
@@ -915,7 +954,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.68.0';
+const FRONTEND_VERSION = 'v6.70.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -995,13 +1034,28 @@ function switchModule(mod){
     document.getElementById('betaverseApprovalToggle').style.display = 'none';
     document.querySelector('nav.tabs').style.display = 'none';
     document.getElementById('mktExpenseSection').style.display = 'block';
+    document.getElementById('adAuditSection').style.display = 'none';
     document.querySelectorAll('.tabs + section, section[id^="tab-"]').forEach(s=>s.style.display='none');
     startModuleSwitchProgress();
     loadMktExpenseData().finally(finishModuleSwitchProgress);
     return;
   }
+  if(mod === 'adaudit'){
+    // Same reasoning as mktexpense above — a genuinely different data
+    // shape (Ad ID / Location ID / running-status audits) that doesn't
+    // map onto the Retail/DB/legacy-Ad-Manager tab structure at all.
+    document.getElementById('betaverseApprovalToggle').style.display = 'none';
+    document.querySelector('nav.tabs').style.display = 'none';
+    document.getElementById('mktExpenseSection').style.display = 'none';
+    document.getElementById('adAuditSection').style.display = 'block';
+    document.querySelectorAll('.tabs + section, section[id^="tab-"]').forEach(s=>s.style.display='none');
+    startModuleSwitchProgress();
+    loadAdAuditData().finally(finishModuleSwitchProgress);
+    return;
+  }
   document.querySelector('nav.tabs').style.display = 'flex';
   document.getElementById('mktExpenseSection').style.display = 'none';
+  document.getElementById('adAuditSection').style.display = 'none';
   document.getElementById('betaverseApprovalToggle').style.display = mod==='betaverse' ? 'flex' : 'none';
   document.getElementById('approvalsTabBtn').style.display = (mod==='betaverse' && CAN_APPROVE()) ? 'inline-block' : 'none';
   document.getElementById('mapTabBtn').style.display = 'inline-block';
@@ -2260,6 +2314,186 @@ async function loadAdJourney(){
   }catch(e){
     el.innerHTML = `<div class="empty">Could not load — check your connection and try again.</div>`;
   }
+}
+
+/* ============================================================
+   AD AUDIT REPORT (v3.0) — a clean report with only the columns that
+   actually earn their place in a table view: technical/redundant fields
+   (raw lat/long as separate columns, Movable/Non-Movable when Ad Type
+   already implies it, a blank AuditorUserID nobody fills in) are left
+   OUT of the table and folded into a single "Map" link or omitted
+   entirely, rather than padding the report with columns nobody reads.
+   ============================================================ */
+const FIXED_AD_TYPES_JS = ['Hoarding','Wall Painting','GSB','Poster','POSM','Other Fixed'];
+const MOVABLE_AD_TYPES_JS = ['Bus','Auto','Toto','Train','Metro','Other Movable'];
+let AA_DATA = [];
+
+/* Event delegation for the Ad Audit report's photo thumbnails — reading
+   the URL/caption from data-attributes rather than inline onclick with
+   nested quote-escaping (JSON.stringify inside a single-quoted attribute
+   inside a template literal), which is exactly the kind of thing that
+   silently breaks in one browser/data combination but not another. One
+   listener on the table body, attached once, works for every row the
+   table is ever re-rendered with — never needs re-binding per click. */
+document.addEventListener('click', function(e){
+  const img = e.target.closest('.aa-photo-thumb');
+  if(!img) return;
+  smOpenBvLightbox(img.dataset.photoUrl, img.dataset.photoCaption);
+});
+function switchAdAuditTab(tab){  document.querySelectorAll('#adAuditSection .module-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.aa===tab));
+  ['report','import'].forEach(t=> document.getElementById('aa-'+t).style.display = (t===tab) ? 'block' : 'none');
+}
+
+async function loadAdAuditData(){
+  document.getElementById('aaKpiRow').innerHTML = `<div class="empty"><b>Loading…</b></div>`;
+  try{
+    const params = new URLSearchParams({action:'getAllAdAudits'});
+    const from = document.getElementById('aaFrom').value, to = document.getElementById('aaTo').value;
+    if(from) params.set('fromDate', from);
+    if(to) params.set('toDate', to);
+    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?${params.toString()}&_t=${Date.now()}`, {cache:'no-store'}, 20000);
+    const j = await r.json();
+    AA_DATA = j.audits || [];
+    const typeSel = document.getElementById('aaTypeFilter');
+    if(typeSel.options.length <= 1){
+      [...FIXED_AD_TYPES_JS, ...MOVABLE_AD_TYPES_JS].forEach(t=> typeSel.add(new Option(t,t)));
+    }
+    renderAdAuditKpis();
+    renderAdAuditTable();
+  }catch(e){
+    document.getElementById('aaKpiRow').innerHTML = `<div class="empty">Could not load — check your connection.</div>`;
+  }
+}
+function renderAdAuditKpis(){
+  const total = AA_DATA.length;
+  const verified = AA_DATA.filter(a=>a.verificationStatus==='Verified').length;
+  const running = AA_DATA.filter(a=>a.runningStatus==='Yes').length;
+  const uniqueAds = new Set(AA_DATA.map(a=>a.adId)).size;
+  document.getElementById('aaKpiRow').innerHTML = [
+    ['Unique Ads', uniqueAds, 'var(--ink)'],
+    ['Total Audits', total, 'var(--navy, #12172B)'],
+    ['Verified', verified, 'var(--green)'],
+    ['Currently Running', running, 'var(--amber)'],
+  ].map(([label,val,color])=>`
+    <div class="card" style="text-align:center; padding:16px;">
+      <div style="font-size:22px; font-weight:800; color:${color};">${val}</div>
+      <div style="font-size:12px; color:var(--slate); margin-top:4px; text-transform:uppercase; letter-spacing:.5px;">${label}</div>
+    </div>`).join('');
+}
+function renderAdAuditTable(){
+  const q = (document.getElementById('aaSearch').value||'').toLowerCase();
+  const typeF = document.getElementById('aaTypeFilter').value;
+  const runF = document.getElementById('aaRunningFilter').value;
+  const verF = document.getElementById('aaVerifyFilter').value;
+  const rows = AA_DATA.filter(a=>{
+    if(typeF && a.adType!==typeF) return false;
+    if(runF && a.runningStatus!==runF) return false;
+    if(verF && a.verificationStatus!==verF) return false;
+    if(q && !([a.adId,a.locationId,a.locationName,a.vehicleNumber,a.routeFrom,a.routeTo].join(' ').toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const thead = document.querySelector('#aaTable thead'), tbody = document.querySelector('#aaTable tbody');
+  thead.innerHTML = `<tr><th>Ad ID</th><th>Ad Type</th><th>Location / Vehicle</th><th>Size</th><th>Auditor</th><th>Date</th><th>Running</th><th>Photo</th><th>Map</th><th>Verification</th></tr>`;
+  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="10"><div class="empty">No audits match this filter.</div></td></tr>`; return; }
+  tbody.innerHTML = rows.map(a=>{
+    const locDetail = a.isMovable
+      ? `${a.vehicleNumber||'—'}${(a.routeFrom||a.routeTo)?`<br><span style="font-size:11px; color:var(--slate);">${a.routeFrom||'?'} → ${a.routeTo||'?'}</span>`:''}`
+      : (a.locationName||a.locationId||'—');
+    const size = (!a.isMovable && a.height && a.width) ? `${a.height}×${a.width} ${a.measurementUnit||''} (${a.area||''})` : '—';
+    return `<tr>
+      <td class="mono" style="font-size:11px;">${a.adId}</td>
+      <td>${a.adType||''}</td>
+      <td>${locDetail}</td>
+      <td class="mono" style="font-size:11px;">${size}</td>
+      <td>${a.auditorName||''}${a.auditorMobile?`<br><span style="font-size:10px; color:var(--slate);">${a.auditorMobile}</span>`:''}</td>
+      <td class="mono">${a.date||''}</td>
+      <td><span class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}">${a.runningStatus==='Yes'?'✅ Running':'🚩 Not running'}</span></td>
+      <td>${a.photoUrl ? `<img src="${a.photoUrl}" data-photo-url="${a.photoUrl}" data-photo-caption="${a.adId}" class="aa-photo-thumb" style="width:44px; height:44px; object-fit:cover; border-radius:6px; cursor:pointer;">` : '—'}</td>
+      <td>${(a.lat&&a.lng) ? `<a class="btn btn-outline" href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" style="white-space:nowrap; padding:4px 10px; font-size:11px;">📍 View</a>` : '—'}</td>
+      <td><span class="tag ${a.verificationStatus==='Verified'?'tag-yes':'tag-no'}">${a.verificationStatus}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+/* Excel Import — Ad ID and Location ID are the only required columns;
+   everything else can be filled in later through an actual audit. */
+async function uploadAdMasterExcel(){
+  const fileInput = document.getElementById('aaExcelInput');
+  const file = fileInput.files[0];
+  if(!file){ toast('Choose an Excel/CSV file first', true); return; }
+  const btn = document.getElementById('aaUploadBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Reading file…';
+  try{
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, {type:'array'});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(sheet, {defval:''});
+    if(!raw.length) throw new Error('No rows found in that file');
+    const norm = s => String(s||'').toLowerCase().replace(/[^a-z]/g,'');
+    const findKey = (row, candidates) => Object.keys(row).find(k => candidates.includes(norm(k)));
+    const sample = raw[0];
+    const keys = {
+      adId: findKey(sample, ['adid','id']),
+      locationId: findKey(sample, ['locationid','location']),
+      locationName: findKey(sample, ['locationname']),
+      adType: findKey(sample, ['adtype','type']),
+      height: findKey(sample, ['height']),
+      width: findKey(sample, ['width']),
+      measurementUnit: findKey(sample, ['measurementunit','unit']),
+      vehicleNumber: findKey(sample, ['vehiclenumber','vehicle','busnumber','autonumber','totonumber','trainnumber']),
+      routeFrom: findKey(sample, ['routefrom']),
+      routeTo: findKey(sample, ['routeto']),
+    };
+    if(!keys.adId) throw new Error('Could not find an "Ad ID" column — check the file\'s header row.');
+    if(!keys.locationId) throw new Error('Could not find a "Location ID" column — check the file\'s header row.');
+    const rows = raw.map(r=>({
+      adId: r[keys.adId], locationId: r[keys.locationId],
+      locationName: keys.locationName ? r[keys.locationName] : '',
+      adType: keys.adType ? r[keys.adType] : '',
+      height: keys.height ? r[keys.height] : '', width: keys.width ? r[keys.width] : '',
+      measurementUnit: keys.measurementUnit ? r[keys.measurementUnit] : 'ft',
+      vehicleNumber: keys.vehicleNumber ? r[keys.vehicleNumber] : '',
+      routeFrom: keys.routeFrom ? r[keys.routeFrom] : '', routeTo: keys.routeTo ? r[keys.routeTo] : '',
+    })).filter(r=>r.adId && r.locationId);
+    if(!rows.length) throw new Error('No rows had BOTH an Ad ID and a Location ID filled in');
+    btn.innerHTML = '<span class="spin"></span> Uploading…';
+    const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'uploadAdMasterExcel', rows, role:SESSION.role, uploadedBy:SESSION.name})}, 30000).then(r=>r.json());
+    if(!res.success) throw new Error(res.message || 'Upload failed');
+    const skippedNote = [];
+    if(res.duplicateSkipped) skippedNote.push(`${res.duplicateSkipped} already on file`);
+    if(res.missingRequiredSkipped) skippedNote.push(`${res.missingRequiredSkipped} missing Ad ID/Location ID`);
+    toast(`✅ ${res.added} ad${res.added===1?'':'s'} added${skippedNote.length?` (${skippedNote.join(', ')} skipped)`:''}`);
+    fileInput.value = '';
+    switchAdAuditTab('report');
+    loadAdAuditData();
+  }catch(e){
+    toast(e.message || 'Could not upload that file', true);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Upload';
+  }
+}
+
+/* Excel export — built client-side (SheetJS, already loaded), same
+   column set as the on-screen report, plus a real clickable HYPERLINK
+   formula for Photo and Map so both work directly from Excel. */
+function exportAdAuditReport(){
+  if(!AA_DATA.length){ toast('No data loaded to export', true); return; }
+  const headers = ['Ad ID','Ad Type','Location/Vehicle','Route From','Route To','Size','Auditor Name','Auditor Mobile','Audit Date','Audit Time','Running Status','Photo','Map','Verification Status','Verified By','Verification Date','Remarks'];
+  const body = AA_DATA.map(a=>[
+    a.adId, a.adType, a.isMovable ? (a.vehicleNumber||'') : (a.locationName||a.locationId||''),
+    a.routeFrom||'', a.routeTo||'',
+    (!a.isMovable && a.height && a.width) ? `${a.height}×${a.width} ${a.measurementUnit||''} = ${a.area||''}` : '',
+    a.auditorName||'', a.auditorMobile||'', a.date||'', a.time||'',
+    a.runningStatus==='Yes' ? 'Running' : 'Not Running',
+    a.photoUrl ? {f: `HYPERLINK("${a.photoUrl}","View Photo")`} : '',
+    (a.lat&&a.lng) ? {f: `HYPERLINK("https://www.google.com/maps?q=${a.lat},${a.lng}","View Map")`} : '',
+    a.verificationStatus||'', a.verifiedBy||'', a.verificationDate||'', a.remarks||''
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...body]);
+  ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ad Audit Report');
+  XLSX.writeFile(wb, `AdAuditReport_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
 /* ============================================================
