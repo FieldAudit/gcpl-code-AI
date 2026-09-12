@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.58.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.59.0</div></div>
   </div>
 </header>
 
@@ -2421,6 +2421,16 @@ async function submitAudit(){
     ]);
     stampedOutlet = s1; stampedOutlet2 = s2;
   }catch(_e){ stampedOutlet = PHOTO_BASE64 || ''; stampedOutlet2 = PHOTO_BASE64_2 || ''; }
+  // Captured HERE, before resetForm() below ever runs — resetForm() sets
+  // INVOICE_PHOTOS back to [] so the NEXT audit starts with a clean bill
+  // list. The background PDF-building step further down reads bill
+  // photos AFTER resetForm() has already run (it's deliberately delayed
+  // so the person sees "submitted" instantly) — reading the live
+  // INVOICE_PHOTOS at that point meant it was always empty by then, which
+  // is exactly why every downloaded/attached PDF only ever had the Outlet
+  // Photo and never any of the actual bills, no matter how many were
+  // captured. This snapshot is what the background step uses instead.
+  const capturedInvoicePhotos = INVOICE_PHOTOS.slice();
 
   // ---- FAST core submit — only text fields + the single outlet photo.
   // Bill photos, the combined PDF, and everything else heavier all happen
@@ -2512,7 +2522,7 @@ async function submitAudit(){
   if(auditId && auditId !== 'DEMO'){
     (async ()=>{
       try{
-        const stampedInvoices = await Promise.all(INVOICE_PHOTOS.map(p=>stampPhoto(p, lines, true)));
+        const stampedInvoices = await Promise.all(capturedInvoicePhotos.map(p=>stampPhoto(p, lines, true)));
         const summaryRows = [
           ['Auditor', formSnapshot.auditor], ['Date of Visit', formSnapshot.date],
           ['District', formSnapshot.district], ['City', formSnapshot.city],
