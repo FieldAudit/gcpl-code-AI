@@ -350,7 +350,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.75.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.76.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -959,7 +959,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.75.0';
+const FRONTEND_VERSION = 'v6.76.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2405,11 +2405,17 @@ function renderAdAuditKpis(){
   const verified = AA_DATA.filter(a=>a.verificationStatus==='Verified').length;
   const running = AA_DATA.filter(a=>a.runningStatus==='Yes').length;
   const uniqueAds = new Set(AA_DATA.map(a=>a.adId)).size;
+  // Every unverified fixed-type ad missing a Location ID needs someone to
+  // fill it in before it can be verified — surfaced as its own tile so
+  // Admin/Marketing can see the backlog instead of discovering it one
+  // row at a time.
+  const missingLocationId = new Set(AA_DATA.filter(a=>!a.isMovable && !a.locationId && a.verificationStatus!=='Verified').map(a=>a.adId)).size;
   document.getElementById('aaKpiRow').innerHTML = [
     ['Unique Ads', uniqueAds, 'var(--ink)'],
     ['Total Audits', total, 'var(--navy, #12172B)'],
     ['Verified', verified, 'var(--green)'],
     ['Currently Running', running, 'var(--amber)'],
+    ['Missing Location ID', missingLocationId, missingLocationId ? 'var(--red)' : 'var(--slate)'],
   ].map(([label,val,color])=>`
     <div class="card" style="text-align:center; padding:16px;">
       <div style="font-size:22px; font-weight:800; color:${color};">${val}</div>
@@ -2444,14 +2450,41 @@ function aaUpdateBulkBar(){
     bar.style.display = 'none';
   }
 }
+/* Applies a verify result straight to the in-memory AA_DATA instead of
+   re-fetching the whole (possibly large) report from scratch — that
+   full-reload-after-a-single-verify was the actual cause of "Verify feels
+   slow": one click used to cost a write AND a full re-read of every
+   audit row. Now it costs just the write; the next real reload (tab
+   switch, filter change, manual refresh) will pick up anything this
+   local patch doesn't cover. */
+function aaApplyVerifiedLocally(auditId, newLocationId){
+  const a = AA_DATA.find(x=>x.auditId===auditId);
+  if(!a) return;
+  a.verificationStatus = 'Verified';
+  a.verifiedBy = SESSION.name || SESSION.role;
+  a.verifierRole = SESSION.role;
+  a.verificationDate = new Date().toISOString().slice(0,10);
+  if(newLocationId){
+    // Same Ad ID can have several audit rows — a Location ID filled in
+    // for one visit belongs to the underlying Ad, so reflect it on every
+    // row of that Ad already loaded, not just the one just verified.
+    AA_DATA.forEach(x=>{ if(x.adId === a.adId) x.locationId = newLocationId; });
+  }
+}
 async function aaVerifyOne(auditId){
+  const locInput = document.getElementById('aaLocId_'+auditId);
+  const locationId = locInput ? locInput.value.trim() : '';
+  if(locInput && !locationId){ toast('Enter a Location ID before verifying', true); return; }
   try{
     const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
-      action:'verifyAudit', auditId, role:SESSION.role, verifierName:SESSION.name, verifierMobile:SESSION.mobile||''
+      action:'verifyAudit', auditId, locationId, role:SESSION.role, verifierName:SESSION.name, verifierMobile:SESSION.mobile||''
     })}, 20000).then(r=>r.json());
+    if(res.needsLocationId){ toast('This ad has no Location ID on file — enter one to verify', true); return; }
     if(!res.success) throw new Error(res.message||'Could not verify');
     toast('✅ Verified');
-    loadAdAuditData();
+    aaApplyVerifiedLocally(auditId, locationId);
+    renderAdAuditKpis();
+    renderAdAuditTable();
   }catch(e){ toast(e.message||'Could not verify', true); }
 }
 async function aaVerifySelected(){
@@ -2464,9 +2497,12 @@ async function aaVerifySelected(){
     if(!res.success) throw new Error(res.message||'Could not verify');
     let msg = `✅ ${res.verified} verified`;
     if(res.skippedOwnSubmission) msg += `, ${res.skippedOwnSubmission} skipped (own submission)`;
+    if(res.skippedMissingLocationId) msg += `, ${res.skippedMissingLocationId} skipped (needs Location ID — verify individually)`;
     toast(msg);
+    (res.verifiedIds||[]).forEach(id=> aaApplyVerifiedLocally(id, ''));
     AA_SELECTED.clear();
-    loadAdAuditData();
+    renderAdAuditKpis();
+    renderAdAuditTable();
   }catch(e){ toast(e.message||'Could not verify', true); }
 }
 
@@ -2484,30 +2520,49 @@ function renderAdAuditTable(){
   });
   const canVerify = canVerifyAds();
   const thead = document.querySelector('#aaTable thead'), tbody = document.querySelector('#aaTable tbody');
-  thead.innerHTML = `<tr>${canVerify?`<th><input type="checkbox" onchange="aaToggleSelectAll(this)" title="Select all unverified shown"></th>`:''}<th>Ad ID</th><th>Ad Type</th><th>Location / Vehicle</th><th>Size</th><th>Auditor</th><th>Date</th><th>Running</th><th>Photo</th><th>Map</th><th>Verification</th></tr>`;
-  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="${canVerify?11:10}"><div class="empty">No audits match this filter.</div></td></tr>`; return; }
+  thead.innerHTML = `<tr>${canVerify?`<th><input type="checkbox" onchange="aaToggleSelectAll(this)" title="Select all unverified shown"></th>`:''}<th>Ad ID</th><th>Ad Type</th><th>Location ID / Vehicle No.</th><th>Address / Route</th><th>Size</th><th>Auditor</th><th>Date</th><th>Running</th><th>Photo</th><th>Map</th><th>Verification</th></tr>`;
+  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="${canVerify?12:11}"><div class="empty">No audits match this filter.</div></td></tr>`; return; }
   tbody.innerHTML = rows.map(a=>{
-    const locDetail = a.isMovable
-      ? `${a.vehicleNumber||'—'}${(a.routeFrom||a.routeTo)?`<br><span style="font-size:11px; color:var(--slate);">${a.routeFrom||'?'} → ${a.routeTo||'?'}</span>`:''}`
-      : (a.locationName||a.locationId||'—');
+    // Location ID and Address are two different things — ID is the
+    // manually-assigned asset code (or vehicle number for movable ads),
+    // Address is where it actually is (GPS-captured). Kept in separate
+    // columns rather than one falling back into the other, since that
+    // fallback was exactly what made old/imported ads show their ID in
+    // the Address column.
+    const locId = a.isMovable ? (a.vehicleNumber||'—') : (a.locationId || `<span style="color:var(--red); font-weight:700;">⚠️ Missing</span>`);
+    const addrDetail = a.isMovable
+      ? ((a.routeFrom||a.routeTo) ? `${a.routeFrom||'?'} → ${a.routeTo||'?'}` : '—')
+      : (a.locationName || `<span style="color:var(--slate); font-style:italic;">Address missing</span>`);
     const size = (!a.isMovable && a.height && a.width) ? `${a.height}×${a.width} ${a.measurementUnit||''} (${a.area||''})` : '—';
     const isUnverified = a.verificationStatus !== 'Verified';
     // Server-side already refuses a verifier verifying their own
     // submission — this just hides the button for that case too, so
     // nobody wastes a tap on something that'll be rejected anyway.
     const isOwnSubmission = SESSION.mobile && a.auditorMobile && String(a.auditorMobile).trim() === String(SESSION.mobile).trim();
+    // Old/imported fixed-type ads sometimes have no Location ID at all —
+    // the backend now refuses to verify those until one is provided, so
+    // the UI asks for it right here instead of the Verify click just
+    // silently failing.
+    const needsLocationId = !a.isMovable && !a.locationId && isUnverified;
     const verificationCell = a.verificationStatus === 'Verified'
       ? `<span class="tag tag-yes">✅ Verified</span><br><span style="font-size:10px; color:var(--slate);">by ${a.verifiedBy||'—'}${a.verificationDate?' on '+a.verificationDate:''}</span>`
       : (canVerify
           ? (isOwnSubmission
               ? `<span class="tag tag-no">Unverified</span><br><span style="font-size:10px; color:var(--slate);">(your own — needs another verifier)</span>`
-              : `<button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--green); border-color:var(--green);" onclick="aaVerifyOne('${a.auditId}')">✓ Verify</button>`)
+              : (needsLocationId
+                  ? `<div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
+                       <input type="text" id="aaLocId_${a.auditId}" placeholder="Location ID" style="width:88px; font-size:11px; padding:4px 6px; border:1px solid var(--border-2); border-radius:6px;">
+                       <button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--green); border-color:var(--green);" onclick="aaVerifyOne('${a.auditId}')">✓ Verify</button>
+                     </div>
+                     <span style="font-size:10px; color:var(--red);">Needs a Location ID first</span>`
+                  : `<button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--green); border-color:var(--green);" onclick="aaVerifyOne('${a.auditId}')">✓ Verify</button>`))
           : `<span class="tag tag-no">Unverified</span>`);
     return `<tr>
       ${canVerify?`<td>${(isUnverified && !isOwnSubmission) ? `<input type="checkbox" class="aa-select-cb" data-audit-id="${a.auditId}" ${AA_SELECTED.has(a.auditId)?'checked':''} onchange="aaToggleOne('${a.auditId}', this.checked)">` : ''}</td>`:''}
       <td class="mono" style="font-size:11px;">${a.adId}</td>
       <td>${a.adType||''}</td>
-      <td>${locDetail}</td>
+      <td class="mono" style="font-size:11px;">${locId}</td>
+      <td>${addrDetail}</td>
       <td class="mono" style="font-size:11px;">${size}</td>
       <td>${a.auditorName||''}${a.auditorMobile?`<br><span style="font-size:10px; color:var(--slate);">${a.auditorMobile}</span>`:''}</td>
       <td class="mono">${a.date||''}</td>
@@ -2583,9 +2638,11 @@ async function uploadAdMasterExcel(){
    formula for Photo and Map so both work directly from Excel. */
 function exportAdAuditReport(){
   if(!AA_DATA.length){ toast('No data loaded to export', true); return; }
-  const headers = ['Ad ID','Ad Type','Location/Vehicle','Route From','Route To','Size','Auditor Name','Auditor Mobile','Audit Date','Audit Time','Running Status','Photo','Map','Verification Status','Verified By','Verification Date','Remarks'];
+  const headers = ['Ad ID','Ad Type','Location ID / Vehicle No.','Address / Route','Route From','Route To','Size','Auditor Name','Auditor Mobile','Audit Date','Audit Time','Running Status','Photo','Map','Verification Status','Verified By','Verification Date','Remarks'];
   const body = AA_DATA.map(a=>[
-    a.adId, a.adType, a.isMovable ? (a.vehicleNumber||'') : (a.locationName||a.locationId||''),
+    a.adId, a.adType,
+    a.isMovable ? (a.vehicleNumber||'') : (a.locationId||''),
+    a.isMovable ? ((a.routeFrom||a.routeTo) ? `${a.routeFrom||'?'} → ${a.routeTo||'?'}` : '') : (a.locationName||'⚠️ Address missing'),
     a.routeFrom||'', a.routeTo||'',
     (!a.isMovable && a.height && a.width) ? `${a.height}×${a.width} ${a.measurementUnit||''} = ${a.area||''}` : '',
     a.auditorName||'', a.auditorMobile||'', a.date||'', a.time||'',
