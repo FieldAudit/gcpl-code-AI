@@ -350,7 +350,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.79.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.80.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -847,11 +847,15 @@ async function doLogin(){
     const qs = new URLSearchParams({action:'login', userId:user, password:pass, _t:Date.now()}).toString();
     console.log('[login] fetching…', `${SCRIPT_URL}?action=login&userId=${user}&password=***&_t=...`);
     const startTime = Date.now();
-    // 10s timeout — a login call that never resolves used to leave the
-    // person staring at a frozen progress ring forever with no error and
-    // no way forward; this guarantees they get an actionable message
-    // instead, however slow or unreachable the backend is that moment.
-    const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 10000);
+    // 20s timeout (bumped up from 10s — Apps Script's own response time
+    // can genuinely run past 10s occasionally, even for a lightweight
+    // call like this one, with nothing actually wrong; the old 10s limit
+    // was cutting off logins that would have succeeded fine a couple
+    // seconds later) — a login call that never resolves at all still
+    // leaves the person staring at a frozen progress ring forever with no
+    // error and no way forward, so this still guarantees an actionable
+    // message eventually, just with more real headroom first.
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 20000);
     console.log('[login] fetch resolved after', Date.now()-startTime, 'ms — HTTP status:', r.status);
     showLoadProgress(40, 'Checking credentials…');
     const res = await r.json();
@@ -968,7 +972,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.79.0';
+const FRONTEND_VERSION = 'v6.80.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
