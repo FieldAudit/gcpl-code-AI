@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.59.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.60.0</div></div>
   </div>
 </header>
 
@@ -3039,8 +3039,8 @@ function renderNewAdForm(){
       <h2>New ${f.adType} — Details</h2>
       ${f.isMovable ? `
         <div class="field"><label>${f.adType} Number <span class="req-mark">*</span></label><input type="text" id="newAdVehicleNumber" placeholder="e.g. WB 11A 9606"></div>
-        <div class="field"><label>Route From</label><input type="text" id="newAdRouteFrom" placeholder="e.g. Howrah"></div>
-        <div class="field"><label>Route To</label><input type="text" id="newAdRouteTo" placeholder="e.g. Maidan"></div>
+        <div class="field"><label>Route From <span class="req-mark">*</span></label><input type="text" id="newAdRouteFrom" placeholder="e.g. Howrah"></div>
+        <div class="field"><label>Route To <span class="req-mark">*</span></label><input type="text" id="newAdRouteTo" placeholder="e.g. Maidan"></div>
       ` : `
         <div class="field"><label>Location ID <span class="req-mark">*</span></label><input type="text" id="newAdLocationId" placeholder="e.g. ESP-001"></div>
         <div class="field"><label>Location Address <span class="req-mark">*</span></label><input type="text" id="newAdLocationName" placeholder="Fetching from your location…">
@@ -3068,10 +3068,13 @@ function smConfirmNewAdDetails(){
   const f = SM_AD_AUDIT.newAdForm;
   if(f.isMovable){
     const vehicleNumber = document.getElementById('newAdVehicleNumber').value.trim();
+    const routeFrom = document.getElementById('newAdRouteFrom').value.trim();
+    const routeTo = document.getElementById('newAdRouteTo').value.trim();
     if(!vehicleNumber){ toast(`${f.adType} number is required`, true); return; }
+    if(!routeFrom || !routeTo){ toast('Route From and Route To are both required — where this ad starts and ends', true); return; }
     f.vehicleNumber = vehicleNumber;
-    f.routeFrom = document.getElementById('newAdRouteFrom').value.trim();
-    f.routeTo = document.getElementById('newAdRouteTo').value.trim();
+    f.routeFrom = routeFrom;
+    f.routeTo = routeTo;
   } else {
     const locationId = document.getElementById('newAdLocationId').value.trim();
     const locationName = document.getElementById('newAdLocationName').value.trim();
