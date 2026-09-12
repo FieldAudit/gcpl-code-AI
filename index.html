@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.55.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.58.0</div></div>
   </div>
 </header>
 
@@ -476,7 +476,7 @@ window.onerror = function(msg, url, line, col, err){
 
   <!-- ============ INVOICE PHOTOS (min 5) → combined into ONE PDF ============ -->
   <div class="card locked-until-address">
-    <h2><span class="n">6</span>Invoice / Bill Photos — DB Bill Check <span style="text-transform:none; font-weight:400; font-size:12px; color:var(--slate);">(at least 1 required, 5 recommended)</span></h2>
+    <h2><span class="n">6</span>Invoice / Bill Photos <span style="text-transform:none; font-weight:400; font-size:12px; color:var(--slate);">(at least 1 required, 5 recommended)</span></h2>
     <div class="photo-box" id="invoiceBox" style="margin-top:14px;">
       <button class="btn btn-outline" onclick="tryOpenCamera('invoiceInput')" id="invoiceBtn">📷 Capture bill photo</button>
       <input type="file" id="invoiceInput" accept="image/*" capture="environment" style="display:none" onchange="onInvoicePhoto(event)">
@@ -2218,23 +2218,34 @@ function compressForAI(base64, maxW, quality){
   });
 }
 
-function stampPhoto(base64, lines){
+function stampPhoto(base64, lines, appendBelow){
   return new Promise((resolve)=>{
     const img = new Image();
     img.onload = function(){
       const canvas = document.createElement('canvas');
-      canvas.width = img.width; canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
       const fontSize = Math.max(13, Math.round(img.width/42));
       const lineH = Math.round(fontSize*1.35);
       const barH = lineH*lines.length + Math.round(fontSize*0.9);
+      canvas.width = img.width;
+      // appendBelow: used for invoice/bill photos, where the stamp bar
+      // overlapping the bottom of the image can cover real printed
+      // content that matters for verification (total, tax breakup,
+      // signature — often exactly at the bottom of a bill). Instead of
+      // drawing over the photo, the canvas is made taller and the whole
+      // original image is kept fully intact; the stamp goes in the new
+      // strip below it. Every other photo type (outlet, ad, DB stock)
+      // keeps the original overlay behaviour unchanged.
+      canvas.height = appendBelow ? img.height + barH : img.height;
+      const ctx = canvas.getContext('2d');
+      if(appendBelow){ ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+      ctx.drawImage(img, 0, 0);
+      const barY = appendBelow ? img.height : img.height - barH;
       ctx.fillStyle = 'rgba(18,23,43,0.74)';
-      ctx.fillRect(0, img.height-barH, img.width, barH);
+      ctx.fillRect(0, barY, img.width, barH);
       ctx.font = `600 ${fontSize}px sans-serif`;
       ctx.fillStyle = '#FFFFFF';
       ctx.textBaseline = 'top';
-      let y = img.height - barH + Math.round(fontSize*0.45);
+      let y = barY + Math.round(fontSize*0.45);
       lines.forEach(line=>{
         ctx.fillText(line, Math.round(fontSize*0.6), y);
         y += lineH;
@@ -2501,7 +2512,7 @@ async function submitAudit(){
   if(auditId && auditId !== 'DEMO'){
     (async ()=>{
       try{
-        const stampedInvoices = await Promise.all(INVOICE_PHOTOS.map(p=>stampPhoto(p, lines)));
+        const stampedInvoices = await Promise.all(INVOICE_PHOTOS.map(p=>stampPhoto(p, lines, true)));
         const summaryRows = [
           ['Auditor', formSnapshot.auditor], ['Date of Visit', formSnapshot.date],
           ['District', formSnapshot.district], ['City', formSnapshot.city],
@@ -2526,6 +2537,17 @@ async function submitAudit(){
         document.getElementById('stampActions').style.display = invoicePdf ? 'flex' : 'none';
         if(configured() && invoicePdf){
           await attachBillsPDFAndQueueOnFailure({ action:'attachBillsPDF', auditId, invoicePdf, billCount: stampedInvoices.length, module:'retail' });
+          // Individual bill photos, saved standalone (not just embedded in
+          // the PDF above) — this is what lets the dashboard show actual
+          // invoice-photo thumbnails per audit instead of only a PDF
+          // download link. Reuses the exact same retry-then-queue safety
+          // net as the PDF attach just above, so a bad connection at this
+          // moment still doesn't lose these photos — they retry, and if
+          // that still fails, they're queued and retried again next time
+          // the app opens (flushPendingBillUploads).
+          if(stampedInvoices.length){
+            await attachBillsPDFAndQueueOnFailure({ action:'attachInvoicePhotos', auditId, invoicePhotos: stampedInvoices, module:'retail' });
+          }
         }
       }catch(err){
         logClientError(err.message, err.stack, 'background-pdf-attach');
@@ -3080,7 +3102,8 @@ function renderAdAuditShortForm(){
         </div>
       </div>
       <div class="field"><label>Advertisement Photo <span class="req-mark">*</span></label>
-        <input type="file" accept="image/*" capture="environment" onchange="smOnAdAuditPhoto(event)">
+        <button class="btn btn-outline" onclick="document.getElementById('smAdAuditPhotoInput').click()" id="smAdAuditPhotoBtn" style="margin-top:6px;">📷 Take Live Photo</button>
+        <input type="file" id="smAdAuditPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="smOnAdAuditPhoto(event)">
         <img id="smAdAuditPhotoPreview" style="display:none; width:100%; border-radius:10px; margin-top:8px;">
       </div>
       <div class="field"><label>Remarks</label><textarea id="smAdAuditRemarks" rows="2" placeholder="Optional"></textarea></div>
@@ -3119,8 +3142,8 @@ async function smSubmitAdAudit(){
       adId = createRes.adId;
     }
     const stampedPhoto = await stampPhoto(SM_AD_AUDIT.photoRaw, [
-      `Ad ID: ${adId}`, new Date().toLocaleString(),
-      `${SM_AD_AUDIT.geo.lat.toFixed(6)}, ${SM_AD_AUDIT.geo.lng.toFixed(6)}`
+      `${new Date().toLocaleString()}  •  ${SM_AD_AUDIT.geo.lat.toFixed(6)}, ${SM_AD_AUDIT.geo.lng.toFixed(6)}`,
+      `Ad ID: ${adId}   Auditor: ${CHECKIN_NAME||'—'}`
     ]);
     const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
       action:'submitAdAudit', adId, auditorName:CHECKIN_NAME, auditorMobile:CHECKIN_PHONE,
@@ -3143,7 +3166,7 @@ function smStartMySubmissions(){
   document.getElementById('smWrap').innerHTML = `
     <div class="card">
       <h2>My Submissions</h2>
-      <div class="field"><input type="text" id="smMySubSearch" placeholder="Search Ad ID, location…" oninput="smLoadMySubmissions()"></div>
+      <div class="field"><input type="text" id="smMySubSearch" placeholder="Search Ad ID, location…" oninput="smMySubSearchDebounced()"></div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
         <div class="field"><label>From</label><input type="date" id="smMySubFrom" onchange="smLoadMySubmissions()"></div>
         <div class="field"><label>To</label><input type="date" id="smMySubTo" onchange="smLoadMySubmissions()"></div>
@@ -3154,6 +3177,8 @@ function smStartMySubmissions(){
   `;
   smLoadMySubmissions();
 }
+let SM_MYSUB_SEARCH_TIMER = null;
+function smMySubSearchDebounced(){ clearTimeout(SM_MYSUB_SEARCH_TIMER); SM_MYSUB_SEARCH_TIMER = setTimeout(smLoadMySubmissions, 300); }
 async function smLoadMySubmissions(){
   const el = document.getElementById('smMySubResults');
   el.innerHTML = `<p class="hint"><span class="spin"></span> Loading…</p>`;
