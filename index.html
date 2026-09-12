@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.54.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.55.0</div></div>
   </div>
 </header>
 
@@ -2921,7 +2921,8 @@ function renderAdSearchResultsList(ads, el, showDistance){
         <b style="font-family:'IBM Plex Mono',monospace; font-size:12px;">${a.adId}</b>
         ${showDistance && a.distanceMeters!=null ? `<span style="font-size:11px; color:var(--slate);">${a.distanceMeters}m away</span>` : ''}
       </div>
-      <p style="margin:4px 0 0; font-size:13px; font-weight:700;">${a.adType}${a.isMovable ? ' · '+(a.vehicleNumber||'') : ' · '+(a.locationName||a.locationId||'')}</p>
+      <p style="margin:4px 0 0; font-size:13px; font-weight:700;">${a.adType}${a.isMovable ? ' · '+(a.vehicleNumber||'') : ' · '+(a.locationId||'⚠️ no Location ID')}</p>
+      ${!a.isMovable && a.locationName ? `<p style="margin:2px 0 0; font-size:11px; color:var(--slate);">${a.locationName}</p>` : ''}
       ${!a.isMovable && a.area ? `<p style="margin:2px 0 0; font-size:11px; color:var(--slate);">${a.height}×${a.width} ${a.measurementUnit} = ${a.area} sq ${a.measurementUnit}</p>` : ''}
       ${a.isMovable && (a.routeFrom||a.routeTo) ? `<p style="margin:2px 0 0; font-size:11px; color:var(--slate);">${a.routeFrom||'?'} → ${a.routeTo||'?'}</p>` : ''}
     </div>`).join('');
@@ -2963,6 +2964,41 @@ function smSelectNewAdType(adType){
   SM_AD_AUDIT.isNewAd = true;
   SM_AD_AUDIT.newAdForm = {adType, isMovable: AD_MOVABLE_TYPES.indexOf(adType)!==-1};
   renderNewAdForm();
+  // Location ID (a manually-assigned code) and Location Address (where the
+  // asset actually is) are two different things — the address is fetched
+  // here from the GPS point already captured at the start of this Ad
+  // Audit flow, the same way Retail Audit auto-fills its address field.
+  // Previously this form had ONE field that became both, which is why old
+  // ads' "address" was really just whatever code someone had typed as the
+  // Location ID.
+  if(!SM_AD_AUDIT.newAdForm.isMovable) smFillNewAdAddress();
+}
+/* Auto-fills the new-ad Location Address field from the GPS point already
+   captured for this audit — same getBaseAddress()/fetchLandmarkAndAppend()
+   helpers Retail Audit and DB Stock Audit already use, so address quality
+   and the "auto-lookup failed" safety net are identical across modules. */
+async function smFillNewAdAddress(){
+  const field = document.getElementById('newAdLocationName');
+  const note = document.getElementById('newAdAddrNote');
+  if(!field || !SM_AD_AUDIT.geo) return;
+  note.textContent = 'Fetching address from GPS…';
+  let base;
+  try{ base = await getBaseAddress(SM_AD_AUDIT.geo.lat, SM_AD_AUDIT.geo.lng); }catch(_e){ base = {formatted:''}; }
+  if(base.formatted){
+    field.value = base.formatted;
+    note.textContent = base.source === 'google'
+      ? 'Auto-filled from Google Maps — checking for a nearby landmark…'
+      : 'Auto-filled from your current location — please check it before submitting.';
+    fetchLandmarkAndAppend(SM_AD_AUDIT.geo.lat, SM_AD_AUDIT.geo.lng, field, base.formatted, (updated)=>{
+      note.textContent = 'Auto-filled — please glance at it before submitting.';
+    });
+  } else {
+    const fallback = `Near ${SM_AD_AUDIT.geo.lat.toFixed(6)}, ${SM_AD_AUDIT.geo.lng.toFixed(6)} (auto-lookup failed)`;
+    field.value = fallback;
+    note.className = 'hint';
+    note.style.color = 'var(--red)';
+    note.textContent = '⚠️ Auto address lookup failed — please type the correct address manually.';
+  }
 }
 function renderNewAdForm(){
   const f = SM_AD_AUDIT.newAdForm;
@@ -2974,7 +3010,10 @@ function renderNewAdForm(){
         <div class="field"><label>Route From</label><input type="text" id="newAdRouteFrom" placeholder="e.g. Howrah"></div>
         <div class="field"><label>Route To</label><input type="text" id="newAdRouteTo" placeholder="e.g. Maidan"></div>
       ` : `
-        <div class="field"><label>Location ID / Name <span class="req-mark">*</span></label><input type="text" id="newAdLocationId" placeholder="e.g. Esplanade"></div>
+        <div class="field"><label>Location ID <span class="req-mark">*</span></label><input type="text" id="newAdLocationId" placeholder="e.g. ESP-001"></div>
+        <div class="field"><label>Location Address <span class="req-mark">*</span></label><input type="text" id="newAdLocationName" placeholder="Fetching from your location…">
+          <p class="hint" id="newAdAddrNote">Fetching address from GPS…</p>
+        </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <div class="field"><label>Height <span class="req-mark">*</span></label><input type="number" id="newAdHeight" step="0.01" oninput="smCalcNewAdArea()"></div>
           <div class="field"><label>Width <span class="req-mark">*</span></label><input type="number" id="newAdWidth" step="0.01" oninput="smCalcNewAdArea()"></div>
@@ -3003,11 +3042,13 @@ function smConfirmNewAdDetails(){
     f.routeTo = document.getElementById('newAdRouteTo').value.trim();
   } else {
     const locationId = document.getElementById('newAdLocationId').value.trim();
+    const locationName = document.getElementById('newAdLocationName').value.trim();
     const height = document.getElementById('newAdHeight').value;
     const width = document.getElementById('newAdWidth').value;
-    if(!locationId){ toast('Location ID / Name is required', true); return; }
+    if(!locationId){ toast('Location ID is required', true); return; }
+    if(!locationName){ toast('Location Address is required', true); return; }
     if(!height || !width){ toast('Height and Width are required', true); return; }
-    f.locationId = locationId; f.locationName = locationId;
+    f.locationId = locationId; f.locationName = locationName;
     f.height = height; f.width = width; f.measurementUnit = document.getElementById('newAdUnit').value;
   }
   SM_AD_AUDIT.selectedAd = Object.assign({adId:null, adType:f.adType, isMovable:f.isMovable}, f);
@@ -3023,7 +3064,7 @@ function renderAdAuditShortForm(){
   const ad = SM_AD_AUDIT.selectedAd;
   const detailsHtml = ad.isMovable
     ? `<p><b>${ad.adType} Number:</b> ${ad.vehicleNumber||'—'}</p><p><b>Route:</b> ${ad.routeFrom||'?'} → ${ad.routeTo||'?'}</p>`
-    : `<p><b>Location:</b> ${ad.locationName||ad.locationId||'—'}</p>${ad.height?`<p><b>Size:</b> ${ad.height}×${ad.width} ${ad.measurementUnit} = ${(ad.height*ad.width).toFixed(2)} sq ${ad.measurementUnit}</p>`:''}`;
+    : `<p><b>Location ID:</b> ${ad.locationId||'⚠️ Missing'}</p><p><b>Address:</b> ${ad.locationName||'—'}</p>${ad.height?`<p><b>Size:</b> ${ad.height}×${ad.width} ${ad.measurementUnit} = ${(ad.height*ad.width).toFixed(2)} sq ${ad.measurementUnit}</p>`:''}`;
   document.getElementById('smWrap').innerHTML = `
     <div class="card">
       <h2>${ad.adId ? 'Audit This Ad' : 'New Ad — First Audit'}</h2>
@@ -3147,7 +3188,8 @@ function smViewMySubmission(auditId){
       <h2>${a.adId}</h2>
       ${a.photoUrl ? `<img src="${a.photoUrl}" style="width:100%; border-radius:10px; margin-bottom:10px;">` : ''}
       <p><b>Type:</b> ${a.adType}</p>
-      <p><b>Location:</b> ${a.locationName||a.locationId||'—'}</p>
+      <p><b>Location ID:</b> ${a.locationId||'⚠️ Missing'}</p>
+      <p><b>Address:</b> ${a.locationName||'—'}</p>
       ${a.vehicleNumber ? `<p><b>Vehicle:</b> ${a.vehicleNumber} (${a.routeFrom||'?'} → ${a.routeTo||'?'})</p>` : ''}
       <p><b>Date:</b> ${a.date} ${a.time}</p>
       <p><b>Running:</b> ${a.runningStatus==='Yes'?'✅ Yes':'🚩 No'}</p>
