@@ -350,7 +350,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.76.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.77.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -614,7 +614,7 @@ table.data tr:hover td{background:var(--paper-2);}
   </div>
 
   <div id="aa-report">
-    <div class="kpi-row" id="aaKpiRow" style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;"></div>
+    <div class="kpi-row" id="aaKpiRow" style="display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;"></div>
     <div class="card">
       <div class="filters">
         <input type="text" id="aaSearch" placeholder="Ad ID, Location, Vehicle, Route…" oninput="renderAdAuditTable()">
@@ -959,7 +959,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.76.0';
+const FRONTEND_VERSION = 'v6.77.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2380,8 +2380,21 @@ function switchAdAuditTab(tab){  document.querySelectorAll('#adAuditSection .mod
   ['report','import'].forEach(t=> document.getElementById('aa-'+t).style.display = (t===tab) ? 'block' : 'none');
 }
 
+let AA_LOAD_IN_PROGRESS = false;
 async function loadAdAuditData(){
+  // Guards against the blank-page gap some people were hitting: switching
+  // to the Ad Audit tab quickly (double-click, or clicking away and back
+  // before the first fetch finished) used to fire loadAdAuditData() twice
+  // in parallel — an earlier, slower response could then land AFTER a
+  // newer one and overwrite the table with stale/empty data, leaving the
+  // KPI row and table looking blank even though the module itself loaded
+  // fine. Also shows a visible loading state in the TABLE area too (not
+  // just the KPI row), so there's always something on screen while it loads.
+  if(AA_LOAD_IN_PROGRESS) return;
+  AA_LOAD_IN_PROGRESS = true;
   document.getElementById('aaKpiRow').innerHTML = `<div class="empty"><b>Loading…</b></div>`;
+  const tbody = document.querySelector('#aaTable tbody');
+  if(tbody) tbody.innerHTML = `<tr><td colspan="12"><div class="empty"><span class="spin"></span> Loading Ad Audit report…</div></td></tr>`;
   try{
     const params = new URLSearchParams({action:'getAllAdAudits'});
     const from = document.getElementById('aaFrom').value, to = document.getElementById('aaTo').value;
@@ -2398,6 +2411,9 @@ async function loadAdAuditData(){
     renderAdAuditTable();
   }catch(e){
     document.getElementById('aaKpiRow').innerHTML = `<div class="empty">Could not load — check your connection.</div>`;
+    if(tbody) tbody.innerHTML = `<tr><td colspan="12"><div class="empty">Could not load — check your connection, then reopen this tab.</div></td></tr>`;
+  }finally{
+    AA_LOAD_IN_PROGRESS = false;
   }
 }
 function renderAdAuditKpis(){
@@ -2561,18 +2577,64 @@ function renderAdAuditTable(){
       ${canVerify?`<td>${(isUnverified && !isOwnSubmission) ? `<input type="checkbox" class="aa-select-cb" data-audit-id="${a.auditId}" ${AA_SELECTED.has(a.auditId)?'checked':''} onchange="aaToggleOne('${a.auditId}', this.checked)">` : ''}</td>`:''}
       <td class="mono" style="font-size:11px;">${a.adId}</td>
       <td>${a.adType||''}</td>
-      <td class="mono" style="font-size:11px;">${locId}</td>
+      <td class="mono" style="font-size:11px;">${locId}${canVerify?` <a href="javascript:void(0)" onclick="aaEditLocation('${a.adId}')" title="Edit Location ID / Address" style="font-size:10px;">✏️</a>`:''}</td>
       <td>${addrDetail}</td>
       <td class="mono" style="font-size:11px;">${size}</td>
       <td>${a.auditorName||''}${a.auditorMobile?`<br><span style="font-size:10px; color:var(--slate);">${a.auditorMobile}</span>`:''}</td>
       <td class="mono">${a.date||''}</td>
-      <td><span class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}">${a.runningStatus==='Yes'?'✅ Running':'🚩 Not running'}</span></td>
+      <td>${canVerify
+          ? `<button class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}" style="border:none; cursor:pointer;" onclick="aaToggleRunning('${a.auditId}','${a.runningStatus==='Yes'?'No':'Yes'}')" title="Click to change">${a.runningStatus==='Yes'?'✅ Running':'🚩 Not running'} ✎</button>`
+          : `<span class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}">${a.runningStatus==='Yes'?'✅ Running':'🚩 Not running'}</span>`}</td>
       <td>${a.photoUrl ? `<img src="${a.photoUrl}" data-photo-url="${a.photoUrl}" data-photo-caption="${a.adId}" class="aa-photo-thumb" style="width:44px; height:44px; object-fit:cover; border-radius:6px; cursor:pointer;">` : '—'}</td>
       <td>${(a.lat&&a.lng) ? `<a class="btn btn-outline" href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" style="white-space:nowrap; padding:4px 10px; font-size:11px;">📍 View</a>` : '—'}</td>
       <td>${verificationCell}</td>
     </tr>`;
   }).join('');
   aaUpdateBulkBar();
+}
+/* Admin/Marketing-only quick fix for an Ad's Location ID/Address — covers
+   both "blank" (already handled at verify time) and "wrong/duplicated"
+   cases like an old ad where both fields ended up holding the same text.
+   Uses prompt() rather than a full modal since this is a rare correction,
+   not a everyday action. */
+async function aaEditLocation(adId){
+  const a = AA_DATA.find(x=>x.adId===adId);
+  const newLocationId = prompt('Location ID for '+adId+':', a ? a.locationId||'' : '');
+  if(newLocationId===null) return;
+  const newLocationName = prompt('Location Address for '+adId+':', a ? a.locationName||'' : '');
+  if(newLocationName===null) return;
+  if(!newLocationId.trim() && !newLocationName.trim()){ toast('Nothing to save', true); return; }
+  try{
+    const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
+      action:'updateAdLocation', adId, locationId:newLocationId.trim(), locationName:newLocationName.trim(), role:SESSION.role
+    })}, 15000).then(r=>r.json());
+    if(!res.success) throw new Error(res.message||'Could not save');
+    // Same Ad ID can appear on several audit rows — update every one
+    // already loaded, not just the row the ✏️ was clicked from.
+    AA_DATA.forEach(x=>{
+      if(x.adId===adId){
+        if(newLocationId.trim()) x.locationId = newLocationId.trim();
+        if(newLocationName.trim()) x.locationName = newLocationName.trim();
+      }
+    });
+    toast('✅ Location updated');
+    renderAdAuditKpis();
+    renderAdAuditTable();
+  }catch(e){ toast(e.message||'Could not save', true); }
+}
+/* Admin/Marketing-only Running/Not-running correction — for fixing a
+   mis-tap in the field without needing a whole fresh revisit. */
+async function aaToggleRunning(auditId, newStatus){
+  try{
+    const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
+      action:'updateRunningStatus', auditId, runningStatus:newStatus, role:SESSION.role
+    })}, 15000).then(r=>r.json());
+    if(!res.success) throw new Error(res.message||'Could not update');
+    const a = AA_DATA.find(x=>x.auditId===auditId);
+    if(a) a.runningStatus = newStatus;
+    renderAdAuditKpis();
+    renderAdAuditTable();
+  }catch(e){ toast(e.message||'Could not update', true); }
 }
 
 /* Excel Import — Ad ID and Location ID are the only required columns;
@@ -3464,8 +3526,19 @@ function buildPhotoList(){
       date:r.date, type:'Outlet Photo', typeClass:'type-outlet', urls:outletImgs, mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink),
       name:r.outletName||'—', source:'FieldAudit App', details
     });
-    if(r.invoicePdfUrl) list.push({
-      date:r.date, type:'Invoice / Bill Photos — DB Bill Check', typeClass:'type-invoice', isPdf:true, url:r.invoicePdfUrl,
+    // Individual bill photos (added so invoice verification doesn't require
+    // opening a PDF just to see one photo) become their own gallery card,
+    // same shape as Outlet Photo above. Audits from before this existed
+    // (or a visit with zero bills) fall back to the old PDF-only card so
+    // nothing that was already saved becomes invisible.
+    const invoiceImgs = String(r.invoicePhotoUrls||'').split(',').map(s=>s.trim()).filter(Boolean);
+    if(invoiceImgs.length) list.push({
+      date:r.date, type:'Invoice / Bill Photos', typeClass:'type-invoice', urls:invoiceImgs,
+      mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink), name:r.outletName||'—', source:'FieldAudit App',
+      details: r.invoicePdfUrl ? details.concat([['Full PDF', `<a href="${r.invoicePdfUrl}" target="_blank" onclick="event.stopPropagation()">Open ↗</a>`]]) : details
+    });
+    else if(r.invoicePdfUrl) list.push({
+      date:r.date, type:'Invoice / Bill Photos', typeClass:'type-invoice', isPdf:true, url:r.invoicePdfUrl,
       billCount:r.billCount, mapsLink:mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink),
       name:r.outletName||'—', source:'FieldAudit App', details
     });
