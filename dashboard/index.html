@@ -350,7 +350,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.77.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.79.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -611,10 +611,11 @@ table.data tr:hover td{background:var(--paper-2);}
   <div class="module-toggle" style="margin-bottom:16px;">
     <button class="active" data-aa="report" onclick="switchAdAuditTab('report')">📋 Ad Audit Report</button>
     <button data-aa="import" onclick="switchAdAuditTab('import')">📤 Import Existing Ads</button>
+    <button data-aa="changelog" onclick="switchAdAuditTab('changelog')">📜 Change Log</button>
   </div>
 
   <div id="aa-report">
-    <div class="kpi-row" id="aaKpiRow" style="display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;"></div>
+    <div class="kpi-row" id="aaKpiRow" style="display:grid; grid-template-columns:repeat(6,1fr); gap:14px; margin-bottom:18px;"></div>
     <div class="card">
       <div class="filters">
         <input type="text" id="aaSearch" placeholder="Ad ID, Location, Vehicle, Route…" oninput="renderAdAuditTable()">
@@ -646,6 +647,14 @@ table.data tr:hover td{background:var(--paper-2);}
         <button class="btn btn-dark" onclick="uploadAdMasterExcel()" id="aaUploadBtn">Upload</button>
         <span class="master-count" id="aaUploadResult"></span>
       </div>
+    </div>
+  </div>
+
+  <div id="aa-changelog" style="display:none;">
+    <div class="card">
+      <h2>📜 Change Log</h2>
+      <div class="hint">Every dashboard-made edit — Location ID, Route From/To, Running status, and verifications — recorded here automatically, oldest to newest reversed (newest first). This is a read-only audit trail: nothing here can be edited or deleted from the dashboard, by any role, including Admin — it's a record of what changed, not another data table.</div>
+      <div class="table-wrap" style="margin-top:14px;"><table class="data" id="aaChangeLogTable"><thead></thead><tbody></tbody></table></div>
     </div>
   </div>
 </div>
@@ -959,7 +968,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.77.0';
+const FRONTEND_VERSION = 'v6.79.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1038,6 +1047,13 @@ function switchModule(mod){
     // of trying to force it into that structure.
     document.getElementById('betaverseApprovalToggle').style.display = 'none';
     document.querySelector('nav.tabs').style.display = 'none';
+    // <main> wraps every Dashboard/History/Photos/etc <section> — hiding
+    // each section individually (below) left THIS wrapper's own padding
+    // (22px top + 70px bottom, see the bare `main{...}` CSS rule) sitting
+    // there with nothing visible inside it, which is exactly the "big
+    // blank gap above the module's own content" people kept hitting.
+    // Hiding <main> itself removes that reserved space entirely.
+    document.querySelector('main').style.display = 'none';
     document.getElementById('mktExpenseSection').style.display = 'block';
     document.getElementById('adAuditSection').style.display = 'none';
     document.querySelectorAll('.tabs + section, section[id^="tab-"]').forEach(s=>s.style.display='none');
@@ -1052,6 +1068,7 @@ function switchModule(mod){
     // map onto the Retail/DB/legacy-Ad-Manager tab structure at all.
     document.getElementById('betaverseApprovalToggle').style.display = 'none';
     document.querySelector('nav.tabs').style.display = 'none';
+    document.querySelector('main').style.display = 'none';
     document.getElementById('mktExpenseSection').style.display = 'none';
     document.getElementById('adAuditSection').style.display = 'block';
     document.querySelectorAll('.tabs + section, section[id^="tab-"]').forEach(s=>s.style.display='none');
@@ -1061,6 +1078,7 @@ function switchModule(mod){
     return;
   }
   document.querySelector('nav.tabs').style.display = 'flex';
+  document.querySelector('main').style.display = '';
   document.getElementById('mktExpenseSection').style.display = 'none';
   document.getElementById('adAuditSection').style.display = 'none';
   document.getElementById('betaverseApprovalToggle').style.display = mod==='betaverse' ? 'flex' : 'none';
@@ -2377,7 +2395,8 @@ document.addEventListener('click', function(e){
   smOpenBvLightbox(img.dataset.photoUrl, img.dataset.photoCaption);
 });
 function switchAdAuditTab(tab){  document.querySelectorAll('#adAuditSection .module-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.aa===tab));
-  ['report','import'].forEach(t=> document.getElementById('aa-'+t).style.display = (t===tab) ? 'block' : 'none');
+  ['report','import','changelog'].forEach(t=> document.getElementById('aa-'+t).style.display = (t===tab) ? 'block' : 'none');
+  if(tab==='changelog') loadAdChangeLog();
 }
 
 let AA_LOAD_IN_PROGRESS = false;
@@ -2421,17 +2440,19 @@ function renderAdAuditKpis(){
   const verified = AA_DATA.filter(a=>a.verificationStatus==='Verified').length;
   const running = AA_DATA.filter(a=>a.runningStatus==='Yes').length;
   const uniqueAds = new Set(AA_DATA.map(a=>a.adId)).size;
-  // Every unverified fixed-type ad missing a Location ID needs someone to
-  // fill it in before it can be verified — surfaced as its own tile so
-  // Admin/Marketing can see the backlog instead of discovering it one
-  // row at a time.
+  // Every unverified fixed-type ad missing a Location ID, or movable ad
+  // missing Route From/To, needs someone to fill it in before it can be
+  // verified — surfaced as its own tile so Admin/Marketing can see the
+  // backlog instead of discovering it one row at a time.
   const missingLocationId = new Set(AA_DATA.filter(a=>!a.isMovable && !a.locationId && a.verificationStatus!=='Verified').map(a=>a.adId)).size;
+  const missingRoute = new Set(AA_DATA.filter(a=>a.isMovable && (!a.routeFrom || !a.routeTo) && a.verificationStatus!=='Verified').map(a=>a.adId)).size;
   document.getElementById('aaKpiRow').innerHTML = [
     ['Unique Ads', uniqueAds, 'var(--ink)'],
     ['Total Audits', total, 'var(--navy, #12172B)'],
     ['Verified', verified, 'var(--green)'],
     ['Currently Running', running, 'var(--amber)'],
     ['Missing Location ID', missingLocationId, missingLocationId ? 'var(--red)' : 'var(--slate)'],
+    ['Missing Route', missingRoute, missingRoute ? 'var(--red)' : 'var(--slate)'],
   ].map(([label,val,color])=>`
     <div class="card" style="text-align:center; padding:16px;">
       <div style="font-size:22px; font-weight:800; color:${color};">${val}</div>
@@ -2473,32 +2494,59 @@ function aaUpdateBulkBar(){
    audit row. Now it costs just the write; the next real reload (tab
    switch, filter change, manual refresh) will pick up anything this
    local patch doesn't cover. */
-function aaApplyVerifiedLocally(auditId, newLocationId){
+function aaApplyVerifiedLocally(auditId, newLocationId, newRouteFrom, newRouteTo){
   const a = AA_DATA.find(x=>x.auditId===auditId);
   if(!a) return;
   a.verificationStatus = 'Verified';
   a.verifiedBy = SESSION.name || SESSION.role;
   a.verifierRole = SESSION.role;
   a.verificationDate = new Date().toISOString().slice(0,10);
-  if(newLocationId){
-    // Same Ad ID can have several audit rows — a Location ID filled in
-    // for one visit belongs to the underlying Ad, so reflect it on every
-    // row of that Ad already loaded, not just the one just verified.
-    AA_DATA.forEach(x=>{ if(x.adId === a.adId) x.locationId = newLocationId; });
+  if(newLocationId || newRouteFrom || newRouteTo){
+    // Same Ad ID can have several audit rows — a Location ID or Route
+    // filled in for one visit belongs to the underlying Ad, so reflect it
+    // on every row of that Ad already loaded, not just the one just
+    // verified.
+    AA_DATA.forEach(x=>{
+      if(x.adId === a.adId){
+        if(newLocationId) x.locationId = newLocationId;
+        if(newRouteFrom) x.routeFrom = newRouteFrom;
+        if(newRouteTo) x.routeTo = newRouteTo;
+      }
+    });
   }
 }
-async function aaVerifyOne(auditId){
-  const locInput = document.getElementById('aaLocId_'+auditId);
-  const locationId = locInput ? locInput.value.trim() : '';
-  if(locInput && !locationId){ toast('Enter a Location ID before verifying', true); return; }
+/* Verifying an audit whose ad is missing its Location ID (fixed types) or
+   Route From/To (movable types) asks for the missing value via a plain
+   prompt() right here, rather than an inline <input> squeezed into the
+   table's narrow Verification column — that inline box used to render
+   awkwardly overlapping the adjacent Map/Photo links, which is exactly
+   why this uses a real (if basic) dialog instead. */
+async function aaVerifyOne(auditId, needsLocationId, needsRoute){
+  let locationId = '', routeFrom = '', routeTo = '';
+  if(needsLocationId){
+    const entered = prompt('This ad has no Location ID on file — enter one to verify it:');
+    if(entered===null) return; // cancelled
+    locationId = entered.trim();
+    if(!locationId){ toast('Location ID is required to verify', true); return; }
+  }
+  if(needsRoute){
+    const from = prompt('This movable ad has no Route From on file — enter it to verify:');
+    if(from===null) return;
+    routeFrom = from.trim();
+    const to = prompt('Route To:');
+    if(to===null) return;
+    routeTo = to.trim();
+    if(!routeFrom || !routeTo){ toast('Both Route From and Route To are required to verify', true); return; }
+  }
   try{
     const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
-      action:'verifyAudit', auditId, locationId, role:SESSION.role, verifierName:SESSION.name, verifierMobile:SESSION.mobile||''
+      action:'verifyAudit', auditId, locationId, routeFrom, routeTo, role:SESSION.role, verifierName:SESSION.name, verifierMobile:SESSION.mobile||''
     })}, 20000).then(r=>r.json());
     if(res.needsLocationId){ toast('This ad has no Location ID on file — enter one to verify', true); return; }
+    if(res.needsRoute){ toast('This movable ad has no Route From/To on file — enter both to verify', true); return; }
     if(!res.success) throw new Error(res.message||'Could not verify');
     toast('✅ Verified');
-    aaApplyVerifiedLocally(auditId, locationId);
+    aaApplyVerifiedLocally(auditId, locationId, routeFrom, routeTo);
     renderAdAuditKpis();
     renderAdAuditTable();
   }catch(e){ toast(e.message||'Could not verify', true); }
@@ -2514,8 +2562,9 @@ async function aaVerifySelected(){
     let msg = `✅ ${res.verified} verified`;
     if(res.skippedOwnSubmission) msg += `, ${res.skippedOwnSubmission} skipped (own submission)`;
     if(res.skippedMissingLocationId) msg += `, ${res.skippedMissingLocationId} skipped (needs Location ID — verify individually)`;
+    if(res.skippedMissingRoute) msg += `, ${res.skippedMissingRoute} skipped (needs Route From/To — verify individually)`;
     toast(msg);
-    (res.verifiedIds||[]).forEach(id=> aaApplyVerifiedLocally(id, ''));
+    (res.verifiedIds||[]).forEach(id=> aaApplyVerifiedLocally(id, '', '', ''));
     AA_SELECTED.clear();
     renderAdAuditKpis();
     renderAdAuditTable();
@@ -2541,43 +2590,45 @@ function renderAdAuditTable(){
   tbody.innerHTML = rows.map(a=>{
     // Location ID and Address are two different things — ID is the
     // manually-assigned asset code (or vehicle number for movable ads),
-    // Address is where it actually is (GPS-captured). Kept in separate
-    // columns rather than one falling back into the other, since that
-    // fallback was exactly what made old/imported ads show their ID in
-    // the Address column.
+    // Address is where it actually is (GPS-captured, never hand-edited —
+    // see aaEditLocation's comment). Kept in separate columns rather than
+    // one falling back into the other, since that fallback was exactly
+    // what made old/imported ads show their ID in the Address column.
     const locId = a.isMovable ? (a.vehicleNumber||'—') : (a.locationId || `<span style="color:var(--red); font-weight:700;">⚠️ Missing</span>`);
+    // Route From/To is mandatory for movable ads, same standing as
+    // Location ID is for fixed ads — shown with the same "missing" warning
+    // when either side is blank.
     const addrDetail = a.isMovable
-      ? ((a.routeFrom||a.routeTo) ? `${a.routeFrom||'?'} → ${a.routeTo||'?'}` : '—')
+      ? ((a.routeFrom && a.routeTo) ? `${a.routeFrom} → ${a.routeTo}` : `<span style="color:var(--red); font-weight:700;">⚠️ Route missing</span>`)
       : (a.locationName || `<span style="color:var(--slate); font-style:italic;">Address missing</span>`);
+    const editLink = !canVerify ? '' : a.isMovable
+      ? ` <a href="javascript:void(0)" onclick="aaEditRoute('${a.adId}')" title="Edit Route From/To" style="font-size:10px;">✏️</a>`
+      : ` <a href="javascript:void(0)" onclick="aaEditLocation('${a.adId}')" title="Edit Location ID" style="font-size:10px;">✏️</a>`;
     const size = (!a.isMovable && a.height && a.width) ? `${a.height}×${a.width} ${a.measurementUnit||''} (${a.area||''})` : '—';
     const isUnverified = a.verificationStatus !== 'Verified';
     // Server-side already refuses a verifier verifying their own
     // submission — this just hides the button for that case too, so
     // nobody wastes a tap on something that'll be rejected anyway.
     const isOwnSubmission = SESSION.mobile && a.auditorMobile && String(a.auditorMobile).trim() === String(SESSION.mobile).trim();
-    // Old/imported fixed-type ads sometimes have no Location ID at all —
-    // the backend now refuses to verify those until one is provided, so
-    // the UI asks for it right here instead of the Verify click just
-    // silently failing.
+    // Old/imported ads sometimes have no Location ID (fixed) or no
+    // Route From/To (movable) at all — the backend now refuses to verify
+    // those until the missing value is provided, so Verify prompts for it
+    // right there instead of silently failing.
     const needsLocationId = !a.isMovable && !a.locationId && isUnverified;
+    const needsRoute = a.isMovable && (!a.routeFrom || !a.routeTo) && isUnverified;
     const verificationCell = a.verificationStatus === 'Verified'
       ? `<span class="tag tag-yes">✅ Verified</span><br><span style="font-size:10px; color:var(--slate);">by ${a.verifiedBy||'—'}${a.verificationDate?' on '+a.verificationDate:''}</span>`
       : (canVerify
           ? (isOwnSubmission
               ? `<span class="tag tag-no">Unverified</span><br><span style="font-size:10px; color:var(--slate);">(your own — needs another verifier)</span>`
-              : (needsLocationId
-                  ? `<div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
-                       <input type="text" id="aaLocId_${a.auditId}" placeholder="Location ID" style="width:88px; font-size:11px; padding:4px 6px; border:1px solid var(--border-2); border-radius:6px;">
-                       <button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--green); border-color:var(--green);" onclick="aaVerifyOne('${a.auditId}')">✓ Verify</button>
-                     </div>
-                     <span style="font-size:10px; color:var(--red);">Needs a Location ID first</span>`
-                  : `<button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--green); border-color:var(--green);" onclick="aaVerifyOne('${a.auditId}')">✓ Verify</button>`))
+              : `<button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--green); border-color:var(--green);" onclick="aaVerifyOne('${a.auditId}', ${needsLocationId}, ${needsRoute})">✓ Verify</button>`
+                 + ((needsLocationId||needsRoute) ? `<br><span style="font-size:10px; color:var(--red);">${needsLocationId ? 'Needs a Location ID' : 'Needs Route From/To'} — will ask when you click Verify</span>` : ''))
           : `<span class="tag tag-no">Unverified</span>`);
     return `<tr>
       ${canVerify?`<td>${(isUnverified && !isOwnSubmission) ? `<input type="checkbox" class="aa-select-cb" data-audit-id="${a.auditId}" ${AA_SELECTED.has(a.auditId)?'checked':''} onchange="aaToggleOne('${a.auditId}', this.checked)">` : ''}</td>`:''}
       <td class="mono" style="font-size:11px;">${a.adId}</td>
       <td>${a.adType||''}</td>
-      <td class="mono" style="font-size:11px;">${locId}${canVerify?` <a href="javascript:void(0)" onclick="aaEditLocation('${a.adId}')" title="Edit Location ID / Address" style="font-size:10px;">✏️</a>`:''}</td>
+      <td class="mono" style="font-size:11px;">${locId}${editLink}</td>
       <td>${addrDetail}</td>
       <td class="mono" style="font-size:11px;">${size}</td>
       <td>${a.auditorName||''}${a.auditorMobile?`<br><span style="font-size:10px; color:var(--slate);">${a.auditorMobile}</span>`:''}</td>
@@ -2592,32 +2643,54 @@ function renderAdAuditTable(){
   }).join('');
   aaUpdateBulkBar();
 }
-/* Admin/Marketing-only quick fix for an Ad's Location ID/Address — covers
-   both "blank" (already handled at verify time) and "wrong/duplicated"
-   cases like an old ad where both fields ended up holding the same text.
-   Uses prompt() rather than a full modal since this is a rare correction,
-   not a everyday action. */
+/* Admin/Marketing-only quick fix for a FIXED ad's Location ID — covers
+   the "wrong/duplicated" case (an old ad where Location ID ended up
+   holding the same text as the Address) that the blank-check in
+   verifyAudit doesn't catch on its own, since the field isn't actually
+   empty. Deliberately asks for ONLY the Location ID — Address always
+   comes from GPS capture at audit time and is never hand-editable from
+   here, so there's no second prompt for it. */
 async function aaEditLocation(adId){
   const a = AA_DATA.find(x=>x.adId===adId);
-  const newLocationId = prompt('Location ID for '+adId+':', a ? a.locationId||'' : '');
-  if(newLocationId===null) return;
-  const newLocationName = prompt('Location Address for '+adId+':', a ? a.locationName||'' : '');
-  if(newLocationName===null) return;
-  if(!newLocationId.trim() && !newLocationName.trim()){ toast('Nothing to save', true); return; }
+  const entered = prompt('Location ID for '+adId+':', a ? a.locationId||'' : '');
+  if(entered===null) return;
+  const locationId = entered.trim();
+  if(!locationId){ toast('Enter a Location ID to save', true); return; }
   try{
     const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
-      action:'updateAdLocation', adId, locationId:newLocationId.trim(), locationName:newLocationName.trim(), role:SESSION.role
+      action:'updateAdLocation', adId, locationId, role:SESSION.role, userName:SESSION.name
     })}, 15000).then(r=>r.json());
     if(!res.success) throw new Error(res.message||'Could not save');
     // Same Ad ID can appear on several audit rows — update every one
     // already loaded, not just the row the ✏️ was clicked from.
+    AA_DATA.forEach(x=>{ if(x.adId===adId) x.locationId = locationId; });
+    toast('✅ Location ID updated');
+    renderAdAuditKpis();
+    renderAdAuditTable();
+  }catch(e){ toast(e.message||'Could not save', true); }
+}
+/* Same idea for a MOVABLE ad's Route From/To — mandatory for movable
+   ads, same standing as Location ID is for fixed ones. */
+async function aaEditRoute(adId){
+  const a = AA_DATA.find(x=>x.adId===adId);
+  const fromEntered = prompt('Route From for '+adId+':', a ? a.routeFrom||'' : '');
+  if(fromEntered===null) return;
+  const toEntered = prompt('Route To for '+adId+':', a ? a.routeTo||'' : '');
+  if(toEntered===null) return;
+  const routeFrom = fromEntered.trim(), routeTo = toEntered.trim();
+  if(!routeFrom && !routeTo){ toast('Nothing to save', true); return; }
+  try{
+    const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
+      action:'updateAdRoute', adId, routeFrom, routeTo, role:SESSION.role, userName:SESSION.name
+    })}, 15000).then(r=>r.json());
+    if(!res.success) throw new Error(res.message||'Could not save');
     AA_DATA.forEach(x=>{
       if(x.adId===adId){
-        if(newLocationId.trim()) x.locationId = newLocationId.trim();
-        if(newLocationName.trim()) x.locationName = newLocationName.trim();
+        if(routeFrom) x.routeFrom = routeFrom;
+        if(routeTo) x.routeTo = routeTo;
       }
     });
-    toast('✅ Location updated');
+    toast('✅ Route updated');
     renderAdAuditKpis();
     renderAdAuditTable();
   }catch(e){ toast(e.message||'Could not save', true); }
@@ -2627,7 +2700,7 @@ async function aaEditLocation(adId){
 async function aaToggleRunning(auditId, newStatus){
   try{
     const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
-      action:'updateRunningStatus', auditId, runningStatus:newStatus, role:SESSION.role
+      action:'updateRunningStatus', auditId, runningStatus:newStatus, role:SESSION.role, userName:SESSION.name
     })}, 15000).then(r=>r.json());
     if(!res.success) throw new Error(res.message||'Could not update');
     const a = AA_DATA.find(x=>x.auditId===auditId);
@@ -2635,6 +2708,36 @@ async function aaToggleRunning(auditId, newStatus){
     renderAdAuditKpis();
     renderAdAuditTable();
   }catch(e){ toast(e.message||'Could not update', true); }
+}
+
+/* Read-only audit trail viewer — every entry here was written by
+   logChange() on the backend at the moment a dashboard edit happened;
+   there is no update/delete action anywhere in this file that could
+   ever touch this data, by design (see the hint text in the Change Log
+   tab itself). */
+async function loadAdChangeLog(){
+  const tbody = document.querySelector('#aaChangeLogTable tbody');
+  const thead = document.querySelector('#aaChangeLogTable thead');
+  thead.innerHTML = `<tr><th>When</th><th>Action</th><th>Entity ID</th><th>Field</th><th>Old Value</th><th>New Value</th><th>Changed By</th><th>Role</th></tr>`;
+  tbody.innerHTML = `<tr><td colspan="8"><div class="empty"><span class="spin"></span> Loading change log…</div></td></tr>`;
+  try{
+    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getChangeLog&_t=${Date.now()}`, {cache:'no-store'}, 20000);
+    const j = await r.json();
+    const entries = j.entries || [];
+    if(!entries.length){ tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No changes logged yet.</div></td></tr>`; return; }
+    tbody.innerHTML = entries.map(e=>`<tr>
+      <td class="mono" style="font-size:11px;">${e.timestamp||''}</td>
+      <td>${e.action||''}</td>
+      <td class="mono" style="font-size:11px;">${e.entityId||''}</td>
+      <td>${e.field||''}</td>
+      <td style="color:var(--slate);">${e.oldValue||'—'}</td>
+      <td style="font-weight:700;">${e.newValue||'—'}</td>
+      <td>${e.changedBy||''}</td>
+      <td>${e.changedByRole||''}</td>
+    </tr>`).join('');
+  }catch(e){
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">Could not load — check your connection.</div></td></tr>`;
+  }
 }
 
 /* Excel Import — Ad ID and Location ID are the only required columns;
