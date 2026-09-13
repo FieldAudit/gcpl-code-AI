@@ -353,7 +353,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.82.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.83.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -645,6 +645,9 @@ table.data tr:hover td{background:var(--paper-2);}
         <select id="aaVerifyFilter" onchange="renderAdAuditTable()"><option value="">Verification: All</option><option value="Verified">Verified</option><option value="Unverified">Unverified</option></select>
         <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">From <input type="date" id="aaFrom" onchange="loadAdAuditData()"></label>
         <label style="font-size:12px; color:var(--slate); display:flex; align-items:center; gap:6px;">To <input type="date" id="aaTo" onchange="loadAdAuditData()"></label>
+        <button class="btn btn-outline" onclick="setAaRangePreset('month')">This Month</button>
+        <button class="btn btn-outline" onclick="setAaRangePreset('week')">This Week</button>
+        <button class="btn btn-outline" onclick="setAaRangePreset('')">All Time</button>
         <button class="btn btn-dark" onclick="exportAdAuditReport()">⬇ Export Report</button>
       </div>
       <div id="aaBulkVerifyBar" style="display:none; align-items:center; gap:12px; background:var(--green-bg); border-radius:8px; padding:10px 14px; margin-bottom:12px;">
@@ -1023,7 +1026,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.82.0';
+const FRONTEND_VERSION = 'v6.83.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1129,7 +1132,20 @@ function switchModule(mod){
     document.querySelectorAll('.tabs + section, section[id^="tab-"]').forEach(s=>s.style.display='none');
     window.scrollTo(0,0); // same reasoning as the mktexpense branch above
     startModuleSwitchProgress();
-    loadAdAuditData().finally(finishModuleSwitchProgress);
+    // Defaults the report to the current month on the FIRST time anyone
+    // opens Ad Audit this session — fetching and rendering every audit
+    // ever logged, forever, on every single load was only cheap while
+    // the sheet was small; as it grows with daily use this is what keeps
+    // both the Apps Script response and the table render fast. Only set
+    // once (AA_DEFAULT_RANGE_SET guards it) so a person who deliberately
+    // clears the dates for "All Time" doesn't have it silently reset back
+    // under them on their next visit to the tab within the same session.
+    if(!AA_DEFAULT_RANGE_SET){
+      AA_DEFAULT_RANGE_SET = true;
+      setAaRangePreset('month').finally(finishModuleSwitchProgress);
+    } else {
+      loadAdAuditData().finally(finishModuleSwitchProgress);
+    }
     return;
   }
   document.querySelector('nav.tabs').style.display = 'flex';
@@ -2470,6 +2486,26 @@ function switchAdAuditTab(tab){  document.querySelectorAll('#adAuditSection .mod
 }
 
 let AA_LOAD_IN_PROGRESS = false;
+let AA_DEFAULT_RANGE_SET = false;
+/* Sets the From/To fields to a quick preset and reloads — used both by
+   the report's own quick-filter buttons and to default the report to
+   "This Month" the first time anyone opens the tab each session (see
+   the comment where this is called from switchModule). Returns the
+   loadAdAuditData() promise so a caller can chain .finally() on it. */
+function setAaRangePreset(preset){
+  const now = new Date();
+  let from = '';
+  if(preset==='week'){
+    const day = now.getDay();
+    const monday = new Date(now); monday.setDate(now.getDate() - ((day+6)%7));
+    from = monday.toISOString().slice(0,10);
+  } else if(preset==='month'){
+    from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+  }
+  document.getElementById('aaFrom').value = from;
+  document.getElementById('aaTo').value = preset ? now.toISOString().slice(0,10) : '';
+  return loadAdAuditData();
+}
 async function loadAdAuditData(){
   // Guards against the blank-page gap some people were hitting: switching
   // to the Ad Audit tab quickly (double-click, or clicking away and back
@@ -2827,15 +2863,16 @@ async function openAdJourney(adId){
     document.getElementById('adJourneySubtitle').textContent = `${ad.adType||''} — ${locDetail} — ${j.totalAudits} audit${j.totalAudits===1?'':'s'} on record${multiAuditorNote}`;
     document.getElementById('adJourneyBody').innerHTML = `
       <table class="data">
-        <thead><tr><th>Date</th><th>Auditor</th><th>Running</th><th>Photo</th><th>Verification</th><th>Remarks</th></tr></thead>
+        <thead><tr><th>Date & Time</th><th>Auditor</th><th>Lat, Long</th><th>Running</th><th>Photo</th><th>Verification</th><th>Remarks</th></tr></thead>
         <tbody>${j.audits.map(a=>{
           const key = a.auditorMobile || a.auditorName || '—';
           return `<tr style="background:${auditorColor[key]};">
           <td class="mono" style="font-size:11px;">${a.date||''} ${a.time||''}</td>
           <td>${a.auditorName||''}${a.auditorMobile?`<br><span style="font-size:10px; color:var(--slate);">${a.auditorMobile}</span>`:''}</td>
+          <td class="mono" style="font-size:10.5px;">${(a.lat&&a.lng)?`<a href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank">${(+a.lat).toFixed(5)}, ${(+a.lng).toFixed(5)}</a>`:'—'}</td>
           <td><span class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}">${a.runningStatus==='Yes'?'✅ Running':'🚩 Not running'}</span></td>
           <td>${a.photoUrl ? `<img src="${a.photoUrl}" data-photo-url="${a.photoUrl}" data-photo-caption="${adId} — ${a.date}" class="aa-photo-thumb" style="width:40px; height:40px; object-fit:cover; border-radius:6px; cursor:pointer;">` : '—'}</td>
-          <td>${a.verificationStatus==='Verified' ? `<span class="tag tag-yes">✅ Verified</span><br><span style="font-size:10px; color:var(--slate);">by ${a.verifiedBy||'—'}</span>` : `<span class="tag tag-no">Unverified</span>`}</td>
+          <td>${a.verificationStatus==='Verified' ? `<span class="tag tag-yes">✅ Verified</span><br><span style="font-size:10px; color:var(--slate);">by ${a.verifiedBy||'—'}${a.verifierRole?' ('+a.verifierRole+')':''}</span>` : `<span class="tag tag-no">Unverified</span>`}</td>
           <td style="font-size:12px; color:var(--slate);">${a.remarks||'—'}</td>
         </tr>`;
         }).join('')}</tbody>
@@ -2923,16 +2960,19 @@ function openAuditorJourney(mobile){
   }
   document.getElementById('adJourneyBody').innerHTML = `
     <table class="data">
-      <thead><tr><th>Date</th><th>Ad ID</th><th>Location ID / Vehicle</th><th>Running</th><th>Photo</th><th>Verification</th></tr></thead>
+      <thead><tr><th>Date & Time</th><th>Ad ID</th><th>Location ID / Vehicle</th><th>Address / Route</th><th>Lat, Long</th><th>Running</th><th>Photo</th><th>Verification</th></tr></thead>
       <tbody>${audits.map(a=>{
         const loc = a.isMovable ? (a.vehicleNumber||'—') : (a.locationId || '⚠️ missing');
+        const addr = a.isMovable ? ((a.routeFrom&&a.routeTo)?`${a.routeFrom} → ${a.routeTo}`:'⚠️ route missing') : (a.locationName||'⚠️ address missing');
         return `<tr>
           <td class="mono" style="font-size:11px;">${a.date||''} ${a.time||''}</td>
           <td class="mono" style="font-size:11px;"><a href="javascript:void(0)" onclick="openAdJourney('${a.adId}')" title="View this ad's full journey">${a.adId}</a></td>
           <td>${loc}</td>
+          <td>${addr}</td>
+          <td class="mono" style="font-size:10.5px;">${(a.lat&&a.lng)?`<a href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank">${(+a.lat).toFixed(5)}, ${(+a.lng).toFixed(5)}</a>`:'—'}</td>
           <td><span class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}">${a.runningStatus==='Yes'?'✅':'🚩'}</span></td>
           <td>${a.photoUrl ? `<img src="${a.photoUrl}" data-photo-url="${a.photoUrl}" data-photo-caption="${a.adId} — ${a.date}" class="aa-photo-thumb" style="width:40px; height:40px; object-fit:cover; border-radius:6px; cursor:pointer;">` : '—'}</td>
-          <td>${a.verificationStatus==='Verified' ? `<span class="tag tag-yes">✅ Verified</span>` : `<span class="tag tag-no">Unverified</span>`}</td>
+          <td>${a.verificationStatus==='Verified' ? `<span class="tag tag-yes">✅ Verified</span><br><span style="font-size:10px; color:var(--slate);">by ${a.verifiedBy||'—'}</span>` : `<span class="tag tag-no">Unverified</span>`}</td>
         </tr>`;
       }).join('')}</tbody>
     </table>`;
@@ -3027,7 +3067,7 @@ async function uploadAdMasterExcel(){
    formula for Photo and Map so both work directly from Excel. */
 function exportAdAuditReport(){
   if(!AA_DATA.length){ toast('No data loaded to export', true); return; }
-  const headers = ['Ad ID','Ad Type','Location ID / Vehicle No.','Address / Route','Route From','Route To','Size','Auditor Name','Auditor Mobile','Audit Date','Audit Time','Running Status','Photo','Map','Verification Status','Verified By','Verification Date','Remarks'];
+  const headers = ['Ad ID','Ad Type','Location ID / Vehicle No.','Address / Route','Route From','Route To','Size','Auditor Name','Auditor Mobile','Audit Date','Audit Time','Latitude','Longitude','Running Status','Photo','Map','Verification Status','Verified By','Verified Role','Verification Date','Remarks'];
   const body = AA_DATA.map(a=>[
     a.adId, a.adType,
     a.isMovable ? (a.vehicleNumber||'') : (a.locationId||''),
@@ -3035,10 +3075,11 @@ function exportAdAuditReport(){
     a.routeFrom||'', a.routeTo||'',
     (!a.isMovable && a.height && a.width) ? `${a.height}×${a.width} ${a.measurementUnit||''} = ${a.area||''}` : '',
     a.auditorName||'', a.auditorMobile||'', a.date||'', a.time||'',
+    a.lat||'', a.lng||'',
     a.runningStatus==='Yes' ? 'Running' : 'Not Running',
     a.photoUrl ? {f: `HYPERLINK("${a.photoUrl}","View Photo")`} : '',
     (a.lat&&a.lng) ? {f: `HYPERLINK("https://www.google.com/maps?q=${a.lat},${a.lng}","View Map")`} : '',
-    a.verificationStatus||'', a.verifiedBy||'', a.verificationDate||'', a.remarks||''
+    a.verificationStatus||'', a.verifiedBy||'', a.verifierRole||'', a.verificationDate||'', a.remarks||''
   ]);
   const ws = XLSX.utils.aoa_to_sheet([headers, ...body]);
   ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
