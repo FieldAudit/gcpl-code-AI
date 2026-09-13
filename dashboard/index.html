@@ -280,6 +280,9 @@ table.data tr:hover td{background:var(--paper-2);}
 .mex-info-box p{margin:0 0 10px; font-size:13.5px; color:var(--slate); line-height:1.6;}
 .mex-info-box code{background:var(--paper-2); padding:2px 6px; border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:12px;}
 .mex-info-box .btn{margin-top:8px;}
+.ad-journey-modal{display:none; position:fixed; inset:0; background:rgba(18,23,43,.55); z-index:9000; align-items:center; justify-content:center; padding:20px;}
+.ad-journey-modal.show{display:flex;}
+.ad-journey-box{background:#fff; border-radius:14px; max-width:900px; width:100%; max-height:85vh; overflow-y:auto; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,.3);}
 .master-textarea{width:100%; min-height:160px; padding:12px; border:1.5px solid var(--border-2); border-radius:4px; font-family:'IBM Plex Mono'; font-size:12.5px; resize:vertical; background:var(--paper); color:var(--ink);}
 .master-actions{display:flex; align-items:center; gap:12px; margin-top:12px;}
 .master-count{font-size:12.5px; color:var(--slate);}
@@ -350,7 +353,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.80.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.82.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -388,6 +391,7 @@ table.data tr:hover td{background:var(--paper-2);}
     <button data-tab="photos" onclick="showTab('photos')">Photos</button>
     <button data-tab="master" id="masterTabBtn" onclick="showTab('master')" style="display:none;">Master Data</button>
     <button data-tab="team" id="teamTabBtn" onclick="showTab('team')" style="display:none;">Team</button>
+    <button data-tab="auditorwise" id="auditorWiseTabBtn" onclick="showTab('auditorwise')" style="display:none;">👤 Auditor-wise</button>
   </nav>
 
   <main>
@@ -531,6 +535,22 @@ table.data tr:hover td{background:var(--paper-2);}
       </div>
       <div id="teamJourneyView" style="display:none;"></div>
     </section>
+    <section id="tab-auditorwise" style="display:none;">
+      <div class="card">
+        <h2>👤 Auditor-wise Journey</h2>
+        <div class="hint">How many different Ads/Locations each auditor has visited, and how many times — click any auditor to see their full visit history with photos. Same Ad ID audited by more than one person shows every one of them, clearly labelled, in that ad's own journey (click any Ad ID in the Ad Audit Report).</div>
+        <div class="filters" style="margin-top:14px;">
+          <input type="text" id="auditorSearchAM" placeholder="Search auditor name or mobile…" oninput="renderAuditorWise('AM')">
+          <button class="btn btn-outline" onclick="setAuditorRangePreset('week','AM')">This Week</button>
+          <button class="btn btn-outline" onclick="setAuditorRangePreset('month','AM')">This Month</button>
+          <button class="btn btn-outline" onclick="setAuditorRangePreset('year','AM')">This Year</button>
+          <button class="btn btn-outline" onclick="setAuditorRangePreset('','AM')">All Time</button>
+          <span>From <input type="date" id="auditorFromAM" onchange="renderAuditorWise('AM')"></span>
+          <span>To <input type="date" id="auditorToAM" onchange="renderAuditorWise('AM')"></span>
+        </div>
+        <div class="table-wrap" style="margin-top:14px;"><table class="data" id="auditorWiseTableAM"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </section>
   </main>
 
   <div id="mktExpenseSection" style="display:none; padding:0 24px 24px;">
@@ -612,6 +632,7 @@ table.data tr:hover td{background:var(--paper-2);}
     <button class="active" data-aa="report" onclick="switchAdAuditTab('report')">📋 Ad Audit Report</button>
     <button data-aa="import" onclick="switchAdAuditTab('import')">📤 Import Existing Ads</button>
     <button data-aa="changelog" onclick="switchAdAuditTab('changelog')">📜 Change Log</button>
+    <button data-aa="auditors" onclick="switchAdAuditTab('auditors')">👤 Auditor-wise</button>
   </div>
 
   <div id="aa-report">
@@ -657,6 +678,23 @@ table.data tr:hover td{background:var(--paper-2);}
       <div class="table-wrap" style="margin-top:14px;"><table class="data" id="aaChangeLogTable"><thead></thead><tbody></tbody></table></div>
     </div>
   </div>
+
+  <div id="aa-auditors" style="display:none;">
+    <div class="card">
+      <h2>👤 Auditor-wise Journey</h2>
+      <div class="hint">How many different Ads/Locations each auditor has visited, and how many times — click any auditor to see their full visit history with photos. Same Ad ID audited by more than one person shows every one of them, clearly labelled, in that ad's own journey (open it from the Ad Audit Report tab).</div>
+      <div class="filters" style="margin-top:14px;">
+        <input type="text" id="auditorSearch" placeholder="Search auditor name or mobile…" oninput="renderAuditorWise('')">
+        <button class="btn btn-outline" onclick="setAuditorRangePreset('week','')">This Week</button>
+        <button class="btn btn-outline" onclick="setAuditorRangePreset('month','')">This Month</button>
+        <button class="btn btn-outline" onclick="setAuditorRangePreset('year','')">This Year</button>
+        <button class="btn btn-outline" onclick="setAuditorRangePreset('','')">All Time</button>
+        <span>From <input type="date" id="auditorFrom" onchange="renderAuditorWise('')"></span>
+        <span>To <input type="date" id="auditorTo" onchange="renderAuditorWise('')"></span>
+      </div>
+      <div class="table-wrap" style="margin-top:14px;"><table class="data" id="auditorWiseTable"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </div>
 </div>
 
 <div class="mex-info-modal" id="mexInfoModal" onclick="if(event.target===this) mexCloseInfo()">
@@ -664,6 +702,19 @@ table.data tr:hover td{background:var(--paper-2);}
     <h3 id="mexInfoTitle"></h3>
     <div id="mexInfoBody"></div>
     <button class="btn btn-dark" onclick="mexCloseInfo()">Close</button>
+  </div>
+</div>
+
+<div class="ad-journey-modal" id="adJourneyModal" onclick="if(event.target===this) closeAdJourney()">
+  <div class="ad-journey-box">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px;">
+      <div>
+        <h3 style="margin:0 0 4px;" id="adJourneyTitle">Ad Journey</h3>
+        <div id="adJourneySubtitle" style="font-size:12.5px; color:var(--slate);"></div>
+      </div>
+      <button class="btn btn-outline" onclick="closeAdJourney()" style="padding:4px 12px;">✕ Close</button>
+    </div>
+    <div id="adJourneyBody"><div class="empty"><span class="spin"></span> Loading journey…</div></div>
   </div>
 </div>
 
@@ -972,7 +1023,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.80.0';
+const FRONTEND_VERSION = 'v6.82.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1088,6 +1139,12 @@ function switchModule(mod){
   document.getElementById('betaverseApprovalToggle').style.display = mod==='betaverse' ? 'flex' : 'none';
   document.getElementById('approvalsTabBtn').style.display = (mod==='betaverse' && CAN_APPROVE()) ? 'inline-block' : 'none';
   document.getElementById('mapTabBtn').style.display = 'inline-block';
+  // Ad Audit data (AA_DATA) is what this tab shows even though it's
+  // reached from the Ad Manager nav bar — the same "who audited how many
+  // ads, how many times" view is also its own sub-tab inside Ad Audit
+  // itself; this is just a second, more discoverable door to the same
+  // place for people who land on Ad Manager first.
+  document.getElementById('auditorWiseTabBtn').style.display = mod==='betaverse' ? 'inline-block' : 'none';
   APPROVAL_FILTER = '';
   document.getElementById('histCity').innerHTML = '<option value="">All cities</option>'; // rebuild filter options for the new dataset
   document.getElementById('histSearch').placeholder = mod==='db' ? 'Search distributor, city…' : mod==='betaverse' ? 'Search address, city, auditor…' : 'Search outlet, city, distributor…';
@@ -1162,7 +1219,7 @@ function switchSourceTab(tab){
 }
 
 function showTab(name){
-  ['dash','approvals','map','history','photos','master','team'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
+  ['dash','approvals','map','history','photos','master','team','auditorwise'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   if(name==='dash') renderDashboard();
   if(name==='approvals') renderApprovals();
@@ -1174,6 +1231,14 @@ function showTab(name){
     document.getElementById('teamGridView').style.display='block';
     document.getElementById('teamJourneyView').style.display='none';
     loadTeamData().then(renderTeamGrid);
+  }
+  if(name==='auditorwise'){
+    // Reached from Ad Manager's own tab bar, but the data is Ad Audit
+    // data (AA_DATA) — load it if this is the first time anyone's opened
+    // an Ad-Audit-data view this session, so the count/journey are never
+    // stale from whatever the person looked at last.
+    if(!AA_DATA.length){ loadAdAuditData().then(()=>renderAuditorWise('AM')); }
+    else renderAuditorWise('AM');
   }
 }
 /* Clear, single-purpose approval screen — a big card per pending site
@@ -2399,8 +2464,9 @@ document.addEventListener('click', function(e){
   smOpenBvLightbox(img.dataset.photoUrl, img.dataset.photoCaption);
 });
 function switchAdAuditTab(tab){  document.querySelectorAll('#adAuditSection .module-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.aa===tab));
-  ['report','import','changelog'].forEach(t=> document.getElementById('aa-'+t).style.display = (t===tab) ? 'block' : 'none');
+  ['report','import','changelog','auditors'].forEach(t=> document.getElementById('aa-'+t).style.display = (t===tab) ? 'block' : 'none');
   if(tab==='changelog') loadAdChangeLog();
+  if(tab==='auditors') renderAuditorWise('');
 }
 
 let AA_LOAD_IN_PROGRESS = false;
@@ -2630,7 +2696,7 @@ function renderAdAuditTable(){
           : `<span class="tag tag-no">Unverified</span>`);
     return `<tr>
       ${canVerify?`<td>${(isUnverified && !isOwnSubmission) ? `<input type="checkbox" class="aa-select-cb" data-audit-id="${a.auditId}" ${AA_SELECTED.has(a.auditId)?'checked':''} onchange="aaToggleOne('${a.auditId}', this.checked)">` : ''}</td>`:''}
-      <td class="mono" style="font-size:11px;">${a.adId}</td>
+      <td class="mono" style="font-size:11px;"><a href="javascript:void(0)" onclick="openAdJourney('${a.adId}')" title="View this ad's full audit history">${a.adId}</a></td>
       <td>${a.adType||''}</td>
       <td class="mono" style="font-size:11px;">${locId}${editLink}</td>
       <td>${addrDetail}</td>
@@ -2719,6 +2785,160 @@ async function aaToggleRunning(auditId, newStatus){
    there is no update/delete action anywhere in this file that could
    ever touch this data, by design (see the hint text in the Change Log
    tab itself). */
+/* Per-Ad timeline — "this exact Ad ID was audited 5 times this month"
+   answered directly, instead of someone having to spot repeat Ad IDs by
+   eye while scrolling the flat report table. Reuses the same
+   getAdAuditJourney backend action the field app already calls when an
+   auditor re-audits an existing ad — same data, just for reading here. */
+async function openAdJourney(adId){
+  const modal = document.getElementById('adJourneyModal');
+  modal.classList.add('show');
+  document.getElementById('adJourneyTitle').textContent = 'Ad Journey — ' + adId;
+  document.getElementById('adJourneySubtitle').textContent = '';
+  document.getElementById('adJourneyBody').innerHTML = `<div class="empty"><span class="spin"></span> Loading journey…</div>`;
+  try{
+    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAdAuditJourney&adId=${encodeURIComponent(adId)}&_t=${Date.now()}`, {cache:'no-store'}, 15000);
+    const j = await r.json();
+    if(!j.success) throw new Error(j.message||'Could not load journey');
+    const ad = j.ad;
+    const locDetail = ad.isMovable ? `${ad.vehicleNumber||'—'} · ${(ad.routeFrom&&ad.routeTo)?ad.routeFrom+' → '+ad.routeTo:'⚠️ route missing'}` : `${ad.locationId||'⚠️ no Location ID'} · ${ad.locationName||'⚠️ address missing'}`;
+    if(!j.audits.length){
+      document.getElementById('adJourneySubtitle').textContent = `${ad.adType||''} — ${locDetail} — 0 audits on record`;
+      document.getElementById('adJourneyBody').innerHTML = `<div class="empty">No audit visits recorded for this ad yet.</div>`;
+      return;
+    }
+    // The same Ad ID being visited by several different people over time
+    // is normal and expected, but a flat list makes it easy to miss —
+    // each distinct auditor gets their own colour tint carried down their
+    // rows, and the subtitle names everyone up front, so "who's actually
+    // been checking this one" is obvious at a glance rather than
+    // something you have to notice by reading every row.
+    const palette = ['#EAF2FF','#FFF3E0','#EAF7ED','#FCE9EC','#F3EAFB','#E9F7F6'];
+    const auditorColor = {};
+    const auditorNames = [];
+    j.audits.forEach(a=>{
+      const key = a.auditorMobile || a.auditorName || '—';
+      if(!(key in auditorColor)){
+        auditorColor[key] = palette[Object.keys(auditorColor).length % palette.length];
+        auditorNames.push(a.auditorName || key);
+      }
+    });
+    const multiAuditorNote = auditorNames.length > 1 ? ` — audited by ${auditorNames.length} different people: ${auditorNames.join(', ')}` : ` — audited by ${auditorNames[0]||'—'}`;
+    document.getElementById('adJourneySubtitle').textContent = `${ad.adType||''} — ${locDetail} — ${j.totalAudits} audit${j.totalAudits===1?'':'s'} on record${multiAuditorNote}`;
+    document.getElementById('adJourneyBody').innerHTML = `
+      <table class="data">
+        <thead><tr><th>Date</th><th>Auditor</th><th>Running</th><th>Photo</th><th>Verification</th><th>Remarks</th></tr></thead>
+        <tbody>${j.audits.map(a=>{
+          const key = a.auditorMobile || a.auditorName || '—';
+          return `<tr style="background:${auditorColor[key]};">
+          <td class="mono" style="font-size:11px;">${a.date||''} ${a.time||''}</td>
+          <td>${a.auditorName||''}${a.auditorMobile?`<br><span style="font-size:10px; color:var(--slate);">${a.auditorMobile}</span>`:''}</td>
+          <td><span class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}">${a.runningStatus==='Yes'?'✅ Running':'🚩 Not running'}</span></td>
+          <td>${a.photoUrl ? `<img src="${a.photoUrl}" data-photo-url="${a.photoUrl}" data-photo-caption="${adId} — ${a.date}" class="aa-photo-thumb" style="width:40px; height:40px; object-fit:cover; border-radius:6px; cursor:pointer;">` : '—'}</td>
+          <td>${a.verificationStatus==='Verified' ? `<span class="tag tag-yes">✅ Verified</span><br><span style="font-size:10px; color:var(--slate);">by ${a.verifiedBy||'—'}</span>` : `<span class="tag tag-no">Unverified</span>`}</td>
+          <td style="font-size:12px; color:var(--slate);">${a.remarks||'—'}</td>
+        </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+  }catch(e){
+    document.getElementById('adJourneyBody').innerHTML = `<div class="empty">Could not load — check your connection.</div>`;
+  }
+}
+
+/* Auditor-wise summary — how many different Ads/Locations each auditor
+   has visited, and how many times total, over whatever date range is
+   selected. Built entirely from AA_DATA already in memory (no extra
+   backend call) since the Ad Audit Report tab has already loaded it by
+   the time anyone would look at this. suffix lets the SAME function
+   drive two independent copies of this view — one inside Ad Audit's own
+   sub-tabs, one inside Ad Manager's tab bar — without them fighting over
+   the same DOM ids. */
+function setAuditorRangePreset(preset, suffix){
+  const now = new Date();
+  let from = '';
+  if(preset==='week'){
+    const day = now.getDay();
+    const monday = new Date(now); monday.setDate(now.getDate() - ((day+6)%7));
+    from = monday.toISOString().slice(0,10);
+  } else if(preset==='month'){
+    from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+  } else if(preset==='year'){
+    from = new Date(now.getFullYear(), 0, 1).toISOString().slice(0,10);
+  }
+  document.getElementById('auditorFrom'+suffix).value = from;
+  document.getElementById('auditorTo'+suffix).value = preset ? now.toISOString().slice(0,10) : '';
+  renderAuditorWise(suffix);
+}
+function renderAuditorWise(suffix){
+  const searchEl = document.getElementById('auditorSearch'+suffix);
+  const fromEl = document.getElementById('auditorFrom'+suffix);
+  const toEl = document.getElementById('auditorTo'+suffix);
+  if(!searchEl || !fromEl || !toEl) return;
+  const search = (searchEl.value||'').toLowerCase();
+  const from = fromEl.value, to = toEl.value;
+  let rows = AA_DATA.filter(a=>{
+    if(from && a.date < from) return false;
+    if(to && a.date > to) return false;
+    return true;
+  });
+  const byAuditor = {};
+  rows.forEach(a=>{
+    const key = a.auditorMobile || a.auditorName || 'unknown';
+    if(!byAuditor[key]) byAuditor[key] = {name:a.auditorName, mobile:a.auditorMobile, audits:[], adIds:new Set()};
+    byAuditor[key].audits.push(a);
+    byAuditor[key].adIds.add(a.adId);
+  });
+  let list = Object.values(byAuditor);
+  if(search) list = list.filter(x=> (x.name||'').toLowerCase().includes(search) || (x.mobile||'').toLowerCase().includes(search));
+  list.sort((a,b)=> b.audits.length - a.audits.length);
+  const thead = document.querySelector('#auditorWiseTable'+suffix+' thead');
+  const tbody = document.querySelector('#auditorWiseTable'+suffix+' tbody');
+  thead.innerHTML = `<tr><th>Auditor</th><th>Mobile</th><th>Unique Ads/Locations</th><th>Total Audits</th><th></th></tr>`;
+  if(!list.length){ tbody.innerHTML = `<tr><td colspan="5"><div class="empty">No audits in this range.</div></td></tr>`; return; }
+  tbody.innerHTML = list.map(x=>`<tr>
+    <td>${x.name||'—'}</td>
+    <td class="mono" style="font-size:11px;">${x.mobile||'—'}</td>
+    <td style="font-weight:700;">${x.adIds.size}</td>
+    <td style="font-weight:700;">${x.audits.length}</td>
+    <td><button class="btn btn-outline" style="padding:4px 10px; font-size:11px;" onclick="openAuditorJourney('${x.mobile}')">View Journey →</button></td>
+  </tr>`).join('');
+}
+/* Reuses the exact same modal as openAdJourney() above — this time
+   filtered to one auditor's own visits across every Ad/Location they've
+   ever touched, newest first, with the same photo thumbnails. Each row
+   links onward to that Ad's own full journey (openAdJourney) for the
+   "who ELSE has audited this one" view. */
+function openAuditorJourney(mobile){
+  const audits = AA_DATA.filter(a=> String(a.auditorMobile||'')===String(mobile))
+    .sort((a,b)=> String(b.date+b.time).localeCompare(String(a.date+a.time)));
+  const modal = document.getElementById('adJourneyModal');
+  modal.classList.add('show');
+  const name = audits[0] ? audits[0].auditorName : mobile;
+  const uniqueAdIds = new Set(audits.map(a=>a.adId));
+  document.getElementById('adJourneyTitle').textContent = 'Auditor Journey — ' + (name||mobile);
+  document.getElementById('adJourneySubtitle').textContent = `${mobile} — ${uniqueAdIds.size} unique Ad(s)/Location(s), ${audits.length} audit${audits.length===1?'':'s'} total`;
+  if(!audits.length){
+    document.getElementById('adJourneyBody').innerHTML = `<div class="empty">No audits found for this auditor.</div>`;
+    return;
+  }
+  document.getElementById('adJourneyBody').innerHTML = `
+    <table class="data">
+      <thead><tr><th>Date</th><th>Ad ID</th><th>Location ID / Vehicle</th><th>Running</th><th>Photo</th><th>Verification</th></tr></thead>
+      <tbody>${audits.map(a=>{
+        const loc = a.isMovable ? (a.vehicleNumber||'—') : (a.locationId || '⚠️ missing');
+        return `<tr>
+          <td class="mono" style="font-size:11px;">${a.date||''} ${a.time||''}</td>
+          <td class="mono" style="font-size:11px;"><a href="javascript:void(0)" onclick="openAdJourney('${a.adId}')" title="View this ad's full journey">${a.adId}</a></td>
+          <td>${loc}</td>
+          <td><span class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}">${a.runningStatus==='Yes'?'✅':'🚩'}</span></td>
+          <td>${a.photoUrl ? `<img src="${a.photoUrl}" data-photo-url="${a.photoUrl}" data-photo-caption="${a.adId} — ${a.date}" class="aa-photo-thumb" style="width:40px; height:40px; object-fit:cover; border-radius:6px; cursor:pointer;">` : '—'}</td>
+          <td>${a.verificationStatus==='Verified' ? `<span class="tag tag-yes">✅ Verified</span>` : `<span class="tag tag-no">Unverified</span>`}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+}
+function closeAdJourney(){ document.getElementById('adJourneyModal').classList.remove('show'); }
+
 async function loadAdChangeLog(){
   const tbody = document.querySelector('#aaChangeLogTable tbody');
   const thead = document.querySelector('#aaChangeLogTable thead');
