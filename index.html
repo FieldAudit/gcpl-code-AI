@@ -275,7 +275,7 @@ input[readonly]{background:var(--paper-2); cursor:not-allowed;}
 window.onerror = function(msg, url, line, col, err){
   try{
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', 'https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHBfP9GR5QOC-AsVtYZqbcqyOVX1T4TiTo4ktHXcmbXF9S9_A6/exec', true);
+    xhr.open('POST', 'https://script.google.com/macros/s/AKfycbwnA89CygT4soSvU7rxWs7i89nvtb7YFHVRLtNSW9frmjt0gqKOkXFFfSXKHEp1qwU/exec', true);
     var body = JSON.stringify({
       action: 'logError',
       message: String(msg).slice(0, 500),
@@ -308,7 +308,7 @@ window.onerror = function(msg, url, line, col, err){
   if(missing.length){
     try{
       var xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHBfP9GR5QOC-AsVtYZqbcqyOVX1T4TiTo4ktHXcmbXF9S9_A6/exec', true);
+      xhr.open('POST', 'https://script.google.com/macros/s/AKfycbwnA89CygT4soSvU7rxWs7i89nvtb7YFHVRLtNSW9frmjt0gqKOkXFFfSXKHEp1qwU/exec', true);
       xhr.send(JSON.stringify({action:'logError', message:'Browser missing required features: '+missing.join(', '), stack:'', source:'compat-gate', url:String(window.location.href), device: JSON.stringify({ua: navigator.userAgent})}));
     }catch(e){}
     document.write(
@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.60.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.62.0</div></div>
   </div>
 </header>
 
@@ -713,7 +713,7 @@ window.onerror = function(msg, url, line, col, err){
    opens this link and fills the survey; the management dashboard (a separate
    page, dashboard.html) is the one that's password-protected.
 */
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHBfP9GR5QOC-AsVtYZqbcqyOVX1T4TiTo4ktHXcmbXF9S9_A6/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwnA89CygT4soSvU7rxWs7i89nvtb7YFHVRLtNSW9frmjt0gqKOkXFFfSXKHEp1qwU/exec";
 // SmartMeasure is a separate Apps Script project + Google Sheet — its own
 // backend, reached from this SAME app now that it's a third module here.
 const BETAVERSE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzskyp0hNsLejZWlFn5OOcQfrkoBU0Dxe_KX-5iUwkI0-siVew5e4HVUwdpGdJgutMN5A/exec";
@@ -3154,6 +3154,30 @@ async function smSubmitAdAudit(){
       if(!createRes.success) throw new Error(createRes.message||'Could not create the new ad');
       adId = createRes.adId;
     }
+    // Self-heals an existing FIXED ad's Address whenever it looks broken
+    // (blank, or — the exact "Saltlake Uat Test" kind of case — identical
+    // to its own Location ID, which is the signature of an old row saved
+    // before Location ID and Address were split apart). Never overwrites
+    // an address that already looks fine, so a healthy address doesn't
+    // keep quietly drifting to a slightly different GPS reading on every
+    // re-audit. Skipped entirely for a brand-new ad (already captured
+    // its own address moments ago) and for movable ads (no address field
+    // at all). This is the ONLY way a bad legacy Address ever gets
+    // corrected — by design there is no manual "type in a new address"
+    // path anywhere in the app, on purpose (see aaEditLocation's comment
+    // in the dashboard).
+    let capturedAddress = '';
+    if(!SM_AD_AUDIT.isNewAd && SM_AD_AUDIT.selectedAd && !SM_AD_AUDIT.selectedAd.isMovable){
+      const currentAddress = String(SM_AD_AUDIT.selectedAd.locationName||'').trim();
+      const currentLocationId = String(SM_AD_AUDIT.selectedAd.locationId||'').trim();
+      const looksBroken = !currentAddress || (currentLocationId && currentAddress === currentLocationId);
+      if(looksBroken){
+        try{
+          const base = await getBaseAddress(SM_AD_AUDIT.geo.lat, SM_AD_AUDIT.geo.lng);
+          if(base.formatted) capturedAddress = base.formatted;
+        }catch(_e){}
+      }
+    }
     const stampedPhoto = await stampPhoto(SM_AD_AUDIT.photoRaw, [
       `${new Date().toLocaleString()}  •  ${SM_AD_AUDIT.geo.lat.toFixed(6)}, ${SM_AD_AUDIT.geo.lng.toFixed(6)}`,
       `Ad ID: ${adId}   Auditor: ${CHECKIN_NAME||'—'}`
@@ -3161,7 +3185,7 @@ async function smSubmitAdAudit(){
     const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
       action:'submitAdAudit', adId, auditorName:CHECKIN_NAME, auditorMobile:CHECKIN_PHONE,
       lat:SM_AD_AUDIT.geo.lat, lng:SM_AD_AUDIT.geo.lng, accuracy:SM_AD_AUDIT.geo.accuracy,
-      runningStatus:SM_AD_AUDIT.runningStatus, photoBase64:stampedPhoto,
+      runningStatus:SM_AD_AUDIT.runningStatus, photoBase64:stampedPhoto, capturedAddress,
       remarks: document.getElementById('smAdAuditRemarks').value.trim()
     })}, 30000).then(r=>r.json());
     if(!res.success) throw new Error(res.message||'Could not submit');
