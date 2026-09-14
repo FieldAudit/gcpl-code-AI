@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.62.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.63.0</div></div>
   </div>
 </header>
 
@@ -414,7 +414,7 @@ window.onerror = function(msg, url, line, col, err){
       </div>
       <div class="field"><label>City</label><input type="text" id="f_city"></div>
       <div class="field"><label>Distributor</label><input type="text" id="f_distributor"></div>
-      <div class="field"><label>Route Name / Code</label><input type="text" id="f_route"></div>
+      <div class="field"><label>Route Name</label><input type="text" id="f_route" placeholder="e.g. Saltlake, Taltala"></div>
     </div>
   </div>
 
@@ -2275,7 +2275,7 @@ function validateForm(){
   const missing = [];
   const textFields = [
     ['f_date','Date of Visit'],['f_auditor','Auditor Name'],['f_district','District'],['f_city','City'],
-    ['f_distributor','Distributor'],['f_route','Route Name / Code'],['f_outletName','Outlet / Retailer Name'],
+    ['f_distributor','Distributor'],['f_route','Route Name'],['f_outletName','Outlet / Retailer Name'],
     ['f_outletType','Outlet Type'],['f_address','Address'],['f_ownerName','Outlet Owner Name'],
     ['f_q2','How many DBs are supplying'],['f_q5','Price update source'],
     ['f_q7','Bill type'],['f_q10','NLB/GSB brand']
@@ -2284,6 +2284,17 @@ function validateForm(){
     const el = document.getElementById(id);
     if(!el.value){ el.classList.add('invalid'); missing.push(label); }
   });
+  // Route is now meant to be an actual place name (Saltlake, Taltala,
+  // etc.), not a numeric route code — some distributors' internal codes
+  // were getting typed in here instead, which is exactly what made the
+  // exported report's Route column an inconsistent mix of names and
+  // numbers. A purely-numeric entry is a strong signal that's happening
+  // again, so it's caught here rather than only noticed later in Excel.
+  const routeEl = document.getElementById('f_route');
+  if(routeEl.value && /^\d+$/.test(routeEl.value.trim())){
+    routeEl.classList.add('invalid');
+    missing.push('Route Name (looks like a route code was entered — please type the actual route/area name instead, e.g. Saltlake)');
+  }
   const retailerPhoneEl = document.getElementById('f_retailerPhone');
   if(!isValidIndianMobile(retailerPhoneEl.value)){ retailerPhoneEl.classList.add('invalid'); missing.push('Retailer Phone Number (valid 10-digit Indian mobile)'); }
   const ynGroups = [
