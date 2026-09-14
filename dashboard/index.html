@@ -353,7 +353,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.85.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.86.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -762,7 +762,7 @@ table.data tr:hover td{background:var(--paper-2);}
 /* ============ CONFIG ============
    Same Apps Script Web App URL as survey.html — one backend, two front ends.
 */
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5M4sUR-UQF6cdVBeHBfP9GR5QOC-AsVtYZqbcqyOVX1T4TiTo4ktHXcmbXF9S9_A6/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwnA89CygT4soSvU7rxWs7i89nvtb7YFHVRLtNSW9frmjt0gqKOkXFFfSXKHEp1qwU/exec";
 // Betaverse is a completely separate Apps Script project + Google Sheet —
 // this dashboard just calls its API alongside FieldAudit's own, the same
 // way it already calls the external GCPL sheet for DB Stock Audit.
@@ -1026,7 +1026,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.85.0';
+const FRONTEND_VERSION = 'v6.86.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
