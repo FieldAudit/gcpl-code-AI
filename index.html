@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.63.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.65.0</div></div>
   </div>
 </header>
 
@@ -915,7 +915,7 @@ function onPhoto(e){
   downscale(file, (dataUrl)=>{
     PHOTO_BASE64 = dataUrl;
     const prev = document.getElementById('photoPreview');
-    prev.src = dataUrl; prev.style.display='block';
+    if(prev){ prev.src = dataUrl; prev.style.display='block'; }
   });
 }
 function onPhoto2(e){
@@ -923,7 +923,7 @@ function onPhoto2(e){
   downscale(file, (dataUrl)=>{
     PHOTO_BASE64_2 = dataUrl;
     const prev = document.getElementById('photoPreview2');
-    prev.src = dataUrl; prev.style.display='block';
+    if(prev){ prev.src = dataUrl; prev.style.display='block'; }
   });
 }
 function onInvoicePhoto(e){
@@ -961,7 +961,7 @@ function onDBPhoto(e){
   downscale(file, (dataUrl)=>{
     DB_PHOTO_BASE64 = dataUrl;
     const prev = document.getElementById('dbPhotoPreview');
-    prev.src = dataUrl; prev.style.display='block';
+    if(prev){ prev.src = dataUrl; prev.style.display='block'; }
   });
 }
 function onDBPhoto2(e){
@@ -969,7 +969,7 @@ function onDBPhoto2(e){
   downscale(file, (dataUrl)=>{
     DB_PHOTO_BASE64_2 = dataUrl;
     const prev = document.getElementById('dbPhotoPreview2');
-    prev.src = dataUrl; prev.style.display='block';
+    if(prev){ prev.src = dataUrl; prev.style.display='block'; }
   });
 }
 
@@ -1237,6 +1237,127 @@ async function attachBillsPDFAndQueueOnFailure(payload){
     logClientError('attachBillsPDF failed after retries — queued for later', '', 'attach-bills-pdf-queued');
   }
   return ok;
+}
+
+/* ============================================================
+   MAIN AUDIT SUBMISSION — offline/flaky-connection safety net.
+   Everything above this only protects the follow-up bills-PDF step;
+   until now, if the CORE submit itself (the actual audit data — outlet
+   answers, DB stock counts, ad photo) failed to reach the server —
+   no signal, airplane mode, a dead spot in a godown — the auditor's
+   whole visit was just gone. They'd see an error, and if they moved on
+   (closed the tab, walked to the next stop) rather than noticing and
+   retrying right there, that data never existed anywhere but their own
+   memory. This queues the ENTIRE submission locally the same way the
+   bills-PDF step already does, and the person sees this as SUCCESS —
+   not an error — because as far as their effort is concerned, it is:
+   nothing more is asked of them, and it WILL reach the sheet as soon as
+   this device has a working connection again (checked at every app
+   open, and immediately if the browser fires an "online" event).
+   ============================================================ */
+const PENDING_SUBMISSIONS_KEY = 'fieldaudit_pending_submissions_v1';
+function queuePendingSubmission(kind, url, payload, extra){
+  try{
+    const list = JSON.parse(localStorage.getItem(PENDING_SUBMISSIONS_KEY) || '[]');
+    list.push({kind, url, payload, extra: extra||{}, queuedAt: Date.now()});
+    localStorage.setItem(PENDING_SUBMISSIONS_KEY, JSON.stringify(list));
+    return true;
+  }catch(_e){ return false; } // if even localStorage is unavailable there's genuinely nothing further this can do — but this is now the ONLY case where a submission can still be lost, down from "any network hiccup"
+}
+async function submitPendingItemWithRetry(item, attemptsLeft){
+  if(attemptsLeft === undefined) attemptsLeft = 3;
+  for(let i=0; i<attemptsLeft; i++){
+    try{
+      const r = await fetchWithTimeout(item.url, {method:'POST', body: JSON.stringify(item.payload)}, 25000);
+      const res = await r.json();
+      // A real (non-network) response from the server, success or not,
+      // means retrying this exact payload again won't change anything —
+      // only a network-level failure (caught below) is worth retrying.
+      return res && res.success ? res : {success:false, rejected:true, message: res && res.message};
+    }catch(_e){
+      if(i < attemptsLeft-1) await new Promise(res=>setTimeout(res, 2000*(i+1)));
+    }
+  }
+  return {success:false, rejected:false}; // still network-failing after every retry — stays queued
+}
+/* Runs at every app open (alongside flushPendingBillUploads) AND
+   immediately when the browser regains connectivity — so a queued
+   audit doesn't have to wait for the person to happen to reopen the
+   app; the moment their signal comes back, it goes out on its own. */
+async function flushPendingSubmissions(){
+  let list;
+  try{ list = JSON.parse(localStorage.getItem(PENDING_SUBMISSIONS_KEY) || '[]'); }catch(_e){ return; }
+  if(!list.length || !configured()) return;
+  const stillPending = [];
+  let flushedCount = 0;
+  for(const item of list){
+    // A brand-new ad queued together with its first audit — needs its
+    // own two-step flush (create the ad, THEN audit it) since the second
+    // step depends on an Ad ID only the first step can provide. Kept as
+    // its own branch rather than forcing it through the same single-POST
+    // path everything else uses.
+    if(item.kind === 'admanager-newad'){
+      const createRes = await submitPendingItemWithRetry({url:item.url, payload:item.payload}, 3).catch(()=>({success:false, rejected:false}));
+      if(createRes.success){
+        const adId = createRes.adId;
+        const auditPayload = Object.assign({action:'submitAdAudit', adId}, item.extra);
+        const auditRes = await submitPendingItemWithRetry({url:item.url, payload:auditPayload}, 3).catch(()=>({success:false, rejected:false}));
+        if(auditRes.success){
+          flushedCount++;
+          logClientError('Queued new-ad + audit flushed successfully after being offline (adId: '+adId+')', '', 'pending-submission-flushed');
+        } else if(auditRes.rejected){
+          logClientError('Queued new-ad was created (adId: '+adId+') but the audit itself was rejected: '+(auditRes.message||'unknown reason'), '', 'pending-submission-rejected');
+        } else {
+          // The ad now genuinely exists on the server — re-queue as a
+          // PLAIN audit submission against that real ID, so the next
+          // flush only retries the audit step, never re-creates the ad.
+          stillPending.push({kind:'admanager', url:item.url, payload:auditPayload, extra:{}, queuedAt:item.queuedAt});
+        }
+      } else if(createRes.rejected){
+        logClientError('Queued new-ad creation rejected by server: '+(createRes.message||'unknown reason'), '', 'pending-submission-rejected');
+      } else {
+        stillPending.push(item); // network still down — retry the whole pair next time
+      }
+      continue;
+    }
+    const res = await submitPendingItemWithRetry(item, 3).catch(()=>({success:false, rejected:false}));
+    if(res.success){
+      flushedCount++;
+      const auditId = res.auditId || 'OK';
+      logClientError('Queued '+item.kind+' submission flushed successfully after being offline (auditId: '+auditId+')', '', 'pending-submission-flushed');
+      // A queued Retail submission may still be carrying its invoice/bill
+      // photos — resume exactly the same background PDF step a live
+      // submit runs, now that there's finally a real Audit ID to attach
+      // it to. Never blocks the flush loop itself if this part fails —
+      // same "never undo a confirmed submission" guarantee as the live path.
+      if(item.kind === 'retail' && item.extra && item.extra.invoicePhotos && item.extra.invoicePhotos.length){
+        (async ()=>{
+          try{
+            const stampedInvoices = await Promise.all(item.extra.invoicePhotos.map(p=>stampPhoto(p, item.extra.lines||[], true)));
+            const pdfPhotos = [{b64:item.payload.photo, caption:'Outlet Photo'}].concat(stampedInvoices.map((b64,i)=>({b64, caption:`Bill ${i+1} of ${stampedInvoices.length}`})));
+            const invoicePdf = await buildAndDownloadFullPDF('FieldAudit — Retail Outlet Audit Summary', item.extra.summaryRows||[], pdfPhotos, 'FieldAudit_'+auditId);
+            await attachBillsPDFAndQueueOnFailure({action:'attachBillsPDF', auditId, invoicePdf, billCount: stampedInvoices.length, module:'retail'});
+            await attachBillsPDFAndQueueOnFailure({action:'attachInvoicePhotos', auditId, invoicePhotos: stampedInvoices, module:'retail'});
+          }catch(_e2){}
+        })();
+      }
+    } else if(res.rejected){
+      // The server itself refused this payload (bad/stale data) — not a
+      // connectivity problem, so retrying forever would never help.
+      // Logged clearly rather than silently dropped, so a genuinely bad
+      // queued submission is still visible somewhere instead of vanishing.
+      logClientError('Queued '+item.kind+' submission rejected by server: '+(res.message||'unknown reason'), '', 'pending-submission-rejected');
+    } else {
+      stillPending.push(item); // network still down — keep it for the next flush attempt
+    }
+  }
+  try{ localStorage.setItem(PENDING_SUBMISSIONS_KEY, JSON.stringify(stillPending)); }catch(_e){}
+  if(flushedCount > 0){
+    toast(`✅ ${flushedCount} audit${flushedCount===1?'':'s'} saved earlier while offline just went through`);
+  }
+}
+function pendingSubmissionsCount(){
+  try{ return (JSON.parse(localStorage.getItem(PENDING_SUBMISSIONS_KEY) || '[]')).length; }catch(_e){ return 0; }
 }
 
 /* ============================================================
@@ -1596,7 +1717,7 @@ function captureSelfieCam(){
       CHECKIN_PHOTO_BASE64 = finalDataUrl;
       const ids = ckIds(prefix);
       const prev = document.getElementById(ids.photoPreview);
-      prev.src = finalDataUrl; prev.style.display='block';
+      if(prev){ prev.src = finalDataUrl; prev.style.display='block'; }
       updateCheckinSubmitEnabled(prefix);
     });
   });
@@ -1607,7 +1728,7 @@ function onCheckinPhoto(e, prefix){
     CHECKIN_PHOTO_BASE64 = dataUrl;
     const ids = ckIds(prefix);
     const prev = document.getElementById(ids.photoPreview);
-    prev.src = dataUrl; prev.style.display='block';
+    if(prev){ prev.src = dataUrl; prev.style.display='block'; }
     updateCheckinSubmitEnabled(prefix);
   });
 }
@@ -1746,11 +1867,27 @@ const OVERPASS_MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://ov
 
 /* Every geocoding network call goes through this so a slow/unresponsive
    server can never stall the whole address lookup for more than a few
-   seconds — the caller just gets an error to catch instead of hanging. */
-function fetchWithTimeout(url, opts, ms){
+   seconds — the caller just gets an error to catch instead of hanging.
+   Also retries automatically (2 extra attempts) before giving up — most
+   timeouts/aborts on a field connection are one bad moment, not a real
+   outage, and silently succeed a moment later instead of surfacing an
+   error (or, worse, an unhandled "signal is aborted without reason"
+   rejection when a caller forgot to .catch() it — this cuts how often
+   that ever gets the chance to happen at all, on top of fixing it at
+   the source below). */
+function fetchWithTimeout(url, opts, ms, _retriesLeft){
+  if(_retriesLeft === undefined) _retriesLeft = 2;
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), ms || 6000);
-  return fetch(url, Object.assign({}, opts, {signal:controller.signal})).finally(()=>clearTimeout(timer));
+  return fetch(url, Object.assign({}, opts, {signal:controller.signal}))
+    .then(r=>{ clearTimeout(timer); return r; })
+    .catch(e=>{
+      clearTimeout(timer);
+      if(_retriesLeft > 0){
+        return new Promise(res=>setTimeout(res, 500)).then(()=>fetchWithTimeout(url, opts, ms, _retriesLeft-1));
+      }
+      throw e;
+    });
 }
 
 async function overpassQuery(q){
@@ -2505,15 +2642,41 @@ async function submitAudit(){
     hideSubmitProgress();
     if(e.message==='__NOCFG__'){
       auditId = 'DEMO';
-    } else if(e.name === 'AbortError'){
-      toast('The server took too long to respond — check your connection and try again.', true);
-      btn.disabled = false; btn.innerHTML = 'Submit audit';
-      return;
+    } else if(e.name === 'AbortError' || !navigator.onLine || e.message === 'Failed to fetch'){
+      // Network-level failure (timed out even after fetchWithTimeout's own
+      // retries, or genuinely offline) — NOT the server rejecting the
+      // data. Queuing the whole submission (including bill photos, so the
+      // follow-up PDF step can resume later too) means the auditor sees
+      // this as done, because it effectively is: nothing further is asked
+      // of them, and it reaches the sheet on its own the moment this
+      // device is back online.
+      queuePendingSubmission('retail', SCRIPT_URL, payload, {
+        invoicePhotos: capturedInvoicePhotos, lines,
+        summaryRows: [
+          ['Auditor', formSnapshot.auditor], ['Date of Visit', formSnapshot.date],
+          ['District', formSnapshot.district], ['City', formSnapshot.city],
+          ['Distributor', formSnapshot.distributor], ['Route', formSnapshot.route],
+          ['Outlet Name', formSnapshot.outletName], ['Outlet Type', formSnapshot.outletType],
+          ['Address', formSnapshot.address],
+          ['Outlet Owner Name', formSnapshot.ownerName], ['Retailer Phone', formSnapshot.retailerPhone]
+        ]
+      });
+      auditId = 'QUEUED';
     } else {
       toast(e.message || 'Could not submit audit. Please try again.', true);
       btn.disabled = false; btn.innerHTML = 'Submit audit';
       return;
     }
+  }
+
+  if(auditId === 'QUEUED'){
+    showSubmitProgress(100, 'Saved on this device!');
+    setTimeout(hideSubmitProgress, 400);
+    toast('📴 No internet right now — your audit is saved on this device and will submit automatically once you\'re back online. Do not clear your browser data before then.', true);
+    showStamp('Saved — will sync automatically', null, null);
+    resetForm();
+    btn.disabled = false; btn.innerHTML = 'Submit audit';
+    return;
   }
 
   // Audit is confirmed saved at this point — show success right away.
@@ -2708,15 +2871,24 @@ async function submitDBStockAudit(){
     hideSubmitProgress();
     if(e.message==='__NOCFG__'){
       auditId = 'DEMO';
-    } else if(e.name === 'AbortError'){
-      toast('The server took too long to respond — check your connection and try again.', true);
-      btn.disabled = false; btn.innerHTML = 'Submit stock audit';
-      return;
+    } else if(e.name === 'AbortError' || !navigator.onLine || e.message === 'Failed to fetch'){
+      queuePendingSubmission('db', SCRIPT_URL, payload, {});
+      auditId = 'QUEUED';
     } else {
       toast(e.message || 'Could not submit stock audit. Please try again.', true);
       btn.disabled = false; btn.innerHTML = 'Submit stock audit';
       return;
     }
+  }
+
+  if(auditId === 'QUEUED'){
+    showSubmitProgress(100, 'Saved on this device!');
+    setTimeout(hideSubmitProgress, 400);
+    toast('📴 No internet right now — your stock audit is saved on this device and will submit automatically once you\'re back online. Do not clear your browser data before then.', true);
+    showStamp('Saved — will sync automatically', null, null);
+    resetDBForm();
+    btn.disabled = false; btn.innerHTML = 'Submit stock audit';
+    return;
   }
 
   showSubmitProgress(100, 'Done!');
@@ -2786,7 +2958,17 @@ document.getElementById('f_date').value = localDateStr();
 document.getElementById('db_date').value = localDateStr();
 if(!configured()) document.getElementById('cfgWarning').style.display='block';
 loadDBMasterCache();
+if(pendingSubmissionsCount() > 0){
+  toast(`📴 ${pendingSubmissionsCount()} audit(s) from earlier are still waiting to sync — will retry automatically`, true);
+}
 flushPendingBillUploads(); // catch up on any bill/invoice PDF that failed to attach in a previous session
+flushPendingSubmissions(); // catch up on any FULL audit that couldn't reach the server at all last time (offline/dead signal)
+// The moment this device's connection comes back — not just at the next
+// app open — is exactly when a queued audit should try again, so a
+// field visit that started offline doesn't sit un-submitted for however
+// long it happens to be before someone next opens the app.
+window.addEventListener('online', flushPendingSubmissions);
+window.addEventListener('online', flushPendingBillUploads);
 
 /* ============================================================
    SMARTMEASURE MODULE — Outdoor Ad (OOH) Site Audit.
@@ -3146,7 +3328,7 @@ function smOnAdAuditPhoto(e){
   downscale(file, (dataUrl)=>{
     SM_AD_AUDIT.photoRaw = dataUrl;
     const prev = document.getElementById('smAdAuditPhotoPreview');
-    prev.src = dataUrl; prev.style.display = 'block';
+    if(prev){ prev.src = dataUrl; prev.style.display='block'; }
   });
 }
 async function smSubmitAdAudit(){
@@ -3154,55 +3336,102 @@ async function smSubmitAdAudit(){
   if(!SM_AD_AUDIT.photoRaw){ toast('Advertisement photo is mandatory', true); return; }
   const btn = document.getElementById('smAdAuditSubmitBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Submitting…';
+  let adId;
+  let createPayload = null;
   try{
-    let adId = SM_AD_AUDIT.selectedAd.adId;
+    adId = SM_AD_AUDIT.selectedAd.adId;
     if(SM_AD_AUDIT.isNewAd){
       const f = SM_AD_AUDIT.newAdForm;
-      const createPayload = Object.assign({action:'createNewAd'}, f, {
+      createPayload = Object.assign({action:'createNewAd'}, f, {
         lat:SM_AD_AUDIT.geo.lat, lng:SM_AD_AUDIT.geo.lng, auditorName:CHECKIN_NAME, source:'Field Submission'
       });
       const createRes = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify(createPayload)}, 20000).then(r=>r.json());
       if(!createRes.success) throw new Error(createRes.message||'Could not create the new ad');
       adId = createRes.adId;
     }
-    // Self-heals an existing FIXED ad's Address whenever it looks broken
-    // (blank, or — the exact "Saltlake Uat Test" kind of case — identical
-    // to its own Location ID, which is the signature of an old row saved
-    // before Location ID and Address were split apart). Never overwrites
-    // an address that already looks fine, so a healthy address doesn't
-    // keep quietly drifting to a slightly different GPS reading on every
-    // re-audit. Skipped entirely for a brand-new ad (already captured
-    // its own address moments ago) and for movable ads (no address field
-    // at all). This is the ONLY way a bad legacy Address ever gets
-    // corrected — by design there is no manual "type in a new address"
-    // path anywhere in the app, on purpose (see aaEditLocation's comment
-    // in the dashboard).
-    let capturedAddress = '';
-    if(!SM_AD_AUDIT.isNewAd && SM_AD_AUDIT.selectedAd && !SM_AD_AUDIT.selectedAd.isMovable){
-      const currentAddress = String(SM_AD_AUDIT.selectedAd.locationName||'').trim();
-      const currentLocationId = String(SM_AD_AUDIT.selectedAd.locationId||'').trim();
-      const looksBroken = !currentAddress || (currentLocationId && currentAddress === currentLocationId);
-      if(looksBroken){
-        try{
-          const base = await getBaseAddress(SM_AD_AUDIT.geo.lat, SM_AD_AUDIT.geo.lng);
-          if(base.formatted) capturedAddress = base.formatted;
-        }catch(_e){}
-      }
+  }catch(e){
+    if(createPayload && (e.name === 'AbortError' || !navigator.onLine || e.message === 'Failed to fetch')){
+      // A brand-new ad has no ID without the server's help — but that no
+      // longer means this has to wait for the auditor to come back with
+      // a signal and press Submit again. The photo is stamped right now
+      // (a local, offline-safe operation) and the whole "create this ad,
+      // then audit it" pair is queued together — flushing later creates
+      // the ad first to get a real ID, then submits the audit against
+      // it, so a brand-new ad captured with zero signal is just as safe
+      // as auditing one that already existed.
+      let stampedPhoto = SM_AD_AUDIT.photoRaw;
+      try{
+        stampedPhoto = await stampPhoto(SM_AD_AUDIT.photoRaw, [
+          `${new Date().toLocaleString()}  •  ${SM_AD_AUDIT.geo.lat.toFixed(6)}, ${SM_AD_AUDIT.geo.lng.toFixed(6)}`,
+          `Ad ID: (new)   Auditor: ${CHECKIN_NAME||'—'}`
+        ]);
+      }catch(_e2){}
+      queuePendingSubmission('admanager-newad', BETAVERSE_SCRIPT_URL, createPayload, {
+        auditorName: CHECKIN_NAME, auditorMobile: CHECKIN_PHONE,
+        lat: SM_AD_AUDIT.geo.lat, lng: SM_AD_AUDIT.geo.lng, accuracy: SM_AD_AUDIT.geo.accuracy,
+        runningStatus: SM_AD_AUDIT.runningStatus, photoBase64: stampedPhoto,
+        remarks: document.getElementById('smAdAuditRemarks').value.trim()
+      });
+      toast('📴 No internet right now — this new ad + audit is saved on this device and will submit automatically once you\'re back online.', true);
+      renderSmMainMenu();
+      return;
     }
+    toast(e.message||'Could not create the new ad — please try again once you have a signal', true);
+    btn.disabled = false; btn.textContent = 'Submit Audit';
+    return;
+  }
+  // Self-heals an existing FIXED ad's Address whenever it looks broken
+  // (blank, or — the exact "Saltlake Uat Test" kind of case — identical
+  // to its own Location ID, which is the signature of an old row saved
+  // before Location ID and Address were split apart). Never overwrites
+  // an address that already looks fine, so a healthy address doesn't
+  // keep quietly drifting to a slightly different GPS reading on every
+  // re-audit. Skipped entirely for a brand-new ad (already captured
+  // its own address moments ago) and for movable ads (no address field
+  // at all). This is the ONLY way a bad legacy Address ever gets
+  // corrected — by design there is no manual "type in a new address"
+  // path anywhere in the app, on purpose (see aaEditLocation's comment
+  // in the dashboard).
+  let capturedAddress = '';
+  if(!SM_AD_AUDIT.isNewAd && SM_AD_AUDIT.selectedAd && !SM_AD_AUDIT.selectedAd.isMovable){
+    const currentAddress = String(SM_AD_AUDIT.selectedAd.locationName||'').trim();
+    const currentLocationId = String(SM_AD_AUDIT.selectedAd.locationId||'').trim();
+    const looksBroken = !currentAddress || (currentLocationId && currentAddress === currentLocationId);
+    if(looksBroken){
+      try{
+        const base = await getBaseAddress(SM_AD_AUDIT.geo.lat, SM_AD_AUDIT.geo.lng);
+        if(base.formatted) capturedAddress = base.formatted;
+      }catch(_e){}
+    }
+  }
+  let payload;
+  try{
     const stampedPhoto = await stampPhoto(SM_AD_AUDIT.photoRaw, [
       `${new Date().toLocaleString()}  •  ${SM_AD_AUDIT.geo.lat.toFixed(6)}, ${SM_AD_AUDIT.geo.lng.toFixed(6)}`,
       `Ad ID: ${adId}   Auditor: ${CHECKIN_NAME||'—'}`
     ]);
-    const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
+    payload = {
       action:'submitAdAudit', adId, auditorName:CHECKIN_NAME, auditorMobile:CHECKIN_PHONE,
       lat:SM_AD_AUDIT.geo.lat, lng:SM_AD_AUDIT.geo.lng, accuracy:SM_AD_AUDIT.geo.accuracy,
       runningStatus:SM_AD_AUDIT.runningStatus, photoBase64:stampedPhoto, capturedAddress,
       remarks: document.getElementById('smAdAuditRemarks').value.trim()
-    })}, 30000).then(r=>r.json());
+    };
+    const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify(payload)}, 30000).then(r=>r.json());
     if(!res.success) throw new Error(res.message||'Could not submit');
     toast(`✅ Audit submitted — Ad ID ${adId}`);
     renderSmMainMenu();
   }catch(e){
+    // The ad already has a real ID by this point (either pre-existing or
+    // just created above) — this step, unlike ad-creation, CAN be
+    // queued and safely retried later with no further help needed from
+    // the auditor, so a network-level failure here is treated as a
+    // success from their point of view rather than lost effort.
+    if(payload && (e.name === 'AbortError' || !navigator.onLine || e.message === 'Failed to fetch')){
+      queuePendingSubmission('admanager', BETAVERSE_SCRIPT_URL, payload, {});
+      toast('📴 No internet right now — this ad audit is saved on this device and will submit automatically once you\'re back online.', true);
+      renderSmMainMenu();
+      return;
+    }
     toast(e.message||'Could not submit — please try again', true);
     btn.disabled = false; btn.textContent = 'Submit Audit';
   }
@@ -3427,7 +3656,7 @@ function smOnStatusPhoto(e){
   downscale(file, (dataUrl)=>{
     SM_STATUS_CHECK.photoRaw = dataUrl;
     const prev = document.getElementById('smStatusPhotoPreview');
-    prev.src = dataUrl; prev.style.display='block';
+    if(prev){ prev.src = dataUrl; prev.style.display='block'; }
   });
 }
 async function smSubmitStatusCheck(){
@@ -3532,7 +3761,7 @@ function smOnTapeProofPhoto(e){
   downscale(file, (dataUrl)=>{
     SM_MEASURE.tapeProof = dataUrl;
     const prev = document.getElementById('smTapeProofPreview');
-    prev.src = dataUrl; prev.style.display='block';
+    if(prev){ prev.src = dataUrl; prev.style.display='block'; }
   });
 }
 function smUpdateManualArea(){
@@ -3983,10 +4212,18 @@ function smOnPreSitePhoto(e){
   const file = e.target.files[0]; if(!file) return;
   downscale(file, (dataUrl)=>{
     SM_PRE.photoRaw = dataUrl;
-    document.getElementById('smPreMeasureArea').innerHTML = `<div id="smPreMeasureToolMount" style="margin-top:14px;"></div>`;
+    // Guarded the same way as the photo-preview fix above — if the
+    // person has already left this screen by the time this async
+    // callback fires, the element's gone; the measurement itself
+    // still gets stored on SM_PRE either way, only the on-screen
+    // rendering is skipped instead of throwing.
+    const area = document.getElementById('smPreMeasureArea');
+    if(!area) return;
+    area.innerHTML = `<div id="smPreMeasureToolMount" style="margin-top:14px;"></div>`;
     smRenderMeasureTool('smPreMeasureToolMount', dataUrl, (result)=>{
       SM_PRE.measurement = result;
-      document.getElementById('smPreMeasureArea').innerHTML += `<div class="addr-note" style="font-size:15px; font-weight:700; margin-top:10px;">✅ ${result.area} sq ft locked in (${result.method})</div>`;
+      const area2 = document.getElementById('smPreMeasureArea');
+      if(area2) area2.innerHTML += `<div class="addr-note" style="font-size:15px; font-weight:700; margin-top:10px;">✅ ${result.area} sq ft locked in (${result.method})</div>`;
     });
   });
 }
@@ -4134,7 +4371,7 @@ function smOnAREvidencePhoto(e){
   downscale(file, (dataUrl)=>{
     SM_PRE.photoRaw = dataUrl;
     const prev = document.getElementById('smPreSimplePreview');
-    prev.src = dataUrl; prev.style.display='block';
+    if(prev){ prev.src = dataUrl; prev.style.display='block'; }
   });
 }
 function smOnPreSitePhotoSimple(e){
@@ -4142,7 +4379,7 @@ function smOnPreSitePhotoSimple(e){
   downscale(file, (dataUrl)=>{
     SM_PRE.photoRaw = dataUrl;
     const prev = document.getElementById('smPreSimplePreview');
-    prev.src = dataUrl; prev.style.display='block';
+    if(prev){ prev.src = dataUrl; prev.style.display='block'; }
     SM_PRE.measurement = {area:'', method:'Presence-only (no area measurement needed for this category)', width:'', height:''};
   });
 }
@@ -4314,10 +4551,13 @@ function smOnVerifyPhoto(e){
   const file = e.target.files[0]; if(!file) return;
   downscale(file, (dataUrl)=>{
     SM_VERIFY.photoRaw = dataUrl;
-    document.getElementById('smVerifyMeasureArea').innerHTML = `<div id="smVerifyMeasureToolMount" style="margin-top:14px;"></div>`;
+    const area = document.getElementById('smVerifyMeasureArea');
+    if(!area) return;
+    area.innerHTML = `<div id="smVerifyMeasureToolMount" style="margin-top:14px;"></div>`;
     smRenderMeasureTool('smVerifyMeasureToolMount', dataUrl, (result)=>{
       SM_VERIFY.measurement = result;
-      document.getElementById('smVerifyMeasureArea').innerHTML += `<div class="addr-note" style="font-size:15px; font-weight:700; margin-top:10px;">✅ ${result.area} sq ft installed (${result.method})</div>`;
+      const area2 = document.getElementById('smVerifyMeasureArea');
+      if(area2) area2.innerHTML += `<div class="addr-note" style="font-size:15px; font-weight:700; margin-top:10px;">✅ ${result.area} sq ft installed (${result.method})</div>`;
     });
   });
 }
