@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.88.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.90.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -872,10 +872,49 @@ function cancelLoadProgress(){
   const btn = document.getElementById('loginBtn');
   if(btn){ btn.disabled = false; btn.innerHTML = 'Sign in'; }
 }
-async function fetchWithTimeout(url, opts, ms){
+/* Every single network call in this dashboard goes through this one
+   function — so making THIS self-healing fixes "stuck", "server issue",
+   and transient failures everywhere at once, without touching the dozens
+   of individual places that call it. A failed/timed-out/aborted request
+   is retried automatically (2 extra attempts, short pause between) before
+   ever reaching the caller's own error handling — most "stuck" or
+   "signal aborted" moments are a single slow round-trip to Apps Script,
+   not a real outage, and silently succeed on the 2nd or 3rd try. Only
+   after all retries are exhausted does the caller see a failure at all —
+   and by then it's a genuine, persistent problem worth surfacing (the
+   systemHealthBanner check elsewhere already gives that its own clear
+   message rather than a raw error). */
+async function fetchWithTimeout(url, opts, ms, _retriesLeft){
+  if(_retriesLeft === undefined) _retriesLeft = 2;
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), ms || 15000);
-  return fetch(url, Object.assign({}, opts, {signal:controller.signal})).finally(()=>clearTimeout(timer));
+  try{
+    const r = await fetch(url, Object.assign({}, opts, {signal:controller.signal}));
+    clearTimeout(timer);
+    return r;
+  }catch(e){
+    clearTimeout(timer);
+    if(_retriesLeft > 0){
+      await new Promise(res=>setTimeout(res, 500));
+      return fetchWithTimeout(url, opts, ms, _retriesLeft-1);
+    }
+    throw e;
+  }
+}
+
+/* Drop-in replacement for `await response.json()` — Apps Script
+   occasionally hands back an HTML page instead of JSON (a Google-side
+   auth/redirect hiccup, or a slow cold-start returning a "please wait"
+   page) and a plain .json() call on that crashes with a raw, scary
+   "Unexpected token '<', <!DOCTYPE...' is not valid JSON" that used to
+   leak straight onto the screen. This reads the body as text first and
+   only tries to parse it, turning that specific failure into one clean,
+   recognizable error a caller can catch and show a normal retry message
+   for instead. */
+async function safeJson(response){
+  const text = await response.text();
+  try{ return JSON.parse(text); }
+  catch(e){ throw new Error('SERVER_RETURNED_NON_JSON'); }
 }
 
 /* ============================================================
@@ -968,7 +1007,7 @@ async function doLogin(){
     const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 20000);
     console.log('[login] fetch resolved after', Date.now()-startTime, 'ms — HTTP status:', r.status);
     showLoadProgress(40, 'Checking credentials…');
-    const res = await r.json();
+    const res = await safeJson(r);
     console.log('[login] parsed JSON:', res);
     if(!res.success) throw new Error(res.message || 'Invalid credentials');
     SESSION = {userId:user, name:res.name || user, role:res.role || 'Manager', token:res.token};
@@ -983,8 +1022,12 @@ async function doLogin(){
       SESSION = {userId:user, name:user, role:'Manager', token:'demo'};
       document.getElementById('cfgWarning').style.display='block';
       enterApp();
-    } else if(e.name === 'AbortError'){
-      err.textContent = 'The server took too long to respond — check your connection and try again.';
+    } else if(e.name === 'AbortError' || e.message === 'SERVER_RETURNED_NON_JSON'){
+      // Both cases are the same thing from the person's point of view —
+      // the backend didn't come back with a usable answer in time — so
+      // they get the same plain, non-technical message rather than one
+      // clean and one raw depending on exactly how the request failed.
+      err.textContent = 'Internet is slower than expected — please wait a moment and try again.';
       err.style.display='block';
     } else {
       err.textContent = e.message || 'Could not sign in. Check your credentials and try again.';
@@ -1005,60 +1048,89 @@ function logout(){
 function enterApp(){
   document.getElementById('screen-login').style.display='none';
   document.getElementById('screen-app').style.display='block';
-  showLoadProgress(55, 'Loading your dashboard…');
-  document.getElementById('whoName').textContent = SESSION.name;
-  document.getElementById('whoRole').textContent = SESSION.role || '';
-  document.getElementById('masterTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
-  document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
-  document.getElementById('mktExpenseModuleBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
-  // Only Admin sees BOTH sources and gets the toggle to switch between them.
-  // Sales is scoped to ONLY "GCPL Stock Audit" (the external sheet, which is
-  // their own submissions from the separate GCPL app) — no "3PA Audit" tab
-  // at all for them. Marketing is scoped to ONLY "3PA Audit" (the
-  // FieldAudit app's own data) — no "GCPL Stock Audit" tab for them.
-  // Neither sees a toggle since each only ever has one source to view.
-  const dbBtn = document.getElementById('dbModuleBtn');
-  dbBtn.innerHTML = '📦 DB Stock Audit';
-  document.getElementById('sourceToggle').style.display = SESSION.role === 'Admin' ? 'flex' : 'none';
-  const isSalesOnly = SESSION.role === 'Sales';
-  if(!isSalesOnly){
-    SOURCE_FILTER = 'FieldAudit App';
-    document.getElementById('moduleToggle').style.display = 'flex';
+  // Everything below this line used to run unguarded — if any single
+  // step threw (a missing element, a bad response shape), execution
+  // stopped right there and the error surfaced on the LOGIN form's error
+  // box, which is now hidden (see above) since the app screen is already
+  // showing. The person just saw a blank or half-populated dashboard
+  // with no visible explanation anywhere — this is what that actually
+  // was. Wrapping it means a failure now shows an obvious, actionable
+  // retry screen in the app area itself instead of a silent blank one.
+  try{
+    showLoadProgress(55, 'Loading your dashboard…');
+    document.getElementById('whoName').textContent = SESSION.name;
+    document.getElementById('whoRole').textContent = SESSION.role || '';
+    document.getElementById('masterTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
+    document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
+    document.getElementById('mktExpenseModuleBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
+    // Only Admin sees BOTH sources and gets the toggle to switch between them.
+    // Sales is scoped to ONLY "GCPL Stock Audit" (the external sheet, which is
+    // their own submissions from the separate GCPL app) — no "3PA Audit" tab
+    // at all for them. Marketing is scoped to ONLY "3PA Audit" (the
+    // FieldAudit app's own data) — no "GCPL Stock Audit" tab for them.
+    // Neither sees a toggle since each only ever has one source to view.
+    const dbBtn = document.getElementById('dbModuleBtn');
+    dbBtn.innerHTML = '📦 DB Stock Audit';
+    document.getElementById('sourceToggle').style.display = SESSION.role === 'Admin' ? 'flex' : 'none';
+    const isSalesOnly = SESSION.role === 'Sales';
+    if(!isSalesOnly){
+      SOURCE_FILTER = 'FieldAudit App';
+      document.getElementById('moduleToggle').style.display = 'flex';
+    }
+    // Live check against the ACTUAL running backend — this app's frontend
+    // (this HTML file) and backend (Code.gs) deploy through two completely
+    // separate processes (GitHub Pages vs. Apps Script), so it's easy to
+    // update one and forget the other. This just shows the real backend
+    // version quietly next to this page's own version — useful to glance at
+    // if something seems broken, but NOT a red alarm for its own sake: a
+    // backend that's a version or two behind this page is completely normal
+    // day-to-day (most updates only touch one file, not both), and doesn't
+    // mean anything is actually wrong.
+    if(configured()){
+      fetchWithTimeout(`${SCRIPT_URL}?action=version&_t=${Date.now()}`, {cache:'no-store'}, 10000)
+        .then(safeJson)
+        .then(j=>{
+          const el = document.getElementById('backendVerCheck');
+          if(!el) return;
+          el.textContent = `· backend ${j.version || '?'}`;
+          el.style.color = '';
+          el.title = 'Live backend version — for reference only, a mismatch with this page\'s own version is normal.';
+        }).catch(()=>{});
+    }
+    showLoadProgress(75, 'Fetching latest audit data…');
+    const finish = ()=>{ showLoadProgress(100, 'Ready!'); setTimeout(hideLoadProgress, 350); };
+    if(isSalesOnly){
+      // Sales is scoped to ONLY "GCPL Stock Audit" — this sets MODULE='db',
+      // SOURCE_FILTER to external, hides the Retail/DB toggle, and does its
+      // own loadData()+render internally; just give it a moment to land
+      // before closing out the progress ring.
+      switchSourceTab('gcpl');
+      setTimeout(finish, 400);
+    } else {
+      loadData().then(()=>{ renderDashboard(); finish(); })
+        .catch(err=> showAppLoadError(err));
+    }
+    if(CAN_APPROVE()) refreshPendingApprovalBadge();
+    startVersionWatcher();
+  }catch(e){
+    console.error('[enterApp] failed:', e);
+    showAppLoadError(e);
   }
-  // Live check against the ACTUAL running backend — this app's frontend
-  // (this HTML file) and backend (Code.gs) deploy through two completely
-  // separate processes (GitHub Pages vs. Apps Script), so it's easy to
-  // update one and forget the other. This just shows the real backend
-  // version quietly next to this page's own version — useful to glance at
-  // if something seems broken, but NOT a red alarm for its own sake: a
-  // backend that's a version or two behind this page is completely normal
-  // day-to-day (most updates only touch one file, not both), and doesn't
-  // mean anything is actually wrong.
-  if(configured()){
-    fetch(`${SCRIPT_URL}?action=version&_t=${Date.now()}`, {cache:'no-store'})
-      .then(r=>r.json())
-      .then(j=>{
-        const el = document.getElementById('backendVerCheck');
-        if(!el) return;
-        el.textContent = `· backend ${j.version || '?'}`;
-        el.style.color = '';
-        el.title = 'Live backend version — for reference only, a mismatch with this page\'s own version is normal.';
-      }).catch(()=>{});
-  }
-  showLoadProgress(75, 'Fetching latest audit data…');
-  const finish = ()=>{ showLoadProgress(100, 'Ready!'); setTimeout(hideLoadProgress, 350); };
-  if(isSalesOnly){
-    // Sales is scoped to ONLY "GCPL Stock Audit" — this sets MODULE='db',
-    // SOURCE_FILTER to external, hides the Retail/DB toggle, and does its
-    // own loadData()+render internally; just give it a moment to land
-    // before closing out the progress ring.
-    switchSourceTab('gcpl');
-    setTimeout(finish, 400);
-  } else {
-    loadData().then(()=>{ renderDashboard(); finish(); });
-  }
-  if(CAN_APPROVE()) refreshPendingApprovalBadge();
-  startVersionWatcher();
+}
+/* The visible fallback for the "blank dashboard after login" case —
+   replaces the guesswork of a blank screen with an actual message and a
+   one-click way forward, right where the person is already looking. */
+function showAppLoadError(e){
+  hideLoadProgress();
+  const main = document.querySelector('main');
+  if(main) main.style.display = '';
+  const target = document.querySelector('main') || document.getElementById('screen-app');
+  if(!target) return;
+  const box = document.createElement('div');
+  box.className = 'empty';
+  box.style.cssText = 'margin:40px auto; max-width:480px; text-align:center; padding:30px; background:#fff; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,.08);';
+  box.innerHTML = `<b>Something went wrong loading the dashboard</b>Internet is slower than expected, or the page needs a fresh reload.<br><br><button class="btn btn-primary" onclick="location.reload()">↻ Reload</button>`;
+  target.prepend(box);
 }
 /* Notification-bell-style count on the Ad Manager module button itself —
    fetched independently of which module is currently open, and only for
@@ -1082,7 +1154,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.88.0';
+const FRONTEND_VERSION = 'v6.90.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2507,7 +2579,7 @@ async function loadAdJourney(){
       </div>`).join('');
     el.innerHTML = header + timeline;
   }catch(e){
-    el.innerHTML = `<div class="empty">Could not load — check your connection and try again.</div>`;
+    el.innerHTML = `<div class="empty">Internet is slower than expected — please wait a moment and try again.</div>`;
   }
 }
 
@@ -2600,8 +2672,8 @@ async function loadAdAuditData(){
     renderAdAuditKpis();
     renderAdAuditTable();
   }catch(e){
-    document.getElementById('aaKpiRow').innerHTML = `<div class="empty">Could not load — check your connection.</div>`;
-    if(tbody) tbody.innerHTML = `<tr><td colspan="12"><div class="empty">Could not load — check your connection, then reopen this tab.</div></td></tr>`;
+    document.getElementById('aaKpiRow').innerHTML = `<div class="empty">Internet is slower than expected — please wait a moment and try again.</div>`;
+    if(tbody) tbody.innerHTML = `<tr><td colspan="12"><div class="empty">Internet is slower than expected — please wait a moment, then reopen this tab.</div></td></tr>`;
   }finally{
     AA_LOAD_IN_PROGRESS = false;
   }
@@ -2958,7 +3030,7 @@ async function openAdJourney(adId){
         }).join('')}</tbody>
       </table>`;
   }catch(e){
-    document.getElementById('adJourneyBody').innerHTML = `<div class="empty">Could not load — check your connection.</div>`;
+    document.getElementById('adJourneyBody').innerHTML = `<div class="empty">Internet is slower than expected — please wait a moment and try again.</div>`;
   }
 }
 
@@ -3080,7 +3152,7 @@ async function loadAdChangeLog(){
       <td>${e.changedByRole||''}</td>
     </tr>`).join('');
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">Could not load — check your connection.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">Internet is slower than expected — please wait a moment and try again.</div></td></tr>`;
   }
 }
 
@@ -3197,7 +3269,7 @@ async function loadMktExpenseData(){
     renderMktExpenseAnalytics(j.rows);
     renderMktExpenseTable();
   }catch(e){
-    document.getElementById('mexKpiRow').innerHTML = `<div class="empty">Could not load — ${e.message||'check your connection'}.</div>`;
+    document.getElementById('mexKpiRow').innerHTML = `<div class="empty">Internet is slower than expected — please wait a moment and try again.</div>`;
   }
 }
 
