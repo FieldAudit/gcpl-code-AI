@@ -353,7 +353,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.83.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.84.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1026,7 +1026,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.83.0';
+const FRONTEND_VERSION = 'v6.84.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2700,13 +2700,28 @@ function renderAdAuditTable(){
     // see aaEditLocation's comment). Kept in separate columns rather than
     // one falling back into the other, since that fallback was exactly
     // what made old/imported ads show their ID in the Address column.
-    const locId = a.isMovable ? (a.vehicleNumber||'—') : (a.locationId || `<span style="color:var(--red); font-weight:700;">⚠️ Missing</span>`);
+    // A Location ID is supposed to be a short code — but old/imported data
+    // has occasionally ended up with a full address in this field instead
+    // (the exact same "ID and Address got confused" history this app has
+    // hit before). Truncating with an ellipsis + hover tooltip means a
+    // wrongly-long value can never again wrap across 10+ lines and blow
+    // up that row's height — which is what silently made a handful of
+    // rows in the report ~200px tall each, making the whole table look
+    // broken/blank. The fix for the DATA itself is still the ✏️ edit
+    // link below; this is just a permanent guard so bad data can't wreck
+    // the layout while that gets cleaned up.
+    const locIdRaw = a.isMovable ? a.vehicleNumber : a.locationId;
+    const locId = locIdRaw
+      ? `<span style="display:inline-block; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom;" title="${String(locIdRaw).replace(/"/g,'&quot;')}">${locIdRaw}</span>`
+      : (a.isMovable ? '—' : `<span style="color:var(--red); font-weight:700;">⚠️ Missing</span>`);
     // Route From/To is mandatory for movable ads, same standing as
     // Location ID is for fixed ads — shown with the same "missing" warning
     // when either side is blank.
     const addrDetail = a.isMovable
       ? ((a.routeFrom && a.routeTo) ? `${a.routeFrom} → ${a.routeTo}` : `<span style="color:var(--red); font-weight:700;">⚠️ Route missing</span>`)
-      : (a.locationName || `<span style="color:var(--slate); font-style:italic;">Address missing</span>`);
+      : (a.locationName
+          ? `<span style="display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;" title="${String(a.locationName).replace(/"/g,'&quot;')}">${a.locationName}</span>`
+          : `<span style="color:var(--slate); font-style:italic;">Address missing</span>`);
     const editLink = !canVerify ? '' : a.isMovable
       ? ` <a href="javascript:void(0)" onclick="aaEditRoute('${a.adId}')" title="Edit Route From/To" style="font-size:10px;">✏️</a>`
       : ` <a href="javascript:void(0)" onclick="aaEditLocation('${a.adId}')" title="Edit Location ID" style="font-size:10px;">✏️</a>`;
