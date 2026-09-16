@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.65.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.66.0</div></div>
   </div>
 </header>
 
@@ -396,7 +396,7 @@ window.onerror = function(msg, url, line, col, err){
       <div class="meta" id="geoAddrDetail" style="margin-top:6px;"></div>
     </div>
     <div class="field" style="margin-top:14px;">
-      <label>Address <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(auto-filled above, edit if needed)</span></label>
+      <label>Address <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(captured automatically from GPS — cannot be hand-edited)</span></label>
       <textarea id="f_address" rows="3" placeholder="Captured automatically once you tap the button above" disabled></textarea>
       <div class="addr-note" id="addrNote"></div>
     </div>
@@ -589,8 +589,8 @@ window.onerror = function(msg, url, line, col, err){
       <div class="meta" id="dbGeoAddrDetail" style="margin-top:6px;"></div>
     </div>
     <div class="field" style="margin-top:12px;">
-      <label>Address <span style="text-transform:none; font-weight:400;">(auto-filled from GPS, edit if needed)</span></label>
-      <textarea id="db_address" rows="2" placeholder="Captured automatically once you tap the button above"></textarea>
+      <label>Address <span style="text-transform:none; font-weight:400;">(captured automatically from GPS — cannot be hand-edited)</span></label>
+      <textarea id="db_address" rows="2" placeholder="Captured automatically once you tap the button above" disabled></textarea>
     </div>
   </div>
 
@@ -1284,6 +1284,51 @@ async function submitPendingItemWithRetry(item, attemptsLeft){
    immediately when the browser regains connectivity — so a queued
    audit doesn't have to wait for the person to happen to reopen the
    app; the moment their signal comes back, it goes out on its own. */
+/* ANTI-FRAUD CHECK: the queued GPS itself never changes at sync time
+   (see queuePendingSubmission's comment — location is frozen at
+   fill-time, not re-captured later), so the SAVED location is never
+   silently wrong. But nothing previously recorded whether a suspiciously
+   large gap in time or place happened AROUND the sync itself — e.g. an
+   auditor filling the form at the real outlet, deliberately going
+   offline, then only letting it sync much later from somewhere else
+   entirely. This takes one fresh, best-effort GPS reading right as a
+   queued item is about to flush and compares it against the location
+   captured at fill-time. A mismatch never blocks the sync — that would
+   punish perfectly innocent poor-signal delays just as often as it
+   catches genuine misuse — it only leaves a clear, reviewable trail in
+   ErrorLogs (source: "offline-sync-anomaly") for whoever is checking.
+   ================================================================ */
+function getFreshPositionSilently(){
+  return new Promise(resolve=>{
+    if(!navigator.geolocation){ resolve(null); return; }
+    const timer = setTimeout(()=>resolve(null), 5000);
+    navigator.geolocation.getCurrentPosition(
+      pos=>{ clearTimeout(timer); resolve({lat:pos.coords.latitude, lng:pos.coords.longitude}); },
+      ()=>{ clearTimeout(timer); resolve(null); },
+      {enableHighAccuracy:false, timeout:4500, maximumAge:60000}
+    );
+  });
+}
+async function flagSyncAnomalyIfAny(item){
+  try{
+    const origLat = (item.payload && item.payload.lat != null) ? item.payload.lat : (item.extra && item.extra.lat);
+    const origLng = (item.payload && item.payload.lng != null) ? item.payload.lng : (item.extra && item.extra.lng);
+    if(origLat == null || origLng == null) return;
+    const fresh = await getFreshPositionSilently();
+    const minutesQueued = item.queuedAt ? Math.round((Date.now() - item.queuedAt) / 60000) : null;
+    const distanceMeters = fresh ? Math.round(haversineMeters(Number(origLat), Number(origLng), fresh.lat, fresh.lng)) : null;
+    // Thresholds are deliberately generous (1km / 3 hours) — the goal is
+    // catching clear misuse patterns, not flagging every normal delay
+    // from a bad-signal area or every bit of GPS drift.
+    const looksSuspicious = (distanceMeters != null && distanceMeters > 1000) || (minutesQueued != null && minutesQueued > 180);
+    if(looksSuspicious){
+      logClientError(
+        `Offline-queued ${item.kind} submission synced with a notable gap — captured at [${origLat},${origLng}], synced ${fresh?`from ~${distanceMeters}m away [${fresh.lat.toFixed(5)}, ${fresh.lng.toFixed(5)}]`:'from an unknown location (GPS unavailable at sync time)'}, ${minutesQueued!=null?minutesQueued+' minute(s) after the form was originally filled':'unknown delay'}. Not blocked — flagged for review only.`,
+        '', 'offline-sync-anomaly'
+      );
+    }
+  }catch(_e){}
+}
 async function flushPendingSubmissions(){
   let list;
   try{ list = JSON.parse(localStorage.getItem(PENDING_SUBMISSIONS_KEY) || '[]'); }catch(_e){ return; }
@@ -3236,7 +3281,7 @@ function renderNewAdForm(){
         <div class="field"><label>Route To <span class="req-mark">*</span></label><input type="text" id="newAdRouteTo" placeholder="e.g. Maidan"></div>
       ` : `
         <div class="field"><label>Location ID <span class="req-mark">*</span></label><input type="text" id="newAdLocationId" placeholder="e.g. ESP-001"></div>
-        <div class="field"><label>Location Address <span class="req-mark">*</span></label><input type="text" id="newAdLocationName" placeholder="Fetching from your location…">
+        <div class="field"><label>Location Address <span class="req-mark">*</span></label><input type="text" id="newAdLocationName" placeholder="Fetching from your location…" disabled>
           <p class="hint" id="newAdAddrNote">Fetching address from GPS…</p>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -4058,8 +4103,8 @@ function smStartPreAudit(){
       <h2>2. Location <span class="req-mark">*</span></h2>
       <div class="geo-status pending" id="smPreGeoStatus" style="margin-top:12px;">Not captured yet</div>
       <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="smCapturePreLocation()" id="smPreGeoBtn">📍 Get Current Location</button>
-      <div class="field"><label>Address</label><textarea id="sm_pre_address" rows="2" placeholder="Auto-filled, edit if needed"></textarea></div>
-      <div class="field"><label>City</label><input type="text" id="sm_pre_city"></div>
+      <div class="field"><label>Address</label><textarea id="sm_pre_address" rows="2" placeholder="Captured automatically once you tap the button above" disabled></textarea></div>
+      <div class="field"><label>City</label><input type="text" id="sm_pre_city" disabled></div>
     </div>
     <div class="card locked-until-address" id="smPreCategoryFieldsCard" style="display:none;"></div>
     <div class="card locked-until-address" id="smPrePhotoCard">
