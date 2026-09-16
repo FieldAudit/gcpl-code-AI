@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.90.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.90.1 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1154,7 +1154,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.90.0';
+const FRONTEND_VERSION = 'v6.90.1';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1316,7 +1316,7 @@ function startModuleSwitchProgress(){
     const remaining = 90 - pct;
     pct += Math.max(1, remaining * 0.15);
     if(pct > 90) pct = 90;
-    showLoadProgress(pct, pct < 40 ? 'Loading module…' : pct < 75 ? 'Fetching latest data…' : 'Fetching from the external GCPL sheet — can take up to 20s on a cold cache…');
+    showLoadProgress(pct, pct < 40 ? 'Loading module…' : 'Fetching latest data…');
   }, 120);
 }
 function finishModuleSwitchProgress(){
@@ -1989,12 +1989,53 @@ async function loadData(){
   }
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    const action = MODULE==='db' ? 'getDBData' : 'getData';
-    const res = await callApi({action, token:SESSION.token});
+    if(MODULE === 'db'){
+      // Split into a fast internal-only fetch (what the dashboard renders
+      // immediately) and a separate, slower external-GCPL-sheet fetch that
+      // runs in the background afterward — this used to be ONE combined
+      // backend call, so a slow or fully-down external sheet blocked the
+      // entire dashboard from showing anything at all, sometimes for the
+      // full ~20s "cold cache" cost described in the loading message. Now
+      // the internal data (fast, always available) decides how quickly
+      // loadData() resolves; the external rows arrive later and get
+      // merged in + silently re-rendered on top, whenever they're ready —
+      // never holding up the rest of the dashboard being usable.
+      const res = await callApi({action:'getDBDataInternal', token:SESSION.token});
+      ALL_DATA = res.rows || [];
+      fetchExternalDBDataInBackground();
+      return;
+    }
+    const res = await callApi({action:'getData', token:SESSION.token});
     ALL_DATA = res.rows || [];
   }catch(e){
     ALL_DATA = [];
   }
+}
+let EXTERNAL_DB_FETCH_IN_FLIGHT = false;
+function fetchExternalDBDataInBackground(){
+  if(EXTERNAL_DB_FETCH_IN_FLIGHT) return; // a tab-switch back to DB while the first fetch is still out shouldn't start a second, overlapping one
+  EXTERNAL_DB_FETCH_IN_FLIGHT = true;
+  callApi({action:'getDBDataExternal', token:SESSION.token})
+    .then(res=>{
+      if(!res || !res.success || !res.rows || !res.rows.length) return; // empty/failed — the internal-only data already shown stands as-is, nothing to merge
+      // Only ever ADDS rows this session never had — if the person has
+      // switched away from DB entirely by the time this resolves, ALL_DATA
+      // has already been replaced by whatever module they're on now, and
+      // appending here would silently corrupt it. MODULE/SOURCE_FILTER are
+      // re-checked at merge time, not just at the start of the fetch.
+      if(MODULE !== 'db') return;
+      ALL_DATA = ALL_DATA.concat(res.rows);
+      // Re-render whichever view is actually on screen right now — same
+      // views loadData()'s own callers already re-render after a normal
+      // (fast) load, just triggered a little later this time.
+      const activeTab = document.querySelector('nav.tabs button.active');
+      const name = activeTab ? activeTab.dataset.tab : 'dash';
+      if(name==='dash') renderDashboard();
+      else if(name==='history') renderHistory();
+      else if(name==='map') renderMap();
+    })
+    .catch(()=>{}) // the external sheet staying out of this session's data is an accepted, expected outcome — never surfaced as an error
+    .finally(()=>{ EXTERNAL_DB_FETCH_IN_FLIGHT = false; });
 }
 
 /* The Photos tab needs BOTH modules' data at once (unlike Dashboard/History,
