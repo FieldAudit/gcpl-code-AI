@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.90.1 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.92.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -393,6 +393,7 @@ table.data tr:hover td{background:var(--paper-2);}
     <button data-tab="master" id="masterTabBtn" onclick="showTab('master')" style="display:none;">Master Data</button>
     <button data-tab="team" id="teamTabBtn" onclick="showTab('team')" style="display:none;">Team</button>
     <button data-tab="auditorwise" id="auditorWiseTabBtn" onclick="showTab('auditorwise')" style="display:none;">👤 Auditor-wise</button>
+    <button data-tab="noproduct" id="noProductTabBtn" onclick="showTab('noproduct')" style="display:none;">🚫 No Product</button>
   </nav>
 
   <main>
@@ -550,6 +551,20 @@ table.data tr:hover td{background:var(--paper-2);}
           <span>To <input type="date" id="auditorToAM" onchange="renderAuditorWise('AM')"></span>
         </div>
         <div class="table-wrap" style="margin-top:14px;"><table class="data" id="auditorWiseTableAM"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+    <section id="tab-noproduct" style="display:none;">
+      <div class="card">
+        <h2>🚫 No Product Available — NPD Gate Reports</h2>
+        <div class="hint">Every outlet visit where the auditor answered "No" to GCPL Availability — Distribution by Distributor. No other audit questions are asked in this case; just the outlet's hoarding photo as proof of visit.</div>
+        <div class="filters" style="margin-top:14px;">
+          <input type="text" id="noProductSearch" placeholder="Search outlet, auditor, address…" oninput="renderNoProductReport()">
+          <span>From <input type="date" id="noProductFrom" onchange="renderNoProductReport()"></span>
+          <span>To <input type="date" id="noProductTo" onchange="renderNoProductReport()"></span>
+          <button class="btn btn-dark" onclick="exportNoProductReport()">⬇ Export</button>
+        </div>
+        <div id="noProductKpi" style="margin:16px 0; font-size:14px; color:var(--slate);"></div>
+        <div id="noProductGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px; margin-top:10px;"></div>
       </div>
     </section>
   </main>
@@ -819,6 +834,23 @@ function downloadBase64File(base64, filename, mime){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
 }
+/* Every client-side Excel export in this file goes through this instead
+   of calling XLSX.writeFile(wb, filename) directly — writeFile's own
+   internal download trigger was reported failing completely silently
+   for some people (no console error, no toast, the click just did
+   nothing), and the library gives no way to detect or react to that
+   failure either. This builds the same file but downloads it through
+   the plain Blob+<a> mechanism already proven working elsewhere in this
+   dashboard (downloadBase64File above). */
+function downloadWorkbook(wb, filename){
+  const wbArrayBuffer = XLSX.write(wb, {type:'array', bookType:'xlsx'});
+  const blob = new Blob([wbArrayBuffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename || 'Report.xlsx';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
 
 /* Manual "clear cache and get the latest" button — every callApi() call
    already sends cache:'no-store' with a cache-busting timestamp, so this
@@ -960,7 +992,9 @@ async function checkSystemHealth(){
     banner.style.background = '#FBEAE8';
     banner.style.color = '#8A2A21';
     banner.style.borderBottom = '2px solid #C0392B';
-    banner.innerHTML = '⚠️ Internet is slower than expected — please wait a moment and try again.';
+    banner.style.position = 'relative';
+    banner.innerHTML = '⚠️ Internet is slower than expected — please wait a moment and try again.'
+      + '<span onclick="document.getElementById(\'systemHealthBanner\').style.display=\'none\'" title="Dismiss" style="position:absolute; right:16px; top:50%; transform:translateY(-50%); cursor:pointer; font-weight:700; font-size:16px; line-height:1; padding:2px 6px;">✕</span>';
     banner.title = failed.map(f=>`${f.label}: ${f.detail}`).join(' | '); // full technical detail on hover, for whoever's debugging
     console.warn('[health check] unreachable:', failed);
   } else {
@@ -1063,6 +1097,7 @@ function enterApp(){
     document.getElementById('masterTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
     document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
     document.getElementById('mktExpenseModuleBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
+    NO_PRODUCT_ROLE_ALLOWED = (SESSION.role === 'Admin' || SESSION.role === 'Marketing');
     // Only Admin sees BOTH sources and gets the toggle to switch between them.
     // Sales is scoped to ONLY "GCPL Stock Audit" (the external sheet, which is
     // their own submissions from the separate GCPL app) — no "3PA Audit" tab
@@ -1154,7 +1189,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.90.1';
+const FRONTEND_VERSION = 'v6.92.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1289,6 +1324,7 @@ function switchModule(mod){
   // itself; this is just a second, more discoverable door to the same
   // place for people who land on Ad Manager first.
   document.getElementById('auditorWiseTabBtn').style.display = mod==='betaverse' ? 'inline-block' : 'none';
+  document.getElementById('noProductTabBtn').style.display = (mod==='retail' && NO_PRODUCT_ROLE_ALLOWED) ? 'inline-block' : 'none';
   APPROVAL_FILTER = '';
   document.getElementById('histCity').innerHTML = '<option value="">All cities</option>'; // rebuild filter options for the new dataset
   document.getElementById('histSearch').placeholder = mod==='db' ? 'Search distributor, city…' : mod==='betaverse' ? 'Search address, city, auditor…' : 'Search outlet, city, distributor…';
@@ -1363,7 +1399,7 @@ function switchSourceTab(tab){
 }
 
 function showTab(name){
-  ['dash','approvals','map','history','photos','master','team','auditorwise'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
+  ['dash','approvals','map','history','photos','master','team','auditorwise','noproduct'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   if(name==='dash') renderDashboard();
   if(name==='approvals') renderApprovals();
@@ -1384,6 +1420,7 @@ function showTab(name){
     if(!AA_DATA.length){ loadAdAuditData().then(()=>renderAuditorWise('AM')); }
     else renderAuditorWise('AM');
   }
+  if(name==='noproduct') loadNoProductReport();
 }
 /* Clear, single-purpose approval screen — a big card per pending site
    with the decision buttons right there, no horizontal scrolling or
@@ -1949,11 +1986,18 @@ async function saveMasterData(type){
 }
 
 async function callApi(payload, usePost){
+  // Upgraded to the same fetchWithTimeout (auto-retry) + safeJson (clean
+  // failure instead of a raw "Unexpected token '<'... DOCTYPE" crash)
+  // that the login flow already had — this one function is what almost
+  // everything in the dashboard goes through (loadData, every export,
+  // Ad Audit, Marketing Expense...), so it was the single highest-value
+  // place to fix this: every caller gets both protections at once,
+  // instead of patching each one individually.
   if(usePost){
     // For payloads too large/complex for a URL (arrays, many fields) —
     // POST body has no such limit, unlike a GET query string.
-    const r = await fetch(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)});
-    return r.json();
+    const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)}, 25000);
+    return safeJson(r);
   }
   // Cache-buster (_t=timestamp) forces every request to be genuinely fresh
   // — without it, a GET request with the exact same URL (same action+token)
@@ -1962,8 +2006,8 @@ async function callApi(payload, usePost){
   // it "wasn't working" (the PAGE was new, but this one API response
   // underneath it was stale and cached from before the fix).
   const qs = new URLSearchParams({...payload, _t: Date.now()}).toString();
-  const r = await fetch(`${SCRIPT_URL}?${qs}`, {cache:'no-store'});
-  return r.json();
+  const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 25000);
+  return safeJson(r);
 }
 async function loadData(){
   if(MODULE === 'betaverse'){
@@ -2132,7 +2176,7 @@ function exportUserPerformanceTable(){
   ws['!cols'] = headers.map(h=>({wch: Math.max(12, String(h).length+2)}));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'User Performance');
-  XLSX.writeFile(wb, `User_Performance_${MODULE}_${localDateStr()}.xlsx`);
+  downloadWorkbook(wb, `User_Performance_${MODULE}_${localDateStr()}.xlsx`);
 }
 
 /** Builds a full, presentable slide deck straight from whatever's on
@@ -2654,6 +2698,74 @@ function switchAdAuditTab(tab){  document.querySelectorAll('#adAuditSection .mod
   if(tab==='auditors') renderAuditorWise('');
 }
 
+let NO_PRODUCT_ROLE_ALLOWED = false;
+let NO_PRODUCT_DATA = [];
+/* No-Product (NPD gate "No") reports live in their own sheet entirely —
+   loaded on-demand only when this tab is actually opened, not as part
+   of the main Retail loadData() call, since it's a separate, much
+   smaller dataset most sessions never need to touch at all. */
+async function loadNoProductReport(){
+  document.getElementById('noProductGrid').innerHTML = `<div class="empty"><span class="spin"></span> Loading…</div>`;
+  try{
+    const res = await callApi({action:'getNoProductReport', token:SESSION.token});
+    NO_PRODUCT_DATA = res.rows || [];
+  }catch(e){
+    NO_PRODUCT_DATA = [];
+  }
+  renderNoProductReport();
+}
+function renderNoProductReport(){
+  const search = (document.getElementById('noProductSearch').value||'').toLowerCase();
+  const from = document.getElementById('noProductFrom').value, to = document.getElementById('noProductTo').value;
+  let rows = NO_PRODUCT_DATA.filter(r=>{
+    if(from && r.date < from) return false;
+    if(to && r.date > to) return false;
+    if(search){
+      const hay = `${r.outletName||''} ${r.auditor||''} ${r.address||''}`.toLowerCase();
+      if(!hay.includes(search)) return false;
+    }
+    return true;
+  }).sort((a,b)=> String(b.date).localeCompare(String(a.date)));
+  document.getElementById('noProductKpi').textContent = `${rows.length} visit${rows.length===1?'':'s'} with no product available` + (rows.length ? ` — ${new Set(rows.map(r=>r.auditor)).size} auditor(s)` : '');
+  const grid = document.getElementById('noProductGrid');
+  if(!rows.length){ grid.innerHTML = `<div class="empty">No matching visits in this range.</div>`; return; }
+  grid.innerHTML = rows.map(r=>`
+    <div style="background:#fff; border:1px solid var(--border); border-radius:12px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.05);">
+      <img src="${r.photoUrl||''}" data-photo-url="${r.photoUrl||''}" data-photo-caption="${(r.outletName||'Outlet')} — ${r.date}" class="aa-photo-thumb" style="width:100%; height:180px; object-fit:cover; cursor:pointer; display:block;">
+      <div style="padding:12px 14px;">
+        <div style="font-weight:700; font-size:14px; color:var(--ink);">${r.outletName || '<span style="color:var(--slate); font-weight:400; font-style:italic;">Outlet name not given</span>'}</div>
+        <div style="font-size:12px; color:var(--slate); margin-top:4px; line-height:1.5;">${r.address||'—'}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; font-size:11.5px; color:var(--slate);">
+          <span>👤 ${r.auditor||'—'}</span><span>${r.date||''}</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+function exportNoProductReport(){
+  const search = (document.getElementById('noProductSearch').value||'').toLowerCase();
+  const from = document.getElementById('noProductFrom').value, to = document.getElementById('noProductTo').value;
+  const rows = NO_PRODUCT_DATA.filter(r=>{
+    if(from && r.date < from) return false;
+    if(to && r.date > to) return false;
+    if(search){
+      const hay = `${r.outletName||''} ${r.auditor||''} ${r.address||''}`.toLowerCase();
+      if(!hay.includes(search)) return false;
+    }
+    return true;
+  });
+  if(!rows.length){ toast('No data to export', true); return; }
+  const headers = ['Date','Auditor','Auditor Mobile','Outlet Name','Address','Latitude','Longitude','Photo'];
+  const body = rows.map(r=>[
+    r.date||'', r.auditor||'', r.auditorMobile||'', r.outletName||'', r.address||'', r.lat||'', r.lng||'',
+    r.photoUrl ? {f: `HYPERLINK("${r.photoUrl}","View Photo")`} : ''
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...body.map(row=>row.map(c=> (c&&c.f)?{f:c.f}:c))]);
+  ws['!cols'] = headers.map(h=>({wch: Math.max(14, h.length+2)}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'No Product Available');
+  downloadWorkbook(wb, `No_Product_Available_${localDateStr()}.xlsx`);
+}
 let AA_LOAD_IN_PROGRESS = false;
 let AA_DEFAULT_RANGE_SET = false;
 /* .toISOString() converts to UTC before slicing out the date — for
@@ -3278,7 +3390,7 @@ function exportAdAuditReport(){
   ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Ad Audit Report');
-  XLSX.writeFile(wb, `AdAuditReport_${new Date().toISOString().slice(0,10)}.xlsx`);
+  downloadWorkbook(wb, `AdAuditReport_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
 /* ============================================================
@@ -3912,6 +4024,8 @@ async function exportReport(){
     if(e.message==='__NOCFG__'){
       exportPlainFallback();
       toast('Backend not connected — downloaded a plain export. Connect SCRIPT_URL for the fully coloured report.');
+    } else if(e.name === 'AbortError' || e.message === 'SERVER_RETURNED_NON_JSON'){
+      toast('Internet is slower than expected — please wait a moment and try again.', true);
     } else {
       toast(e.message || 'Could not export report', true);
     }
@@ -3971,7 +4085,7 @@ function exportBetaverseAuditorReport(){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsAuditor, 'By Auditor');
   XLSX.utils.book_append_sheet(wb, wsDetail, 'Full Detail');
-  XLSX.writeFile(wb, `AdManager_Report_${localDateStr()}.xlsx`);
+  downloadWorkbook(wb, `AdManager_Report_${localDateStr()}.xlsx`);
   toast('Auditor-wise report downloaded');
 }
 function updateSelectedCountLabel(){
@@ -4053,7 +4167,7 @@ function exportPlainFallback(){
     ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'DB Stock Audit Data');
-    XLSX.writeFile(wb, `DB_Stock_Audit_Report_${localDateStr()}.xlsx`);
+    downloadWorkbook(wb, `DB_Stock_Audit_Report_${localDateStr()}.xlsx`);
     return;
   }
   const headers = ['Date','Auditor','District','City','Distributor','Route','Outlet Name','Outlet Type','Address','Owner Name','Retailer Phone','Distribution (Y/N)','DB Count','Spice Avail (Y/N)','Happy w/ DB (Y/N)','Price Source','Bill Type','Invoice GST Scan','Visibility (1-5)','POSM (Y/N)','NLB/GSB Brand','Latitude','Longitude','Maps Link'];
@@ -4063,7 +4177,7 @@ function exportPlainFallback(){
   ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Retail Audit Data');
-  XLSX.writeFile(wb, `Retail_Audit_Report_${localDateStr()}.xlsx`);
+  downloadWorkbook(wb, `Retail_Audit_Report_${localDateStr()}.xlsx`);
 }
 
 /* ============ PHOTOS TAB ============
