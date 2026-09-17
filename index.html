@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.68.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.69.0</div></div>
   </div>
 </header>
 
@@ -383,13 +383,32 @@ window.onerror = function(msg, url, line, col, err){
     </div>
   </div>
 
-  <!-- ============ LOCATION — captured ONCE right after check-in; everything
-       below stays locked until this succeeds, and this can't be re-run
-       afterwards (prevents repeated GPS/geocoding API calls). ============ -->
-  <div class="card geo-card" id="geoCard">
+  <!-- ============ NPD GATE — the very FIRST thing after check-in, before
+       location is even captured. Clicking Yes or No triggers the GPS +
+       address capture itself (see setNpdGate) — there is no separate
+       "Get Address" button anywhere in this flow anymore. A "No" here
+       short-circuits the ENTIRE rest of the audit: no District/Outlet/
+       Satisfaction/etc. questions at all, just an optional outlet name
+       and one mandatory stamped hoarding photo, then straight to
+       submit. "Yes" reveals the full form exactly as it always has,
+       once location capture finishes. ============ -->
+  <div class="card" id="card_npdGate">
+    <h2><span class="n">1</span>Product Availability &amp; NPD <span class="q-info" title="NPD = New Product Development — newly launched items being tracked for early availability and uptake." onclick="showInfoPopup(this)">ⓘ NPD</span></h2>
+    <div class="field" style="margin-top:14px;">
+      <label>GCPL Availability — Distribution by distributor? <span class="q-info" title="Confirms whether GCPL products are currently being supplied to this outlet by any distributor." onclick="showInfoPopup(this)">ⓘ</span></label>
+      <div class="yn" id="yn_npdGate"><button onclick="setNpdGate('Yes',this)">Yes</button><button onclick="setNpdGate('No',this)">No</button></div>
+    </div>
+  </div>
+
+  <!-- ============ LOCATION — pure status display now, no button of its
+       own. setNpdGate() triggers the actual GPS+address capture the
+       instant Yes or No is clicked; this card just shows progress and
+       the result once it's done. Everything below stays locked until
+       this succeeds, and it can't be re-run afterwards (prevents
+       repeated GPS/geocoding API calls). ============ -->
+  <div class="card geo-card locked-until-address" id="geoCard" style="display:none;">
     <h2><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-3px;display:inline-block;margin-right:4px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Location &amp; Address <span class="req-mark">*</span></h2>
-    <div class="geo-status pending" id="geoStatus" style="margin-top:10px;">Not captured yet — required before the rest of the form unlocks</div>
-    <button class="btn btn-primary geo-btn-big" onclick="captureLocation(this)" id="geoBtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;display:inline-block;margin-right:5px;"><path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 6.14 12.34 6.41 12.64a.75.75 0 0 0 1.18 0C12.86 21.34 19 14.25 19 9c0-3.86-3.14-7-7-7zm0 9.75A2.75 2.75 0 1 1 12 6.25a2.75 2.75 0 0 1 0 5.5z"/></svg>Get Address (current location)</button>
+    <div class="geo-status pending" id="geoStatus" style="margin-top:10px;">Capturing your location…</div>
     <div class="geo-readout" id="geoReadout" style="display:none;">
       <div class="coords" id="geoCoords">—</div>
       <div class="meta" id="geoMeta"></div>
@@ -397,22 +416,8 @@ window.onerror = function(msg, url, line, col, err){
     </div>
     <div class="field" style="margin-top:14px;">
       <label>Address <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(captured automatically from GPS — cannot be hand-edited)</span></label>
-      <textarea id="f_address" rows="3" placeholder="Captured automatically once you tap the button above" disabled></textarea>
+      <textarea id="f_address" rows="3" placeholder="Captured automatically" disabled></textarea>
       <div class="addr-note" id="addrNote"></div>
-    </div>
-  </div>
-
-  <!-- ============ NPD GATE — the very first real question after
-       location capture. A "No" here short-circuits the ENTIRE rest of
-       the audit: no District/Outlet/Satisfaction/etc. questions at all,
-       just an optional outlet name + one mandatory stamped hoarding
-       photo, then straight to submit. "Yes" reveals the full form
-       exactly as it always has. ============ -->
-  <div class="card locked-until-address" id="card_npdGate">
-    <h2><span class="n">1</span>Product Availability &amp; NPD <span class="q-info" title="NPD = New Product Development — newly launched items being tracked for early availability and uptake." onclick="showInfoPopup(this)">ⓘ NPD</span></h2>
-    <div class="field" style="margin-top:14px;">
-      <label>GCPL Availability — Distribution by distributor? <span class="q-info" title="Confirms whether GCPL products are currently being supplied to this outlet by any distributor." onclick="showInfoPopup(this)">ⓘ</span></label>
-      <div class="yn" id="yn_npdGate"><button onclick="setNpdGate('Yes',this)">Yes</button><button onclick="setNpdGate('No',this)">No</button></div>
     </div>
   </div>
 
@@ -425,7 +430,7 @@ window.onerror = function(msg, url, line, col, err){
     <h2>📸 Outlet Hoarding Photo</h2>
     <div class="field" style="margin-top:14px;">
       <label>Outlet Name <span style="text-transform:none; font-weight:400;">(Optional)</span></label>
-      <input type="text" id="npdNo_outletName" placeholder="If known — not required">
+      <input type="text" id="npdNo_outletName" placeholder="If known — not required" autocomplete="off">
     </div>
     <div class="field" style="margin-top:14px;">
       <label>Outlet Hoarding / Signboard — Outside <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(live camera only — address, date, time and your name are stamped on automatically)</span></label>
@@ -925,12 +930,22 @@ function setYN(key,val,btn){
    "Yes" reverses that, restoring the full form exactly as it's always
    worked. FORM.q1 is set either way so a "Yes" submission still carries
    the answer through to the normal payload/report, unchanged from before. */
-function setNpdGate(val, btn){
-  FORM.q1 = val;
+async function setNpdGate(val, btn){
   const wrap = btn.parentElement;
   wrap.classList.remove('invalid');
-  [...wrap.children].forEach(c=>c.classList.remove('sel-yes','sel-no'));
+  // Disable both buttons immediately — capture takes a moment, and a
+  // second tap (same or the other button) while it's still in flight
+  // would race two GPS reads against each other.
+  [...wrap.children].forEach(c=>{ c.disabled = true; c.classList.remove('sel-yes','sel-no'); });
   btn.classList.add(val==='Yes'?'sel-yes':'sel-no');
+  document.getElementById('geoCard').scrollIntoView({behavior:'smooth', block:'center'});
+  // Only capture once per audit — if GEO already exists (this gate can't
+  // normally be re-answered without a form reset in between, but this
+  // guards it anyway), just proceed straight to reveal/hide without
+  // re-triggering GPS.
+  if(!GEO) await captureLocation();
+  FORM.q1 = val;
+  [...wrap.children].forEach(c=>{ c.disabled = false; });
   const fullFormCards = document.querySelectorAll('#retailModule .npd-full-audit');
   const noFlowCard = document.getElementById('card_noProductFlow');
   const submitBar = document.getElementById('submitBar');
@@ -1712,8 +1727,10 @@ function confirmNewUserName(phone, prefix){
   if(!name){ toast('Please enter your name first', true); return; }
   CHECKIN_PHONE = phone; CHECKIN_NAME = name;
   try{ localStorage.setItem(SO_IDENTITY_KEY, JSON.stringify({phone, name})); }catch(_e){}
-  if(CURRENT_MODULE === 'retail' && !GEO) captureLocation();
-  else if(CURRENT_MODULE === 'db' && !DB_GEO) dbCaptureLocation();
+  // Retail's location capture is no longer triggered here — it now
+  // happens the moment the NPD gate question (Yes/No) is answered, not
+  // right after name confirmation, since that question comes first now.
+  if(CURRENT_MODULE === 'db' && !DB_GEO) dbCaptureLocation();
   checkTodayCheckin(prefix);
 }
 
@@ -2387,71 +2404,80 @@ function unlockFormAfterAddress(){
   const submitBar = document.getElementById('submitBar');
   if(submitBar) submitBar.style.display = 'none';
 }
-function captureLocation(callerBtn){
-  if(!navigator.geolocation){ toast('Geolocation not supported on this device', true); return; }
-  const geoBtn = document.getElementById('geoBtn');
-  setBtnBusy(geoBtn, 'Locating…');
-  navigator.geolocation.getCurrentPosition(async (pos)=>{
-    GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy};
-    const link = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${GEO.lat},${GEO.lng}`;
-    GEO.link = link;
-    document.getElementById('geoCard').classList.add('got');
-    document.getElementById('geoStatus').className = 'geo-status got';
-    document.getElementById('geoStatus').textContent = '✅ Location captured';
-    document.getElementById('geoReadout').style.display='block';
-    document.getElementById('geoCoords').textContent = `${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)}`;
-    document.getElementById('geoMeta').innerHTML = `±${Math.round(GEO.accuracy)}m accuracy &middot; <a href="${link}" target="_blank">Open in Google Maps</a>`;
-    document.getElementById('geoAddrDetail').textContent = 'Looking up detailed address…';
-    // Deliberately disabled (not just relabelled) — captured once per audit
-    // and can't be re-triggered, so re-tapping can't spam the geocoding
-    // APIs. District/City stay freely editable text fields either way.
-    geoBtn.disabled = true;
-    geoBtn.innerHTML = '✅ Location captured';
-    document.getElementById('f_address').disabled = false;
-    document.getElementById('photoLock').style.display='none';
-    document.getElementById('invoiceLock').style.display='none';
-    unlockFormAfterAddress();
-
-    const addrNote = document.getElementById('addrNote');
-    addrNote.className = 'addr-note'; addrNote.textContent = 'Fetching address from GPS…';
-    let base;
-    try{
-      base = await getBaseAddress(GEO.lat, GEO.lng);
-    }catch(_e){ base = {formatted:''}; }
-    if(base.city) document.getElementById('f_city').value = base.city;
-    if(base.district) document.getElementById('f_district').value = base.district;
-    if(base.pincode) refineDistrictFromPincode(base.pincode, 'f_district'); // silently confirms/refines using India Post data — no manual typing needed
-    if(base.formatted){
-      GEO.address = base.formatted;
-      const addrField = document.getElementById('f_address');
-      addrField.value = base.formatted;
-      document.getElementById('geoAddrDetail').innerHTML = `${PIN_SVG}${base.formatted}`;
-      addrNote.className = 'addr-note';
-      addrNote.textContent = base.source === 'google'
-        ? 'Auto-filled from Google Maps — checking for a nearby landmark…'
-        : 'Auto-filled from your current location — free map data can be a house or two, or even a pincode, off. Please check it (especially the pincode) before submitting.';
-      // Landmark search runs in the background and gets appended once found —
-      // the address field is already usable, so this no longer holds up submit.
-      fetchLandmarkAndAppend(GEO.lat, GEO.lng, addrField, base.formatted, (updated)=>{
-        GEO.address = updated;
-        document.getElementById('geoAddrDetail').innerHTML = `${PIN_SVG}${updated}`;
-        if(base.source === 'google') addrNote.textContent = 'Auto-filled from Google Maps for your current location — please glance at it before submitting.';
-      });
-    } else {
-      // Safety net: never leave the address blank — fall back to raw coordinates
-      // and make it unmistakable that a manual address is needed.
-      const fallback = `Near ${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)} (auto-lookup failed)`;
-      GEO.address = fallback;
-      if(!document.getElementById('f_address').value) document.getElementById('f_address').value = fallback;
-      document.getElementById('geoAddrDetail').textContent = 'Could not auto-fill address (no network / no data for this area).';
-      addrNote.className = 'addr-note warn';
-      addrNote.textContent = '⚠️ Auto address lookup failed — please type the correct address manually.';
-      toast('Address auto-lookup failed — please type it manually', true);
+function captureLocation(){
+  // Wrapped in a Promise so setNpdGate() can simply `await` this —
+  // navigator.geolocation's own API is callback-based, not Promise-based.
+  // No longer touches any "Get Address" button (there isn't one anymore;
+  // this now runs automatically the instant the NPD gate is answered) —
+  // geoCard is a pure status display now, not something a button drives.
+  return new Promise((resolve)=>{
+    if(!navigator.geolocation){
+      toast('Geolocation not supported on this device', true);
+      resolve(false);
+      return;
     }
-  }, (err)=>{
-    toast('Could not get location: '+err.message, true);
-    setBtnIdle(geoBtn, PIN_SVG + 'Get Address (current location)');
-  }, {enableHighAccuracy:true, timeout:15000});
+    document.getElementById('geoCard').style.display = 'block';
+    navigator.geolocation.getCurrentPosition(async (pos)=>{
+      GEO = {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy};
+      const link = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${GEO.lat},${GEO.lng}`;
+      GEO.link = link;
+      document.getElementById('geoCard').classList.add('got');
+      document.getElementById('geoStatus').className = 'geo-status got';
+      document.getElementById('geoStatus').textContent = '✅ Location captured';
+      document.getElementById('geoReadout').style.display='block';
+      document.getElementById('geoCoords').textContent = `${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)}`;
+      document.getElementById('geoMeta').innerHTML = `±${Math.round(GEO.accuracy)}m accuracy &middot; <a href="${link}" target="_blank">Open in Google Maps</a>`;
+      document.getElementById('geoAddrDetail').textContent = 'Looking up detailed address…';
+      document.getElementById('f_address').disabled = false;
+      document.getElementById('photoLock').style.display='none';
+      document.getElementById('invoiceLock').style.display='none';
+      unlockFormAfterAddress();
+
+      const addrNote = document.getElementById('addrNote');
+      addrNote.className = 'addr-note'; addrNote.textContent = 'Fetching address from GPS…';
+      let base;
+      try{
+        base = await getBaseAddress(GEO.lat, GEO.lng);
+      }catch(_e){ base = {formatted:''}; }
+      if(base.city) document.getElementById('f_city').value = base.city;
+      if(base.district) document.getElementById('f_district').value = base.district;
+      if(base.pincode) refineDistrictFromPincode(base.pincode, 'f_district'); // silently confirms/refines using India Post data — no manual typing needed
+      if(base.formatted){
+        GEO.address = base.formatted;
+        const addrField = document.getElementById('f_address');
+        addrField.value = base.formatted;
+        document.getElementById('geoAddrDetail').innerHTML = `${PIN_SVG}${base.formatted}`;
+        addrNote.className = 'addr-note';
+        addrNote.textContent = base.source === 'google'
+          ? 'Auto-filled from Google Maps — checking for a nearby landmark…'
+          : 'Auto-filled from your current location — free map data can be a house or two, or even a pincode, off. Please check it (especially the pincode) before submitting.';
+        // Landmark search runs in the background and gets appended once found —
+        // resolve() already happened by the time this finishes, so it never
+        // holds up showing the rest of the audit.
+        fetchLandmarkAndAppend(GEO.lat, GEO.lng, addrField, base.formatted, (updated)=>{
+          GEO.address = updated;
+          document.getElementById('geoAddrDetail').innerHTML = `${PIN_SVG}${updated}`;
+          if(base.source === 'google') addrNote.textContent = 'Auto-filled from Google Maps for your current location — please glance at it before submitting.';
+        });
+      } else {
+        // Safety net: never leave the address blank — fall back to raw coordinates
+        // and make it unmistakable that a manual address is needed.
+        const fallback = `Near ${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)} (auto-lookup failed)`;
+        GEO.address = fallback;
+        if(!document.getElementById('f_address').value) document.getElementById('f_address').value = fallback;
+        document.getElementById('geoAddrDetail').textContent = 'Could not auto-fill address (no network / no data for this area).';
+        addrNote.className = 'addr-note warn';
+        addrNote.textContent = '⚠️ Auto address lookup failed — please type the correct address manually.';
+        toast('Address auto-lookup failed — please type it manually', true);
+      }
+      resolve(true);
+    }, (err)=>{
+      toast('Could not get location: '+err.message, true);
+      document.getElementById('geoStatus').className = 'geo-status warn';
+      document.getElementById('geoStatus').textContent = '⚠️ Could not get location — ' + err.message;
+      resolve(false);
+    }, {enableHighAccuracy:true, timeout:15000});
+  });
 }
 
 /* Same flow as captureLocation() above, targeting the DB Stock Audit module's own
@@ -3019,23 +3045,24 @@ function resetForm(){
   document.getElementById('photoPreview').style.display='none';
   document.getElementById('photoPreview2').style.display='none';
   renderInvoiceThumbs();
+  // geoCard goes back to fully hidden (not just reset) — it's pure status
+  // display now, only ever shown by setNpdGate() the instant Yes/No is
+  // next answered, not something visible while waiting for that.
+  document.getElementById('geoCard').style.display = 'none';
   document.getElementById('geoCard').classList.remove('got');
   document.getElementById('geoStatus').className = 'geo-status pending';
-  document.getElementById('geoStatus').textContent = 'Not captured yet — required before the rest of the form unlocks';
+  document.getElementById('geoStatus').textContent = 'Capturing your location…';
   document.getElementById('geoReadout').style.display='none';
   document.getElementById('geoAddrDetail').textContent='';
   document.getElementById('addrNote').className='addr-note';
   document.getElementById('addrNote').textContent='';
-  const geoBtn2 = document.getElementById('geoBtn');
-  geoBtn2.disabled = false;
-  setBtnIdle(geoBtn2, PIN_SVG + 'Get Address (current location)');
   document.getElementById('f_address').disabled = true;
   document.getElementById('photoLock').style.display='block';
   document.getElementById('invoiceLock').style.display='block';
   // Re-lock everything for the NEXT audit — a fresh location capture is
   // required per outlet visit, so the whole gate resets each time.
   document.querySelectorAll('#retailModule .card').forEach(card=>{
-    if(card.id !== 'geoCard' && card.id !== 'r_checkinCard') card.classList.add('locked-until-address');
+    if(card.id !== 'geoCard' && card.id !== 'r_checkinCard' && card.id !== 'card_npdGate') card.classList.add('locked-until-address');
   });
   document.getElementById('f_date').value = localDateStr();
   if(CHECKIN_NAME) document.getElementById('f_auditor').value = CHECKIN_NAME; // re-fill after clearing above — same SO, no need to retype
@@ -3043,7 +3070,7 @@ function resetForm(){
   // same as location. Full-form cards go back to hidden (not just
   // dimmed) until it's answered again; the shared submit bar hides with
   // them so nothing can be submitted before that happens.
-  document.querySelectorAll('#yn_npdGate button').forEach(b=>b.classList.remove('sel-yes','sel-no'));
+  document.querySelectorAll('#yn_npdGate button').forEach(b=>{ b.classList.remove('sel-yes','sel-no'); b.disabled = false; });
   document.querySelectorAll('#retailModule .npd-full-audit').forEach(c=>{ c.style.display = 'none'; });
   document.getElementById('card_noProductFlow').style.display = 'none';
   const submitBarEl = document.getElementById('submitBar');
