@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.74.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.75.0</div></div>
   </div>
 </header>
 
@@ -416,7 +416,7 @@ window.onerror = function(msg, url, line, col, err){
     </div>
     <div class="field" style="margin-top:14px;">
       <label>Address <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(captured automatically from GPS — cannot be hand-edited)</span></label>
-      <textarea id="f_address" rows="3" placeholder="Captured automatically" disabled></textarea>
+      <textarea id="f_address" rows="3" placeholder="Captured automatically" disabled readonly oninput="this.value = (typeof GEO!=='undefined' && GEO && GEO.address) ? GEO.address : this.value;"></textarea>
       <div class="addr-note" id="addrNote"></div>
     </div>
   </div>
@@ -988,9 +988,18 @@ async function submitNoProductAudit(){
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Submitting…';
   const outletName = document.getElementById('npdNo_outletName').value.trim();
   const today = localDateStr();
+  // GEO.address (JS memory) is used here, not the DOM field's own
+  // .value — this is what makes the address genuinely un-tamperable
+  // rather than just visually locked: even if a specific mobile browser
+  // has a quirk that lets someone select-and-delete text inside a
+  // disabled/readonly textarea (a real, known inconsistency on some
+  // OEM Android browsers — the field's own "disabled" attribute alone
+  // isn't a hard enough guarantee), the value that actually gets
+  // submitted never comes from that field at all.
+  const capturedAddress = GEO.address || document.getElementById('f_address').value || '';
   const stampLines = [
     `${new Date().toLocaleString()}  •  ${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)}`,
-    document.getElementById('f_address').value || '',
+    capturedAddress,
     `Auditor: ${CHECKIN_NAME||'—'}${outletName?'   Outlet: '+outletName:''}`
   ];
   let payload;
@@ -998,7 +1007,7 @@ async function submitNoProductAudit(){
     const stampedPhoto = await stampPhoto(NPD_NO_PHOTO_RAW, stampLines);
     payload = {
       action:'submitNoProductAudit', clientSubmissionId: generateClientSubmissionId(), date: today, auditor: CHECKIN_NAME, auditorMobile: CHECKIN_PHONE,
-      outletName, address: document.getElementById('f_address').value || '',
+      outletName, address: capturedAddress,
       lat: GEO.lat, lng: GEO.lng, accuracy: GEO.accuracy, photo: stampedPhoto
     };
     const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)}, 25000);
@@ -2762,7 +2771,12 @@ async function submitAudit(){
     route: document.getElementById('f_route').value,
     outletName: document.getElementById('f_outletName').value,
     outletType: document.getElementById('f_outletType').value,
-    address: document.getElementById('f_address').value,
+    // GEO.address (JS memory), not the DOM field's .value — same
+    // tamper-proofing reasoning as submitNoProductAudit's identical
+    // comment above: a disabled/readonly textarea alone isn't a hard
+    // enough guarantee on every mobile browser, so the submitted value
+    // never actually comes from that field.
+    address: (GEO && GEO.address) || document.getElementById('f_address').value,
     ownerName: document.getElementById('f_ownerName').value,
     retailerPhone: document.getElementById('f_retailerPhone').value,
     q1_distribution: FORM.q1 || '',
