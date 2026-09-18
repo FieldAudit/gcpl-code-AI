@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.70.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.72.0</div></div>
   </div>
 </header>
 
@@ -393,10 +393,10 @@ window.onerror = function(msg, url, line, col, err){
        submit. "Yes" reveals the full form exactly as it always has,
        once location capture finishes. ============ -->
   <div class="card" id="card_npdGate">
-    <h2><span class="n">1</span>Product Availability &amp; NPD <span class="q-info" title="NPD = New Product Development — newly launched items being tracked for early availability and uptake." onclick="showInfoPopup(this)">ⓘ NPD</span></h2>
+    <h2><span class="n">1</span>Are Ganesh Products Available at This Outlet? <span class="q-info" title="Confirms whether Ganesh/GCPL products are currently being supplied to this outlet by any distributor." onclick="showInfoPopup(this)">ⓘ</span></h2>
     <div class="field" style="margin-top:14px;">
-      <label>GCPL Availability — Distribution by distributor? <span class="q-info" title="Confirms whether GCPL products are currently being supplied to this outlet by any distributor." onclick="showInfoPopup(this)">ⓘ</span></label>
-      <div class="yn" id="yn_npdGate"><button onclick="setNpdGate('Yes',this)">Yes</button><button onclick="setNpdGate('No',this)">No</button></div>
+      <div class="yn" id="yn_npdGate"><button onclick="setNpdGate('Yes',this)" disabled>Yes</button><button onclick="setNpdGate('No',this)" disabled>No</button></div>
+      <div class="addr-note" id="npdGateHint" style="margin-top:8px;">Complete today's selfie check-in above first — this unlocks once that's done.</div>
     </div>
   </div>
 
@@ -460,14 +460,14 @@ window.onerror = function(msg, url, line, col, err){
   <div class="card locked-until-address npd-full-audit" style="display:none;" id="card_outletDetails">
     <h2><span class="n">3</span>Outlet Details</h2>
     <div class="grid2" style="margin-top:14px;">
-      <div class="field"><label>Outlet / Retailer Name</label><input type="text" id="f_outletName"></div>
+      <div class="field"><label>Outlet / Retailer Name</label><input type="text" id="f_outletName" autocomplete="off"></div>
       <div class="field"><label>Outlet Type</label>
         <select id="f_outletType"><option value="">Select</option><option>General Trade</option><option>Modern Trade</option><option>Wholesale</option><option>Kirana</option><option>Other</option></select>
       </div>
-      <div class="field"><label>Outlet Owner Name</label><input type="text" id="f_ownerName" placeholder="Owner's full name"></div>
+      <div class="field"><label>Respondent Name</label><input type="text" id="f_ownerName" placeholder="Respondent's full name" autocomplete="off"></div>
       <div class="field">
         <label>Retailer Phone Number <span style="text-transform:none; font-weight:400;">(10 digits)</span></label>
-        <input type="text" id="f_retailerPhone" inputmode="numeric" maxlength="10" placeholder="e.g. 9830012345" oninput="onRetailerPhoneInput(this)">
+        <input type="text" id="f_retailerPhone" inputmode="numeric" maxlength="10" placeholder="e.g. 9830012345" oninput="onRetailerPhoneInput(this)" autocomplete="off">
         <div class="addr-note warn" id="retailerPhoneNote"></div>
       </div>
     </div>
@@ -931,6 +931,7 @@ function setYN(key,val,btn){
    worked. FORM.q1 is set either way so a "Yes" submission still carries
    the answer through to the normal payload/report, unchanged from before. */
 async function setNpdGate(val, btn){
+  if(!CHECKIN_DONE){ toast('Please complete today\'s selfie check-in first', true); return; } // defensive — the buttons are disabled until then anyway
   const wrap = btn.parentElement;
   wrap.classList.remove('invalid');
   // Disable both buttons immediately — capture takes a moment, and a
@@ -1874,6 +1875,13 @@ function renderCheckinDoneAll(){
     contentEl.innerHTML = `<div class="geo-status got">✅ Already checked in today${CHECKIN_TIME?' at '+CHECKIN_TIME:''} — no selfie needed again for the rest of today.</div>`;
   });
   onCheckinIdentityKnown();
+  // The NPD gate question (Retail's very first question) stays disabled
+  // until check-in is actually confirmed done — this is the one place
+  // that happens, whether via a fresh selfie just now or the "already
+  // checked in today" server-confirmed path.
+  document.querySelectorAll('#yn_npdGate button').forEach(b=>{ b.disabled = false; });
+  const hint = document.getElementById('npdGateHint');
+  if(hint) hint.style.display = 'none';
 }
 
 function renderCheckinCapture(prefix){
@@ -2440,7 +2448,11 @@ function captureLocation(){
       document.getElementById('geoCoords').textContent = `${GEO.lat.toFixed(6)}, ${GEO.lng.toFixed(6)}`;
       document.getElementById('geoMeta').innerHTML = `±${Math.round(GEO.accuracy)}m accuracy &middot; <a href="${link}" target="_blank">Open in Google Maps</a>`;
       document.getElementById('geoAddrDetail').textContent = 'Looking up detailed address…';
-      document.getElementById('f_address').disabled = false;
+      // f_address stays disabled=true here on purpose — a disabled field
+      // can still have its .value set from JS below just fine; re-enabling
+      // it here (as this used to do) was letting the auditor type over
+      // the GPS-captured address by hand, contradicting the field's own
+      // label ("cannot be hand-edited") right next to it.
       document.getElementById('photoLock').style.display='none';
       document.getElementById('invoiceLock').style.display='none';
       unlockFormAfterAddress();
@@ -2688,7 +2700,7 @@ function validateForm(){
   const textFields = [
     ['f_date','Date of Visit'],['f_auditor','Auditor Name'],['f_district','District'],['f_city','City'],
     ['f_distributor','Distributor'],['f_route','Route Name'],['f_outletName','Outlet / Retailer Name'],
-    ['f_outletType','Outlet Type'],['f_address','Address'],['f_ownerName','Outlet Owner Name'],
+    ['f_outletType','Outlet Type'],['f_address','Address'],['f_ownerName','Respondent Name'],
     ['f_q2','How many DBs are supplying'],['f_q5','Price update source'],
     ['f_q7','Bill type'],['f_q10','NLB/GSB brand']
   ];
@@ -2934,7 +2946,7 @@ async function submitAudit(){
           ['Distributor', formSnapshot.distributor], ['Route', formSnapshot.route],
           ['Outlet Name', formSnapshot.outletName], ['Outlet Type', formSnapshot.outletType],
           ['Address', formSnapshot.address],
-          ['Outlet Owner Name', formSnapshot.ownerName], ['Retailer Phone', formSnapshot.retailerPhone]
+          ['Respondent Name', formSnapshot.ownerName], ['Retailer Phone', formSnapshot.retailerPhone]
         ]
       });
       auditId = 'QUEUED';
@@ -2979,7 +2991,7 @@ async function submitAudit(){
           ['Distributor', formSnapshot.distributor], ['Route', formSnapshot.route],
           ['Outlet Name', formSnapshot.outletName], ['Outlet Type', formSnapshot.outletType],
           ['Address', formSnapshot.address],
-          ['Outlet Owner Name', formSnapshot.ownerName], ['Retailer Phone', formSnapshot.retailerPhone],
+          ['Respondent Name', formSnapshot.ownerName], ['Retailer Phone', formSnapshot.retailerPhone],
           ['GCPL Distribution', formSnapshot.q1_distribution], ['DB Count', formSnapshot.q2_dbCount],
           ['Spice Available', formSnapshot.q3_spiceAvailable], ['Happy with DB', formSnapshot.q4_happyWithDB],
           ['Price Update Source', formSnapshot.q5_priceSource],
