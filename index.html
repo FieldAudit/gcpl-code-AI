@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.75.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.76.0</div></div>
   </div>
 </header>
 
@@ -1635,14 +1635,14 @@ async function lookupCheckinPhone(phone, prefix){
   statusEl.className='addr-note'; statusEl.textContent='Checking master list…';
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    // 18s, not 8s — this is often the FIRST network call in a field
-    // session, on whatever mobile signal happens to be available right
-    // then. An 8s budget was failing on genuinely working connections
-    // just because round-trip latency alone (not backend processing) ate
-    // into it on weaker mobile data — this gives real weak-signal
-    // conditions a fair chance to still complete instead of erroring out
-    // on latency alone.
-    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=lookupSO&phone=${encodeURIComponent(phone)}`, {}, 18000);
+    // Capped at 8s with a single retry (not fetchWithTimeout's usual 2) —
+    // this is often the FIRST network call in a field session, and on a
+    // genuinely bad connection the OLD 18s×3-retries budget meant nearly
+    // a full minute before the person ever got to move on. The fallback
+    // below (self-registration prompt) is a perfectly fine place to land
+    // quickly — it's not an error state, just a different path — so
+    // there's no reason to make someone wait that long before reaching it.
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=lookupSO&phone=${encodeURIComponent(phone)}`, {}, 8000, 1);
     const j = await r.json();
     if(j.success && j.name){
       CHECKIN_PHONE = phone; CHECKIN_NAME = j.name;
@@ -1706,43 +1706,30 @@ function confirmNewUserName(phone, prefix){
    issue, not storage) — not worth it when WebAuthn alone is already a
    real, un-fakeable, device-level biometric check. Once-per-day logic is
    unchanged: if this phone already checked in today, no prompt at all. ---- */
+/* Identity resolution for a RETURNING device — the phone+name pair in
+   localStorage is proof enough on its own: it was only ever written
+   there after a genuine, once-ever confirmation (first-time master-list
+   match, or the self-registration prompt). Re-verifying it against the
+   master list over the network on every single app open was the exact
+   thing making auditors wait — and, worse, occasionally see a wrongly
+   "not registered" result whenever that one lookup was slow or
+   temporarily unreachable, even though this exact device had
+   successfully registered before. So identity itself now resolves
+   INSTANTLY, with zero network dependency — "phone number registers
+   once, the device is registered after that" is exactly this. Only
+   TODAY's check-in status (a genuinely daily, server-side fact) still
+   needs checking, and that now happens inside checkTodayCheckin(),
+   which itself checks local confirmation before ever touching the
+   network — see that function's own comment for why. */
 async function startIdentityScan(prefix){
   let saved = null;
   try{ saved = JSON.parse(localStorage.getItem(SO_IDENTITY_KEY) || 'null'); }catch(_e){}
-  if(saved && saved.phone && saved.name && configured()){
-    try{
-      const today = localDateStr();
-      const r = await fetchWithTimeout(`${SCRIPT_URL}?action=checkinStatus&phone=${encodeURIComponent(saved.phone)}&date=${today}`, {}, 18000);
-      const j = await r.json();
-      if(j.checkedIn){
-        CHECKIN_PHONE = saved.phone; CHECKIN_NAME = saved.name;
-        CHECKIN_DONE = true; CHECKIN_TIME = j.time;
-        saveLocalCheckinConfirmed(saved.phone, j.time);
-        renderCheckinDoneAll();
-        return;
-      }
-    }catch(_e){
-      // The server itself couldn't be reached to confirm — before asking
-      // for a brand-new selfie, check whether THIS device already
-      // confirmed a check-in today and just hit a bad connection this
-      // one time. Server truth still wins whenever it's reachable
-      // (the try block above); this is only the fallback for when it
-      // genuinely isn't.
-      const local = getLocalCheckinConfirmed(saved.phone);
-      if(local){
-        CHECKIN_PHONE = saved.phone; CHECKIN_NAME = saved.name;
-        CHECKIN_DONE = true; CHECKIN_TIME = local.time;
-        renderCheckinDoneAll();
-        return;
-      }
-    }
+  if(saved && saved.phone && saved.name){
+    CHECKIN_PHONE = saved.phone; CHECKIN_NAME = saved.name;
+    checkTodayCheckin(prefix);
+    return;
   }
   showManualPhoneEntry(prefix);
-  if(saved && saved.phone){
-    const ids = ckIds(prefix);
-    document.getElementById(ids.phone).value = saved.phone;
-    lookupCheckinPhone(saved.phone, prefix);
-  }
 }
 
 
@@ -1772,13 +1759,29 @@ function prefillSavedSOIdentity(prefix){
   }catch(_e){}
 }
 
+/* Checks whether CHECKIN_PHONE has already checked in today. LOCAL
+   confirmation is checked FIRST, before any network call at all — if
+   this device already confirmed today's check-in (a fresh selfie
+   earlier, or the server having confirmed it once already), that's
+   the end of it: no server round-trip, instantly done, and completely
+   immune to a slow/flaky connection ever asking for a redundant
+   selfie again on the same day. The server is only asked when there's
+   no local record yet (a brand-new device today, or check-in done
+   from a different device earlier) — and even then, a failure there
+   falls through to "not checked in yet" rather than getting stuck. */
 async function checkTodayCheckin(prefix){
+  const local = getLocalCheckinConfirmed(CHECKIN_PHONE);
+  if(local){
+    CHECKIN_DONE = true; CHECKIN_TIME = local.time;
+    renderCheckinDoneAll();
+    return;
+  }
   const ids = ckIds(prefix);
   const today = localDateStr();
   document.getElementById(ids.content).insertAdjacentHTML('beforeend', '');
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=checkinStatus&phone=${encodeURIComponent(CHECKIN_PHONE)}&date=${today}`, {}, 18000);
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=checkinStatus&phone=${encodeURIComponent(CHECKIN_PHONE)}&date=${today}`, {}, 10000);
     const j = await r.json();
     if(j.checkedIn){
       CHECKIN_DONE = true; CHECKIN_TIME = j.time;
@@ -1789,18 +1792,12 @@ async function checkTodayCheckin(prefix){
       renderCheckinCapture(prefix);
     }
   }catch(_e){
-    // Same local fallback as startIdentityScan above — a failed status
-    // check is not the same thing as a confirmed "not checked in", and
-    // treating it that way is exactly what forced a redundant selfie on
-    // every refresh during any brief connection hiccup.
-    const local = getLocalCheckinConfirmed(CHECKIN_PHONE);
-    if(local){
-      CHECKIN_DONE = true; CHECKIN_TIME = local.time;
-      renderCheckinDoneAll();
-    } else {
-      CHECKIN_DONE = false;
-      renderCheckinCapture(prefix);
-    }
+    // No local record AND the server couldn't be reached — genuinely
+    // can't confirm either way, so this falls through to asking for a
+    // selfie rather than silently assuming "already done" with nothing
+    // to back that up.
+    CHECKIN_DONE = false;
+    renderCheckinCapture(prefix);
   }
   onCheckinIdentityKnown();
 }
