@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.95.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.96.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1208,7 +1208,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.95.0';
+const FRONTEND_VERSION = 'v6.96.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1798,23 +1798,23 @@ function renderJourneyContent(res, fromDate, toDate){
     return;
   }
   const audits = res.audits;
-  const totalKm = ''; // placeholder if distance travelled is ever computed
+  const distinctDBs = new Set(audits.map(a=>a.dbCode).filter(Boolean)).size; // only counts real DB codes — Retail Audit rows carry no dbCode at all, so they don't inflate/blank out this specific metric
   el.innerHTML = `
     <div class="kpis">
-      <div class="kpi"><div class="v">${audits.length}</div><div class="l">Audits in range</div></div>
+      <div class="kpi"><div class="v">${audits.length}</div><div class="l">Audits in range (all modules)</div></div>
       <div class="kpi"><div class="v">${audits[audits.length-1].date}</div><div class="l">First audit</div></div>
       <div class="kpi"><div class="v">${audits[0].date}</div><div class="l">Most recent</div></div>
-      <div class="kpi"><div class="v">${new Set(audits.map(a=>a.dbCode)).size}</div><div class="l">Distinct DBs visited</div></div>
+      <div class="kpi"><div class="v">${distinctDBs}</div><div class="l">Distinct DBs visited</div></div>
     </div>
     <div class="card">
       <h2>Map — everywhere an audit was submitted</h2>
       <div id="journeyMap" style="margin-top:14px;">${mapPlaceholderOrLive(audits)}</div>
     </div>
     <div class="card">
-      <h2>Activity Timeline</h2>
-      <div class="table-wrap" style="margin-top:14px;"><table class="data"><thead><tr><th>Date</th><th>Audit Type</th><th>DB Code</th><th>DB Name</th><th>City</th><th>Map</th></tr></thead><tbody>
+      <h2>Activity Timeline <span style="font-weight:400; font-size:12px; color:var(--slate);">— every module this person has audited in</span></h2>
+      <div class="table-wrap" style="margin-top:14px;"><table class="data"><thead><tr><th>Date</th><th>Audit Type</th><th>DB Code</th><th>Outlet / DB Name</th><th>City</th><th>Map</th></tr></thead><tbody>
         ${audits.map(a=>`<tr>
-          <td class="mono">${a.date}</td><td>${a.auditType||''}</td><td class="mono">${a.dbCode||''}</td><td>${a.dbName||''}</td><td>${a.dbCity||''}</td>
+          <td class="mono">${a.date}</td><td>${a.auditType||''}</td><td class="mono">${a.dbCode||'—'}</td><td>${a.dbName||''}</td><td>${a.dbCity||''}</td>
           <td>${mapLinkHtml(mapsLinkFromLatLng(a.lat, a.lng, a.mapsLink))}</td>
         </tr>`).join('')}
       </tbody></table></div>
@@ -2792,6 +2792,7 @@ function renderNoProductReport(){
       <div style="padding:12px 14px;">
         <div style="font-weight:700; font-size:14px; color:var(--ink);">${r.outletName || '<span style="color:var(--slate); font-weight:400; font-style:italic;">Outlet name not given</span>'}</div>
         <div style="font-size:12px; color:var(--slate); margin-top:4px; line-height:1.5;">${r.address||'—'}</div>
+        ${r.additionalFeedback ? `<div style="font-size:12px; color:var(--ink); margin-top:8px; padding:8px 10px; background:var(--paper-2); border-radius:6px; line-height:1.5;">💬 ${r.additionalFeedback}</div>` : ''}
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; font-size:11.5px; color:var(--slate);">
           <span>👤 ${r.auditor||'—'}</span><span>${r.date||''}</span>
         </div>
@@ -2818,9 +2819,9 @@ function exportNoProductReport(){
   // exactly matching "click Export, nothing happens, no error at all".
   // A plain clickable-looking URL string is what every other export in
   // this dashboard actually uses reliably; this now matches that.
-  const headers = ['Date','Auditor','Auditor Mobile','Outlet Name','Address','Latitude','Longitude','Photo URL'];
+  const headers = ['Date','Auditor','Auditor Mobile','Outlet Name','Address','Latitude','Longitude','Photo URL','Additional Feedback'];
   const aoa = [headers, ...rows.map(r=>[
-    r.date||'', r.auditor||'', r.auditorMobile||'', r.outletName||'', r.address||'', r.lat||'', r.lng||'', r.photoUrl||''
+    r.date||'', r.auditor||'', r.auditorMobile||'', r.outletName||'', r.address||'', r.lat||'', r.lng||'', r.photoUrl||'', r.additionalFeedback||''
   ])];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = headers.map(h=>({wch: Math.max(14, h.length+2)}));
