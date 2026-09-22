@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.93.2 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.94.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1197,7 +1197,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.93.2';
+const FRONTEND_VERSION = 'v6.94.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2017,6 +2017,13 @@ async function callApi(payload, usePost){
   const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 25000);
   return safeJson(r);
 }
+function rerenderActiveTab(){
+  const activeTab = document.querySelector('nav.tabs button.active');
+  const name = activeTab ? activeTab.dataset.tab : 'dash';
+  if(name==='dash') renderDashboard();
+  else if(name==='history') renderHistory();
+  else if(name==='map') renderMap();
+}
 async function loadData(){
   if(MODULE === 'betaverse'){
     // Two independent fetches — deliberately NOT Promise.all, so that if
@@ -2039,6 +2046,23 @@ async function loadData(){
     }catch(e){ BETAVERSE_STATUS_CHECKS = []; }
     return;
   }
+  // Renders whatever this MODULE (Retail/DB) last successfully loaded,
+  // INSTANTLY from localStorage, before the network call even starts —
+  // same reasoning as loadAdAuditData()'s identical cache: the person
+  // never sees a blank tab, only slightly-stale data for a moment while
+  // the real fetch below silently refreshes it in the background. Keyed
+  // by MODULE + role, since Sales/Marketing/Admin can each see a
+  // different shape of the same module (e.g. the external sheet only
+  // for Sales/Admin) and must never show one role's cached data to
+  // another role sharing this browser.
+  const dataCacheKey = 'fieldaudit_data_cache_' + MODULE + '_' + (SESSION.role||'');
+  try{
+    const cached = JSON.parse(localStorage.getItem(dataCacheKey) || 'null');
+    if(cached && cached.rows && cached.rows.length){
+      ALL_DATA = cached.rows;
+      rerenderActiveTab();
+    }
+  }catch(_e){}
   try{
     if(!configured()) throw new Error('__NOCFG__');
     if(MODULE === 'db'){
@@ -2054,13 +2078,20 @@ async function loadData(){
       // never holding up the rest of the dashboard being usable.
       const res = await callApi({action:'getDBDataInternal', token:SESSION.token});
       ALL_DATA = res.rows || [];
+      try{ localStorage.setItem(dataCacheKey, JSON.stringify({rows: ALL_DATA, savedAt: Date.now()})); }catch(_e){}
+      rerenderActiveTab();
       fetchExternalDBDataInBackground();
       return;
     }
     const res = await callApi({action:'getData', token:SESSION.token});
     ALL_DATA = res.rows || [];
+    try{ localStorage.setItem(dataCacheKey, JSON.stringify({rows: ALL_DATA, savedAt: Date.now()})); }catch(_e){}
+    rerenderActiveTab();
   }catch(e){
-    ALL_DATA = [];
+    // Cached data (if any) is already rendered from above — a failed
+    // refresh just leaves it slightly stale rather than replacing real
+    // (if older) data with a blank screen or error.
+    if(!ALL_DATA.length) ALL_DATA = [];
   }
 }
 let EXTERNAL_DB_FETCH_IN_FLIGHT = false;
@@ -2817,17 +2848,42 @@ async function loadAdAuditData(){
   // just the KPI row), so there's always something on screen while it loads.
   if(AA_LOAD_IN_PROGRESS) return;
   AA_LOAD_IN_PROGRESS = true;
-  document.getElementById('aaKpiRow').innerHTML = `<div class="empty"><b>Loading…</b></div>`;
+  const from = document.getElementById('aaFrom').value, to = document.getElementById('aaTo').value;
+  const cacheKey = 'fieldaudit_aa_cache_' + from + '_' + to;
+  // Renders whatever this exact date-range last successfully loaded,
+  // INSTANTLY, before the network call even starts — this is what
+  // actually removes the "blank while loading" feeling: the person
+  // never sees an empty screen, only slightly-stale data for a moment
+  // while the real fetch below silently refreshes it. Different date
+  // ranges get their own cache entry, so switching "This Month" ↔ "This
+  // Week" ↔ custom dates never shows one range's data under another's
+  // label.
+  let renderedFromCache = false;
+  try{
+    const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+    if(cached && cached.rows && cached.rows.length){
+      AA_DATA = cached.rows;
+      const typeSel0 = document.getElementById('aaTypeFilter');
+      if(typeSel0.options.length <= 1){ [...FIXED_AD_TYPES_JS, ...MOVABLE_AD_TYPES_JS].forEach(t=> typeSel0.add(new Option(t,t))); }
+      renderAdAuditKpis();
+      renderAdAuditTable();
+      renderedFromCache = true;
+    }
+  }catch(_e){}
+  if(!renderedFromCache){
+    document.getElementById('aaKpiRow').innerHTML = `<div class="empty"><b>Loading…</b></div>`;
+    const tbody0 = document.querySelector('#aaTable tbody');
+    if(tbody0) tbody0.innerHTML = `<tr><td colspan="12"><div class="empty"><span class="spin"></span> Loading Ad Audit report…</div></td></tr>`;
+  }
   const tbody = document.querySelector('#aaTable tbody');
-  if(tbody) tbody.innerHTML = `<tr><td colspan="12"><div class="empty"><span class="spin"></span> Loading Ad Audit report…</div></td></tr>`;
   try{
     const params = new URLSearchParams({action:'getAllAdAudits'});
-    const from = document.getElementById('aaFrom').value, to = document.getElementById('aaTo').value;
     if(from) params.set('fromDate', from);
     if(to) params.set('toDate', to);
     const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?${params.toString()}&_t=${Date.now()}`, {cache:'no-store'}, 20000);
     const j = await r.json();
     AA_DATA = j.audits || [];
+    try{ localStorage.setItem(cacheKey, JSON.stringify({rows: AA_DATA, savedAt: Date.now()})); }catch(_e){} // best-effort — a full localStorage quota just means no cache benefit next time, never a failed load
     const typeSel = document.getElementById('aaTypeFilter');
     if(typeSel.options.length <= 1){
       [...FIXED_AD_TYPES_JS, ...MOVABLE_AD_TYPES_JS].forEach(t=> typeSel.add(new Option(t,t)));
@@ -2835,8 +2891,13 @@ async function loadAdAuditData(){
     renderAdAuditKpis();
     renderAdAuditTable();
   }catch(e){
-    document.getElementById('aaKpiRow').innerHTML = `<div class="empty">Internet is slower than expected — please wait a moment and try again.</div>`;
-    if(tbody) tbody.innerHTML = `<tr><td colspan="12"><div class="empty">Internet is slower than expected — please wait a moment, then reopen this tab.</div></td></tr>`;
+    // Cached data (if any) is already on screen from above — a failed
+    // refresh just means it stays slightly stale, which is far better
+    // than replacing real (if older) data with an error message.
+    if(!renderedFromCache){
+      document.getElementById('aaKpiRow').innerHTML = `<div class="empty">Internet is slower than expected — please wait a moment and try again.</div>`;
+      if(tbody) tbody.innerHTML = `<tr><td colspan="12"><div class="empty">Internet is slower than expected — please wait a moment, then reopen this tab.</div></td></tr>`;
+    }
   }finally{
     AA_LOAD_IN_PROGRESS = false;
   }
