@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.76.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.78.0</div></div>
   </div>
 </header>
 
@@ -431,6 +431,10 @@ window.onerror = function(msg, url, line, col, err){
     <div class="field" style="margin-top:14px;">
       <label>Outlet Name <span style="text-transform:none; font-weight:400;">(Optional)</span></label>
       <input type="text" id="npdNo_outletName" placeholder="If known — not required" autocomplete="off">
+    </div>
+    <div class="field" style="margin-top:14px;">
+      <label>Additional Feedback <span style="text-transform:none; font-weight:400;">(Optional)</span></label>
+      <textarea id="npdNo_additionalFeedback" rows="3" placeholder="Anything else worth noting — optional" autocomplete="off"></textarea>
     </div>
     <div class="field" style="margin-top:14px;">
       <label>Outlet Hoarding / Signboard — Outside <span class="req-mark">*</span> <span style="text-transform:none; font-weight:400;">(live camera only — address, date, time and your name are stamped on automatically)</span></label>
@@ -551,6 +555,13 @@ window.onerror = function(msg, url, line, col, err){
       <button class="btn btn-outline" onclick="tryOpenCamera('photoInput2')" id="photoBtn2" style="margin-top:6px;">📷 Capture second photo (optional)</button>
       <input type="file" id="photoInput2" accept="image/*" capture="environment" style="display:none" onchange="onPhoto2(event)">
       <img id="photoPreview2">
+    </div>
+  </div>
+
+  <div class="card locked-until-address npd-full-audit" style="display:none;">
+    <h2><span class="n">9</span>Additional Feedback <span style="text-transform:none; font-weight:400;">(Optional)</span></h2>
+    <div class="field" style="margin-top:14px;">
+      <textarea id="f_additionalFeedback" rows="3" placeholder="Anything else worth noting about this visit — optional" autocomplete="off"></textarea>
     </div>
   </div>
   </div> <!-- /retailModule -->
@@ -987,6 +998,7 @@ async function submitNoProductAudit(){
   const btn = document.getElementById('npdNo_submitBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Submitting…';
   const outletName = document.getElementById('npdNo_outletName').value.trim();
+  const additionalFeedback = document.getElementById('npdNo_additionalFeedback').value.trim();
   const today = localDateStr();
   // GEO.address (JS memory) is used here, not the DOM field's own
   // .value — this is what makes the address genuinely un-tamperable
@@ -1007,7 +1019,7 @@ async function submitNoProductAudit(){
     const stampedPhoto = await stampPhoto(NPD_NO_PHOTO_RAW, stampLines);
     payload = {
       action:'submitNoProductAudit', clientSubmissionId: generateClientSubmissionId(), date: today, auditor: CHECKIN_NAME, auditorMobile: CHECKIN_PHONE,
-      outletName, address: capturedAddress,
+      outletName, address: capturedAddress, additionalFeedback,
       lat: GEO.lat, lng: GEO.lng, accuracy: GEO.accuracy, photo: stampedPhoto
     };
     const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)}, 25000);
@@ -1031,6 +1043,7 @@ async function submitNoProductAudit(){
 function resetNoProductFlow(){
   NPD_NO_PHOTO_RAW = null;
   document.getElementById('npdNo_outletName').value = '';
+  document.getElementById('npdNo_additionalFeedback').value = '';
   document.getElementById('npdNo_photoPreview').style.display = 'none';
   document.getElementById('npdNo_photoBtn').textContent = '📷 Open Camera';
   const submitBtn = document.getElementById('npdNo_submitBtn');
@@ -2786,6 +2799,7 @@ async function submitAudit(){
     q8_visibilityRating: FORM.q8 || '',
     q9_posmAvailable: FORM.q9 || '',
     q10_nlbGsbBrand: document.getElementById('f_q10').value,
+    additionalFeedback: document.getElementById('f_additionalFeedback').value.trim(),
     geoLat: GEO.lat, geoLng: GEO.lng, geoAccuracy: GEO.accuracy, geoLink: GEO.link, geoAddress: GEO.address || ''
   };
   const payload = {
@@ -2799,6 +2813,7 @@ async function submitAudit(){
     q5_priceSource: formSnapshot.q5_priceSource, q7_billType: formSnapshot.q7_billType,
     invoiceGSTDetected: formSnapshot.invoiceGSTDetected, q8_visibilityRating: formSnapshot.q8_visibilityRating,
     q9_posmAvailable: formSnapshot.q9_posmAvailable, q10_nlbGsbBrand: formSnapshot.q10_nlbGsbBrand,
+    additionalFeedback: formSnapshot.additionalFeedback,
     photo: stampedOutlet, photo2: stampedOutlet2, billCount: INVOICE_PHOTOS.length,
     lat: formSnapshot.geoLat, lng: formSnapshot.geoLng, accuracy: formSnapshot.geoAccuracy,
     mapsLink: formSnapshot.geoLink, geoAddress: formSnapshot.geoAddress
@@ -2952,7 +2967,7 @@ function downloadLastPDF(e){
 document.getElementById('stampWrap').addEventListener('click', ()=>{ document.getElementById('stampWrap').style.display='none'; });
 
 function resetForm(){
-  ['f_auditor','f_district','f_city','f_distributor','f_route','f_outletName','f_outletType','f_address','f_ownerName','f_retailerPhone','f_q2','f_q5','f_q7','f_q10'].forEach(id=>document.getElementById(id).value='');
+  ['f_auditor','f_district','f_city','f_distributor','f_route','f_outletName','f_outletType','f_address','f_ownerName','f_retailerPhone','f_q2','f_q5','f_q7','f_q10','f_additionalFeedback'].forEach(id=>document.getElementById(id).value='');
   FORM = {};
   document.querySelectorAll('#retailModule .yn button').forEach(b=>b.classList.remove('sel-yes','sel-no'));
   document.querySelectorAll('.stars button').forEach(b=>b.classList.remove('on'));
