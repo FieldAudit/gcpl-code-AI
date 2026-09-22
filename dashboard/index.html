@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.94.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.95.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1000,6 +1000,17 @@ async function checkSystemHealth(){
   } else {
     banner.style.display = 'none';
   }
+  // Forces the browser to immediately recompute layout/paint right after
+  // this sticky-positioned banner appears or disappears — Chrome can
+  // otherwise leave the very next sibling in the DOM (moduleToggle, the
+  // Retail/DB/Ad Manager row) visually blank for several seconds even
+  // though it's really still there with correct styles the whole time
+  // (confirmed: getComputedStyle/elementFromPoint both report it fine
+  // during the glitch) — a known category of paint bug around dynamic
+  // sticky-element changes. Reading offsetHeight forces a synchronous
+  // reflow, which reliably clears it.
+  const mtEl = document.getElementById('moduleToggle');
+  if(mtEl){ void mtEl.offsetHeight; }
 }
 // Runs immediately (even before login) and every 5 minutes thereafter.
 checkSystemHealth();
@@ -1197,7 +1208,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.94.0';
+const FRONTEND_VERSION = 'v6.95.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1300,6 +1311,13 @@ function switchModule(mod){
     document.querySelector('main').style.display = 'none';
     document.getElementById('mktExpenseSection').style.display = 'none';
     document.getElementById('adAuditSection').style.display = 'block';
+    // Same forced-reflow safety net as checkSystemHealth() — switching
+    // INTO this module is exactly when the health banner is also most
+    // likely to be mid-transition, and moduleToggle (the row right
+    // above this section) has been seen going visually blank for
+    // several seconds right at this moment despite being structurally
+    // and stylistically fine the whole time.
+    { const mtEl2 = document.getElementById('moduleToggle'); if(mtEl2) void mtEl2.offsetHeight; }
     document.querySelectorAll('.tabs + section, section[id^="tab-"]').forEach(s=>s.style.display='none');
     window.scrollTo(0,0); // same reasoning as the mktexpense branch above
     startModuleSwitchProgress();
