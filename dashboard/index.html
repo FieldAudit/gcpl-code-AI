@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.96.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.97.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -643,7 +643,23 @@ table.data tr:hover td{background:var(--paper-2);}
   </div>
 </div>
 
-<div id="adAuditSection" style="display:none; padding:0 24px 24px;">
+<div id="adAuditSection" style="display:none; padding:0 24px 24px; position:relative;">
+  <!-- Full-cover loading overlay — deliberately hides EVERYTHING below
+       (module-toggle row included) until the Ad Audit report has fully
+       finished loading, rather than revealing pieces of it gradually as
+       they become ready. A rendering glitch specific to a brief window
+       right as this module's content and a system-health check happen
+       to overlap (confirmed structurally fine the moment it's inspected,
+       yet visually blank for several seconds) proved hard to eliminate
+       at the source across several attempts — so instead of a partial,
+       sometimes-glitchy reveal, the person now sees ONE clean loading
+       state, then the ENTIRE finished module all at once. Shown by
+       default; hidden by loadAdAuditData() the moment data is ready
+       (from cache instantly, or from the network once that resolves). -->
+  <div id="adAuditLoadingOverlay" style="position:absolute; inset:0; background:var(--paper); z-index:50; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; min-height:400px;">
+    <span class="spin" style="width:32px; height:32px; border-width:3px;"></span>
+    <div style="font-size:14px; color:var(--slate); font-weight:600;">Loading Ad Audit…</div>
+  </div>
   <div class="module-toggle" style="margin-bottom:16px;">
     <button class="active" data-aa="report" onclick="switchAdAuditTab('report')">📋 Ad Audit Report</button>
     <button data-aa="import" onclick="switchAdAuditTab('import')">📤 Import Existing Ads</button>
@@ -1208,7 +1224,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.96.0';
+const FRONTEND_VERSION = 'v6.97.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1311,6 +1327,13 @@ function switchModule(mod){
     document.querySelector('main').style.display = 'none';
     document.getElementById('mktExpenseSection').style.display = 'none';
     document.getElementById('adAuditSection').style.display = 'block';
+    // Shown fresh every time this module is entered — covers the whole
+    // section (including moduleToggle right above it) until
+    // loadAdAuditData() below hides it once the report is genuinely
+    // ready, so nothing partially-rendered or glitchy is ever visible
+    // in between.
+    const aaOverlay = document.getElementById('adAuditLoadingOverlay');
+    if(aaOverlay) aaOverlay.style.display = 'flex';
     // Same forced-reflow safety net as checkSystemHealth() — switching
     // INTO this module is exactly when the health banner is also most
     // likely to be mid-transition, and moduleToggle (the row right
@@ -2887,6 +2910,8 @@ async function loadAdAuditData(){
       renderAdAuditKpis();
       renderAdAuditTable();
       renderedFromCache = true;
+      const aaOverlay0 = document.getElementById('adAuditLoadingOverlay');
+      if(aaOverlay0) aaOverlay0.style.display = 'none'; // everything's ready (from cache) — reveal it all at once, right now
     }
   }catch(_e){}
   if(!renderedFromCache){
@@ -2919,6 +2944,13 @@ async function loadAdAuditData(){
     }
   }finally{
     AA_LOAD_IN_PROGRESS = false;
+    // Covers BOTH remaining paths — a successful fresh fetch (first ever
+    // load, no cache yet) and a failed one (still reveals the "internet
+    // slower than expected" message set above rather than staying stuck
+    // on the loading overlay forever). If cache already hid it earlier
+    // in this same call, this is a harmless no-op.
+    const aaOverlay = document.getElementById('adAuditLoadingOverlay');
+    if(aaOverlay) aaOverlay.style.display = 'none';
   }
 }
 function renderAdAuditKpis(){
@@ -3007,7 +3039,7 @@ function aaApplyVerifiedLocally(auditId, newLocationId, newRouteFrom, newRouteTo
    table's narrow Verification column — that inline box used to render
    awkwardly overlapping the adjacent Map/Photo links, which is exactly
    why this uses a real (if basic) dialog instead. */
-async function aaVerifyOne(auditId, needsLocationId, needsRoute){
+async function aaVerifyOne(auditId, needsLocationId, needsRoute, btn){
   let locationId = '', routeFrom = '', routeTo = '';
   if(needsLocationId){
     const entered = prompt('This ad has no Location ID on file — enter one to verify it:');
@@ -3024,18 +3056,27 @@ async function aaVerifyOne(auditId, needsLocationId, needsRoute){
     routeTo = to.trim();
     if(!routeFrom || !routeTo){ toast('Both Route From and Route To are required to verify', true); return; }
   }
+  // Immediate feedback the instant the click registers — without this,
+  // nothing on screen changed between the click and the response landing
+  // several seconds later, so it was impossible to tell whether the tap
+  // had even been received at all.
+  const originalHtml = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Verifying…'; }
   try{
     const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
       action:'verifyAudit', auditId, locationId, routeFrom, routeTo, role:SESSION.role, verifierName:SESSION.name, verifierMobile:SESSION.mobile||''
     })}, 20000).then(r=>r.json());
-    if(res.needsLocationId){ toast('This ad has no Location ID on file — enter one to verify', true); return; }
-    if(res.needsRoute){ toast('This movable ad has no Route From/To on file — enter both to verify', true); return; }
+    if(res.needsLocationId){ toast('This ad has no Location ID on file — enter one to verify', true); if(btn){ btn.disabled=false; btn.innerHTML=originalHtml; } return; }
+    if(res.needsRoute){ toast('This movable ad has no Route From/To on file — enter both to verify', true); if(btn){ btn.disabled=false; btn.innerHTML=originalHtml; } return; }
     if(!res.success) throw new Error(res.message||'Could not verify');
     toast('✅ Verified');
     aaApplyVerifiedLocally(auditId, locationId, routeFrom, routeTo);
     renderAdAuditKpis();
     renderAdAuditTable();
-  }catch(e){ toast(e.message||'Could not verify', true); }
+  }catch(e){
+    toast(e.message||'Could not verify', true);
+    if(btn){ btn.disabled = false; btn.innerHTML = originalHtml; }
+  }
 }
 async function aaVerifySelected(){
   if(!AA_SELECTED.size) return;
@@ -3122,7 +3163,7 @@ function renderAdAuditTable(){
       : (canVerify
           ? (isOwnSubmission
               ? `<span class="tag tag-no">Unverified</span><br><span style="font-size:10px; color:var(--slate);">(your own — needs another verifier)</span>`
-              : `<button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--green); border-color:var(--green);" onclick="aaVerifyOne('${a.auditId}', ${needsLocationId}, ${needsRoute})">✓ Verify</button>`
+              : `<button class="btn btn-outline" style="padding:4px 10px; font-size:11px; color:var(--green); border-color:var(--green);" onclick="aaVerifyOne('${a.auditId}', ${needsLocationId}, ${needsRoute}, this)">✓ Verify</button>`
                  + ((needsLocationId||needsRoute) ? `<br><span style="font-size:10px; color:var(--red);">${needsLocationId ? 'Needs a Location ID' : 'Needs Route From/To'} — will ask when you click Verify</span>` : ''))
           : `<span class="tag tag-no">Unverified</span>`);
     return `<tr>
