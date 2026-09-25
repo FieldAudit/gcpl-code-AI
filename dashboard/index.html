@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.97.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.98.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -393,7 +393,7 @@ table.data tr:hover td{background:var(--paper-2);}
     <button data-tab="master" id="masterTabBtn" onclick="showTab('master')" style="display:none;">Master Data</button>
     <button data-tab="team" id="teamTabBtn" onclick="showTab('team')" style="display:none;">Team</button>
     <button data-tab="auditorwise" id="auditorWiseTabBtn" onclick="showTab('auditorwise')" style="display:none;">👤 Auditor-wise</button>
-    <button data-tab="noproduct" id="noProductTabBtn" onclick="showTab('noproduct')" style="display:none;">🚫 NPD Outlet</button>
+    <button data-tab="noproduct" id="noProductTabBtn" onclick="showTab('noproduct')" style="display:none;">🚫 NPA</button>
   </nav>
 
   <main>
@@ -555,7 +555,7 @@ table.data tr:hover td{background:var(--paper-2);}
     </section>
     <section id="tab-noproduct" style="display:none;">
       <div class="card">
-        <h2>🚫 NPD Outlet — No Product Available Reports</h2>
+        <h2>🚫 NPA — No Product Available Reports</h2>
         <div class="hint">Every outlet visit where the auditor answered "No" to GCPL Availability — Distribution by Distributor. No other audit questions are asked in this case; just the outlet's hoarding photo as proof of visit.</div>
         <div class="filters" style="margin-top:14px;">
           <input type="text" id="noProductSearch" placeholder="Search outlet, auditor, address…" oninput="renderNoProductReport()">
@@ -859,7 +859,12 @@ function downloadBase64File(base64, filename, mime){
    the plain Blob+<a> mechanism already proven working elsewhere in this
    dashboard (downloadBase64File above). */
 function downloadWorkbook(wb, filename){
-  const wbArrayBuffer = XLSX.write(wb, {type:'array', bookType:'xlsx'});
+  // cellStyles: true is required for the free (Community Edition) build
+  // of this library to actually write any cell.s styling (fills, fonts,
+  // borders) into the .xlsx it produces — without it, style objects set
+  // on cells are silently dropped and the file comes out completely
+  // unstyled, with no error to explain why.
+  const wbArrayBuffer = XLSX.write(wb, {type:'array', bookType:'xlsx', cellStyles:true});
   const blob = new Blob([wbArrayBuffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1224,7 +1229,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.97.0';
+const FRONTEND_VERSION = 'v6.98.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2819,6 +2824,7 @@ function renderNoProductReport(){
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; font-size:11.5px; color:var(--slate);">
           <span>👤 ${r.auditor||'—'}</span><span>${r.date||''}</span>
         </div>
+        ${r.mapsLink ? `<a href="${r.mapsLink}" target="_blank" style="display:block; margin-top:8px; font-size:11.5px; color:var(--brand); text-decoration:none;">📍 View on Map</a>` : ''}
       </div>
     </div>
   `).join('');
@@ -2836,18 +2842,51 @@ function exportNoProductReport(){
     return true;
   });
   if(!rows.length){ toast('No data to export', true); return; }
-  // Plain photo URL as text, not a HYPERLINK() formula cell — mixing
-  // formula-object cells into a plain aoa_to_sheet() array (as the
-  // previous version did) failed completely silently in some cases,
-  // exactly matching "click Export, nothing happens, no error at all".
-  // A plain clickable-looking URL string is what every other export in
-  // this dashboard actually uses reliably; this now matches that.
-  const headers = ['Date','Auditor','Auditor Mobile','Outlet Name','Address','Latitude','Longitude','Photo URL','Additional Feedback'];
+  const headers = ['Date','Auditor','Auditor Mobile','Outlet Name','Address','Latitude','Longitude','Photo URL','Map View','Additional Feedback'];
   const aoa = [headers, ...rows.map(r=>[
-    r.date||'', r.auditor||'', r.auditorMobile||'', r.outletName||'', r.address||'', r.lat||'', r.lng||'', r.photoUrl||'', r.additionalFeedback||''
+    r.date||'', r.auditor||'', r.auditorMobile||'', r.outletName||'', r.address||'', r.lat||'', r.lng||'', r.photoUrl||'', '', r.additionalFeedback||''
   ])];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+  // Real clickable HYPERLINK formulas for Photo URL and Map View — set
+  // as individual cell objects AFTER the base sheet exists, which is the
+  // correct way to mix formulas into an aoa_to_sheet() result. Embedding
+  // {f:...} objects directly inside the plain array (an earlier version
+  // of this export did that) failed completely silently in some cases —
+  // this is the proven-working pattern already used by the other
+  // exports in this dashboard.
+  const photoCol = 'H', mapCol = 'I';
+  rows.forEach((r,i)=>{
+    const rowNum = i + 2; // +1 for header row, +1 for 1-based
+    if(r.photoUrl) ws[photoCol+rowNum] = {t:'s', f:`HYPERLINK("${r.photoUrl}","View Photo")`};
+    if(r.lat && r.lng){
+      const mapUrl = `https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}`;
+      ws[mapCol+rowNum] = {t:'s', f:`HYPERLINK("${mapUrl}","View Map")`};
+    }
+  });
   ws['!cols'] = headers.map(h=>({wch: Math.max(14, h.length+2)}));
+  // Colorful, "professional" header + alternating row banding — matches
+  // this dashboard's own brand navy. Cell styling in the free build of
+  // this library degrades gracefully to a plain, unstyled sheet if the
+  // installed version doesn't apply it, rather than breaking the export.
+  const headerStyle = {
+    fill: {patternType:'solid', fgColor:{rgb:'002060'}},
+    font: {bold:true, color:{rgb:'FFFFFF'}},
+    alignment: {vertical:'center', horizontal:'center'}
+  };
+  headers.forEach((h,i)=>{
+    const cellRef = XLSX.utils.encode_cell({r:0, c:i});
+    if(!ws[cellRef]) ws[cellRef] = {t:'s', v:h};
+    ws[cellRef].s = headerStyle;
+  });
+  for(let i=0;i<rows.length;i++){
+    if(i % 2 === 0) continue; // every other data row gets shaded
+    const rowNum = i + 1; // 0-based sheet row (row 0 is the header)
+    for(let c=0;c<headers.length;c++){
+      const cellRef = XLSX.utils.encode_cell({r:rowNum, c});
+      if(!ws[cellRef]) ws[cellRef] = {t:'s', v:''};
+      ws[cellRef].s = Object.assign({}, ws[cellRef].s, {fill:{patternType:'solid', fgColor:{rgb:'F2F4FA'}}});
+    }
+  }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'No Product Available');
   downloadWorkbook(wb, `No_Product_Available_${localDateStr()}.xlsx`);
