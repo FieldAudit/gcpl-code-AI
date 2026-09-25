@@ -339,7 +339,7 @@ window.onerror = function(msg, url, line, col, err){
       <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
       <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
     </svg>
-    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.79.0</div></div>
+    <div><div class="name">Field<span>Audit</span></div><div class="sub">GCPL Field Audits · v6.80.0</div></div>
   </div>
 </header>
 
@@ -1038,6 +1038,14 @@ async function submitNoProductAudit(){
     }
     toast(e.message || 'Could not submit. Please try again.', true);
     btn.disabled = false; btn.textContent = 'Submit';
+    if(payload && payload.clientSubmissionId){
+      const already = await checkIfAlreadySubmitted(payload.clientSubmissionId);
+      if(already && already.success){
+        toast('✅ Turns out that DID go through — no need to resubmit.');
+        showStamp(already.auditId || 'Saved', null, null);
+        resetNoProductFlow();
+      }
+    }
   }
 }
 function resetNoProductFlow(){
@@ -2726,6 +2734,30 @@ function showSubmitProgress(pct, label){
 function hideSubmitProgress(){
   document.getElementById('submitProgressOverlay').classList.remove('show');
 }
+/* Checks whether a submit attempt that appeared to fail on THIS device
+   (timeout / network error) actually succeeded on the server anyway —
+   Apps Script keeps running after the client's own timeout gives up
+   waiting, so a "failed" attempt can still finish and save a moment
+   later. Retries the check a couple of times with a short pause, since
+   asking immediately can catch the server mid-execution, before it's
+   written the result the idempotency cache would otherwise confirm.
+   Without this, a person who saw an error and tried again — with the
+   exact same still-filled-in form, since nothing here ever told them
+   otherwise — created a genuine duplicate audit, because a manual
+   retry generates a brand-new clientSubmissionId that the idempotency
+   guard alone can't catch (it only protects against the SAME attempt's
+   own automatic internal retry). */
+async function checkIfAlreadySubmitted(clientSubmissionId){
+  for(let attempt=0; attempt<3; attempt++){
+    if(attempt>0) await new Promise(res=>setTimeout(res, 3000));
+    try{
+      const r = await fetchWithTimeout(`${SCRIPT_URL}?action=checkSubmissionStatus&clientSubmissionId=${encodeURIComponent(clientSubmissionId)}`, {}, 8000, 0);
+      const j = await safeJson(r);
+      if(j.found) return j.result;
+    }catch(_e){}
+  }
+  return null;
+}
 async function submitAudit(){
   logBreadcrumb('Retail audit submit tapped');
   const missing = validateForm();
@@ -2856,9 +2888,20 @@ async function submitAudit(){
       });
       auditId = 'QUEUED';
     } else {
-      toast(e.message || 'Could not submit audit. Please try again.', true);
-      btn.disabled = false; btn.innerHTML = 'Submit audit';
-      return;
+      // Before assuming this genuinely failed, check whether the server
+      // actually finished processing it anyway — a slow response, a
+      // response that failed to parse, or any other non-network error
+      // can still mean the audit was saved; showing "try again" here
+      // without checking is exactly what led someone to resubmit the
+      // same still-filled form and create a genuine duplicate audit.
+      const already = await checkIfAlreadySubmitted(payload.clientSubmissionId);
+      if(already && already.success){
+        auditId = already.auditId || 'OK';
+      } else {
+        toast(e.message || 'Could not submit audit. Please try again.', true);
+        btn.disabled = false; btn.innerHTML = 'Submit audit';
+        return;
+      }
     }
   }
 
@@ -3076,9 +3119,14 @@ async function submitDBStockAudit(){
       queuePendingSubmission('db', SCRIPT_URL, payload, {});
       auditId = 'QUEUED';
     } else {
-      toast(e.message || 'Could not submit stock audit. Please try again.', true);
-      btn.disabled = false; btn.innerHTML = 'Submit stock audit';
-      return;
+      const already = await checkIfAlreadySubmitted(payload.clientSubmissionId);
+      if(already && already.success){
+        auditId = already.auditId || 'OK';
+      } else {
+        toast(e.message || 'Could not submit stock audit. Please try again.', true);
+        btn.disabled = false; btn.innerHTML = 'Submit stock audit';
+        return;
+      }
     }
   }
 
