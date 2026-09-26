@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.1.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.3.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -859,6 +859,40 @@ function downloadBase64File(base64, filename, mime){
    failure either. This builds the same file but downloads it through
    the plain Blob+<a> mechanism already proven working elsewhere in this
    dashboard (downloadBase64File above). */
+/* Shared "professional" styling for every Excel export in this
+   dashboard — dark navy header (bold, white text), alternating row
+   shading, and sensible column widths, so a report looks deliberately
+   designed rather than a bare data dump, consistently across every
+   module rather than each export reinventing its own look (or, as
+   several still did, having none at all). Call this AFTER building the
+   sheet with XLSX.utils.aoa_to_sheet(), passing the same headers array
+   and the number of DATA rows (not counting the header row itself).
+   Requires downloadWorkbook()'s own cellStyles:true flag to actually
+   make it into the written file — see that function's comment. */
+function applyProReportStyling(ws, headers, dataRowCount){
+  const headerStyle = {
+    fill: {patternType:'solid', fgColor:{rgb:'002060'}},
+    font: {bold:true, color:{rgb:'FFFFFF'}, sz:11},
+    alignment: {vertical:'center', horizontal:'center', wrapText:true}
+  };
+  headers.forEach((h,i)=>{
+    const cellRef = XLSX.utils.encode_cell({r:0, c:i});
+    if(!ws[cellRef]) ws[cellRef] = {t:'s', v:h};
+    ws[cellRef].s = headerStyle;
+  });
+  for(let i=0;i<dataRowCount;i++){
+    if(i % 2 === 0) continue; // every OTHER data row gets shaded — row 0 is the header, so data row i is sheet row i+1
+    const rowNum = i + 1;
+    for(let c=0;c<headers.length;c++){
+      const cellRef = XLSX.utils.encode_cell({r:rowNum, c});
+      if(!ws[cellRef]) ws[cellRef] = {t:'s', v:''};
+      ws[cellRef].s = Object.assign({}, ws[cellRef].s, {fill:{patternType:'solid', fgColor:{rgb:'F2F4FA'}}});
+    }
+  }
+  if(!ws['!cols']) ws['!cols'] = headers.map(h=>({wch: Math.max(14, String(h).length+2)}));
+  ws['!rows'] = ws['!rows'] || [];
+  ws['!rows'][0] = {hpt: 22}; // slightly taller header row
+}
 function downloadWorkbook(wb, filename){
   // cellStyles: true is required for the free (Community Edition) build
   // of this library to actually write any cell.s styling (fills, fonts,
@@ -1230,7 +1264,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.1.0';
+const FRONTEND_VERSION = 'v7.3.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1372,7 +1406,15 @@ function switchModule(mod){
     // under them on their next visit to the tab within the same session.
     if(!AA_DEFAULT_RANGE_SET){
       AA_DEFAULT_RANGE_SET = true;
-      setAaRangePreset('month').finally(finishModuleSwitchProgress);
+      setAaRangePreset('week').finally(()=>{
+        finishModuleSwitchProgress();
+        // Quietly warms the "All Time" cache slot in the background —
+        // never touches AA_DATA or re-renders anything the person is
+        // currently looking at (still "This Week" by default). If they
+        // later click "All Time" themselves, it comes back instantly
+        // from this cache instead of a fresh full fetch.
+        preloadAdAuditAllTimeInBackground();
+      });
     } else {
       loadAdAuditData().finally(finishModuleSwitchProgress);
     }
@@ -2125,7 +2167,21 @@ async function loadData(){
   }catch(_e){}
   try{
     if(!configured()) throw new Error('__NOCFG__');
+    // STEP 1 — fast path: last 7 days only, for EVERY module and role.
+    // A much smaller response (less to stringify server-side, transfer,
+    // and parse client-side) is what actually makes login/first-load
+    // feel fast, on top of whatever the cache above already showed.
+    // STEP 2 (loadFullDataInBackground below) then quietly fetches
+    // everything, replacing this partial view once it's ready — nobody
+    // is ever stuck seeing only a week's data; it's just what appears
+    // first.
+    const sinceDate = localDateStr(new Date(Date.now() - 7*24*60*60*1000));
     if(MODULE === 'db'){
+      const fastRes = await callApi({action:'getDBDataInternal', token:SESSION.token, sinceDate});
+      if(fastRes && fastRes.rows && fastRes.rows.length){
+        ALL_DATA = fastRes.rows;
+        rerenderActiveTab();
+      }
       // Split into a fast internal-only fetch (what the dashboard renders
       // immediately) and a separate, slower external-GCPL-sheet fetch that
       // runs in the background afterward — this used to be ONE combined
@@ -2136,23 +2192,45 @@ async function loadData(){
       // loadData() resolves; the external rows arrive later and get
       // merged in + silently re-rendered on top, whenever they're ready —
       // never holding up the rest of the dashboard being usable.
-      const res = await callApi({action:'getDBDataInternal', token:SESSION.token});
-      ALL_DATA = res.rows || [];
-      try{ localStorage.setItem(dataCacheKey, JSON.stringify({rows: ALL_DATA, savedAt: Date.now()})); }catch(_e){}
-      rerenderActiveTab();
+      loadFullDataInBackground('db', dataCacheKey);
       fetchExternalDBDataInBackground();
       return;
     }
-    const res = await callApi({action:'getData', token:SESSION.token});
-    ALL_DATA = res.rows || [];
-    try{ localStorage.setItem(dataCacheKey, JSON.stringify({rows: ALL_DATA, savedAt: Date.now()})); }catch(_e){}
-    rerenderActiveTab();
+    const fastRes = await callApi({action:'getData', token:SESSION.token, sinceDate});
+    if(fastRes && fastRes.rows && fastRes.rows.length){
+      ALL_DATA = fastRes.rows;
+      rerenderActiveTab();
+    }
+    loadFullDataInBackground('retail', dataCacheKey);
   }catch(e){
     // Cached data (if any) is already rendered from above — a failed
     // refresh just leaves it slightly stale rather than replacing real
     // (if older) data with a blank screen or error.
     if(!ALL_DATA.length) ALL_DATA = [];
+    // Even if the fast (7-day) fetch itself failed, still try the full
+    // background fetch below — it's a completely separate request and
+    // deserves its own independent chance to succeed.
+    loadFullDataInBackground(MODULE, dataCacheKey);
   }
+}
+/* STEP 2 of the "show this week fast, everything else quietly after"
+   pattern — a plain, un-dated fetch (every row, exactly like this
+   function always worked before sinceDate existed), run right after the
+   fast 7-day one, never blocking anything the person is already looking
+   at. Only re-renders if they're STILL on the same module by the time
+   this resolves — switching away mid-fetch shouldn't cause a jarring,
+   unrelated re-render of whatever they've moved on to. */
+async function loadFullDataInBackground(mod, dataCacheKey){
+  try{
+    if(!configured()) return;
+    const action = mod === 'db' ? 'getDBDataInternal' : 'getData';
+    const res = await callApi({action, token:SESSION.token});
+    if(res && res.rows){
+      ALL_DATA = res.rows;
+      try{ localStorage.setItem(dataCacheKey, JSON.stringify({rows: ALL_DATA, savedAt: Date.now()})); }catch(_e){}
+      if(MODULE === mod) rerenderActiveTab();
+    }
+  }catch(_e){} // the fast (7-day) data already shown stands as-is if this fails — never worse off than before this existed
 }
 let EXTERNAL_DB_FETCH_IN_FLIGHT = false;
 function fetchExternalDBDataInBackground(){
@@ -2273,6 +2351,7 @@ function exportUserPerformanceTable(){
   const aoa = [headers, ...rows];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = headers.map(h=>({wch: Math.max(12, String(h).length+2)}));
+  applyProReportStyling(ws, headers, rows.length);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'User Performance');
   downloadWorkbook(wb, `User_Performance_${MODULE}_${localDateStr()}.xlsx`);
@@ -2932,6 +3011,23 @@ function setAaRangePreset(preset){
   document.getElementById('aaTo').value = preset ? localDateStr(now) : '';
   return loadAdAuditData();
 }
+/* Silently warms the "All Time" localStorage cache slot in the
+   background — separate from AA_DATA and never triggers a re-render,
+   since the person is still looking at whatever range they actually
+   have open (This Week, by default). If they click "All Time"
+   themselves afterward, loadAdAuditData()'s own cache-first render
+   picks this up instantly instead of waiting on a fresh full fetch. */
+async function preloadAdAuditAllTimeInBackground(){
+  try{
+    if(!betaverseConfigured()) return;
+    const cacheKey = 'fieldaudit_aa_cache__'; // matches loadAdAuditData()'s own key format for from='' to=''
+    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAllAdAudits&_t=${Date.now()}`, {cache:'no-store'}, 30000);
+    const j = await r.json();
+    if(j && j.audits){
+      try{ localStorage.setItem(cacheKey, JSON.stringify({rows: j.audits, savedAt: Date.now()})); }catch(_e){}
+    }
+  }catch(_e){} // best-effort only — the visible "This Week" view already loaded fine on its own either way
+}
 async function loadAdAuditData(){
   // Guards against the blank-page gap some people were hitting: switching
   // to the Ad Audit tab quickly (double-click, or clicking away and back
@@ -3567,12 +3663,22 @@ function exportAdAuditReport(){
     a.auditorName||'', a.auditorMobile||'', a.date||'', a.time||'',
     a.lat||'', a.lng||'',
     a.runningStatus==='Yes' ? 'Running' : 'Not Running',
-    a.photoUrl ? {f: `HYPERLINK("${a.photoUrl}","View Photo")`} : '',
-    (a.lat&&a.lng) ? {f: `HYPERLINK("https://www.google.com/maps?q=${a.lat},${a.lng}","View Map")`} : '',
+    '', '', // Photo / Map — filled in as real HYPERLINK cell objects below, not embedded here (see the comment on that pattern)
     a.verificationStatus||'', a.verifiedBy||'', a.verifierRole||'', a.verificationDate||'', a.remarks||''
   ]);
   const ws = XLSX.utils.aoa_to_sheet([headers, ...body]);
-  ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
+  // Real clickable HYPERLINK formulas, set as individual cell objects
+  // AFTER the base sheet exists — embedding {f:...} objects directly
+  // inside the plain aoa_to_sheet() array (as this export used to do)
+  // failed completely silently in some cases, exactly the "export does
+  // nothing, no error" pattern chased down elsewhere in this dashboard.
+  const photoCol = 'O', mapCol = 'P';
+  AA_DATA.forEach((a,i)=>{
+    const rowNum = i + 2;
+    if(a.photoUrl) ws[photoCol+rowNum] = {t:'s', f:`HYPERLINK("${a.photoUrl}","View Photo")`};
+    if(a.lat && a.lng) ws[mapCol+rowNum] = {t:'s', f:`HYPERLINK("https://www.google.com/maps?q=${a.lat},${a.lng}","View Map")`};
+  });
+  applyProReportStyling(ws, headers, body.length);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Ad Audit Report');
   downloadWorkbook(wb, `AdAuditReport_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -4251,6 +4357,7 @@ function exportBetaverseAuditorReport(){
   ];
   const wsAuditor = XLSX.utils.aoa_to_sheet(auditorAoa);
   wsAuditor['!cols'] = auditorAoa[0].map(h=>({wch: Math.max(14, String(h).length+2)}));
+  applyProReportStyling(wsAuditor, auditorAoa[0], auditorAoa.length-1);
 
   // ---- Sheet 2: Full Detail (every field, incl. lat/long + address) ----
   const detailHeaders = ['Submission ID','Category','Status','Auditor','Auditor Phone','Address','City','Latitude','Longitude','Maps Link','Submitted Width (ft)','Submitted Height (ft)','Submitted Area','Area Unit','Measurement Method','Submitted Date','Approved Width (ft)','Approved Height (ft)','Approved Area','Site Condition','Verified By','Verified Date','Latest Status Check','Latest Check Date','Latest Check By'];
@@ -4266,6 +4373,7 @@ function exportBetaverseAuditorReport(){
   })];
   const wsDetail = XLSX.utils.aoa_to_sheet(detailAoa);
   wsDetail['!cols'] = detailHeaders.map(h=>({wch: Math.max(12, String(h).length+2)}));
+  applyProReportStyling(wsDetail, detailHeaders, detailAoa.length-1);
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsAuditor, 'By Auditor');
@@ -4350,6 +4458,7 @@ function exportPlainFallback(){
     const aoa = [headers, ...ALL_DATA.map(r=>keyMap.map(k=>r[k]??''))];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
+    applyProReportStyling(ws, headers, ALL_DATA.length);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'DB Stock Audit Data');
     downloadWorkbook(wb, `DB_Stock_Audit_Report_${localDateStr()}.xlsx`);
@@ -4360,6 +4469,7 @@ function exportPlainFallback(){
   const aoa = [headers, ...ALL_DATA.map(r=>keyMap.map(k=>r[k]??''))];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
+  applyProReportStyling(ws, headers, ALL_DATA.length);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Retail Audit Data');
   downloadWorkbook(wb, `Retail_Audit_Report_${localDateStr()}.xlsx`);
