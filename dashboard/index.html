@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.98.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v6.99.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1229,7 +1229,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v6.98.0';
+const FRONTEND_VERSION = 'v6.99.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1345,7 +1345,7 @@ function switchModule(mod){
     // above this section) has been seen going visually blank for
     // several seconds right at this moment despite being structurally
     // and stylistically fine the whole time.
-    { const mtEl2 = document.getElementById('moduleToggle'); if(mtEl2) void mtEl2.offsetHeight; }
+    { const mtEl2 = document.getElementById('moduleToggle'); if(mtEl2){ mtEl2.style.display = 'flex'; mtEl2.style.opacity = '1'; mtEl2.style.visibility = 'visible'; void mtEl2.offsetHeight; } }
     document.querySelectorAll('.tabs + section, section[id^="tab-"]').forEach(s=>s.style.display='none');
     window.scrollTo(0,0); // same reasoning as the mktexpense branch above
     startModuleSwitchProgress();
@@ -2950,7 +2950,7 @@ async function loadAdAuditData(){
       renderAdAuditTable();
       renderedFromCache = true;
       const aaOverlay0 = document.getElementById('adAuditLoadingOverlay');
-      if(aaOverlay0) aaOverlay0.style.display = 'none'; // everything's ready (from cache) — reveal it all at once, right now
+      if(aaOverlay0) aaOverlay0.style.display = 'none'; { const mt = document.getElementById('moduleToggle'); if(mt){ mt.style.display='flex'; mt.style.opacity='1'; mt.style.visibility='visible'; } }
     }
   }catch(_e){}
   if(!renderedFromCache){
@@ -2990,6 +2990,7 @@ async function loadAdAuditData(){
     // in this same call, this is a harmless no-op.
     const aaOverlay = document.getElementById('adAuditLoadingOverlay');
     if(aaOverlay) aaOverlay.style.display = 'none';
+    { const mt = document.getElementById('moduleToggle'); if(mt){ mt.style.display='flex'; mt.style.opacity='1'; mt.style.visibility='visible'; } }
   }
 }
 function renderAdAuditKpis(){
