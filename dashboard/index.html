@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.3.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.6.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1264,7 +1264,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.3.0';
+const FRONTEND_VERSION = 'v7.6.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2267,8 +2267,27 @@ let PHOTO_RETAIL_DATA = [];
 let PHOTO_DB_DATA = [];
 let PHOTOS_LOADED = false;
 let PHOTOS_LOADING_PROMISE = null; // guards against overlapping calls (tab-switch + sync button clicked close together) stepping on each other's progress bar
+function photosCacheKey(){ return 'fieldaudit_photos_cache_v1_' + (SESSION && SESSION.role || ''); }
 async function loadPhotosData(){
   if(!configured()) return;
+  // Renders instantly from whatever this role last saw, before any
+  // network call — same reasoning as the Dashboard/Ad Audit caches:
+  // opening Photos used to ALWAYS trigger its own full re-fetch of every
+  // retail + DB row, completely separately from whatever loadData() had
+  // JUST fetched moments earlier for the Dashboard view — two full reads
+  // of the same sheets for the same visit. This cache (and the
+  // background refresh below) means that redundant round-trip only ever
+  // has to happen once per browser, not once per tab-open.
+  if(!PHOTOS_LOADED){
+    try{
+      const cached = JSON.parse(localStorage.getItem(photosCacheKey()) || 'null');
+      if(cached && (cached.retail || cached.db)){
+        PHOTO_RETAIL_DATA = cached.retail || [];
+        PHOTO_DB_DATA = cached.db || [];
+        PHOTOS_LOADED = true;
+      }
+    }catch(_e){}
+  }
   // If a load is already in flight, join THAT one instead of starting a
   // second fetch + a second progress-bar interval racing the first —
   // that overlap (two intervals both writing to the same DOM elements,
@@ -2281,15 +2300,19 @@ async function loadPhotosData(){
     // response, not a stream), so this simulates a smooth, honest-feeling
     // climb instead of a static "Loading…" that gives no sense of motion —
     // ticks up gradually, capped short of 100% until the data actually
-    // arrives, then snaps to 100% for real.
+    // arrives, then snaps to 100% for real. Skipped entirely when cache
+    // already rendered above — no progress bar needed for an instant view.
     let simPct = 0;
     const fillEl = ()=>document.getElementById('photosProgressFill');
     const labelEl = ()=>document.getElementById('photosProgressLabel');
-    const tick = setInterval(()=>{
-      simPct = Math.min(88, simPct + (88-simPct)*0.15 + 2);
-      if(fillEl()) fillEl().style.width = simPct+'%';
-      if(labelEl()) labelEl().textContent = `Fetching photo records… ${Math.round(simPct)}%`;
-    }, 180);
+    let tick = null;
+    if(!PHOTOS_LOADED){
+      tick = setInterval(()=>{
+        simPct = Math.min(88, simPct + (88-simPct)*0.15 + 2);
+        if(fillEl()) fillEl().style.width = simPct+'%';
+        if(labelEl()) labelEl().textContent = `Fetching photo records… ${Math.round(simPct)}%`;
+      }, 180);
+    }
     try{
       const [retailRes, dbRes] = await Promise.all([
         callApi({action:'getData', token:SESSION.token}),
@@ -2298,10 +2321,12 @@ async function loadPhotosData(){
       PHOTO_RETAIL_DATA = retailRes.rows || [];
       PHOTO_DB_DATA = dbRes.rows || [];
       PHOTOS_LOADED = true;
+      try{ localStorage.setItem(photosCacheKey(), JSON.stringify({retail: PHOTO_RETAIL_DATA, db: PHOTO_DB_DATA, savedAt: Date.now()})); }catch(_e){}
+      renderPhotos(); // re-render with the fresh data even if cache already rendered something slightly stale above
     }catch(e){
-      PHOTO_RETAIL_DATA = []; PHOTO_DB_DATA = [];
+      if(!PHOTOS_LOADED){ PHOTO_RETAIL_DATA = []; PHOTO_DB_DATA = []; }
     }finally{
-      clearInterval(tick);
+      if(tick) clearInterval(tick);
       if(fillEl()){ fillEl().style.width = '100%'; }
       if(labelEl()){ labelEl().textContent = 'Fetching photo records… 100%'; }
       PHOTOS_LOADING_PROMISE = null; // free to start a fresh load next time (e.g. after syncNow resets PHOTOS_LOADED)
@@ -2922,67 +2947,29 @@ function renderNoProductReport(){
     </div>
   `).join('');
 }
-function exportNoProductReport(){
-  const search = (document.getElementById('noProductSearch').value||'').toLowerCase();
+async function exportNoProductReport(){
   const from = document.getElementById('noProductFrom').value, to = document.getElementById('noProductTo').value;
-  const rows = NO_PRODUCT_DATA.filter(r=>{
-    if(from && r.date < from) return false;
-    if(to && r.date > to) return false;
-    if(search){
-      const hay = `${r.outletName||''} ${r.auditor||''} ${r.address||''}`.toLowerCase();
-      if(!hay.includes(search)) return false;
-    }
-    return true;
-  });
-  if(!rows.length){ toast('No data to export', true); return; }
-  const headers = ['Date','Auditor','Auditor Mobile','Outlet Name','Address','Latitude','Longitude','Photo URL','Map View','Additional Feedback'];
-  const aoa = [headers, ...rows.map(r=>[
-    r.date||'', r.auditor||'', r.auditorMobile||'', r.outletName||'', r.address||'', r.lat||'', r.lng||'', r.photoUrl||'', '', r.additionalFeedback||''
-  ])];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  // Real clickable HYPERLINK formulas for Photo URL and Map View — set
-  // as individual cell objects AFTER the base sheet exists, which is the
-  // correct way to mix formulas into an aoa_to_sheet() result. Embedding
-  // {f:...} objects directly inside the plain array (an earlier version
-  // of this export did that) failed completely silently in some cases —
-  // this is the proven-working pattern already used by the other
-  // exports in this dashboard.
-  const photoCol = 'H', mapCol = 'I';
-  rows.forEach((r,i)=>{
-    const rowNum = i + 2; // +1 for header row, +1 for 1-based
-    if(r.photoUrl) ws[photoCol+rowNum] = {t:'s', f:`HYPERLINK("${r.photoUrl}","View Photo")`};
-    if(r.lat && r.lng){
-      const mapUrl = `https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}`;
-      ws[mapCol+rowNum] = {t:'s', f:`HYPERLINK("${mapUrl}","View Map")`};
-    }
-  });
-  ws['!cols'] = headers.map(h=>({wch: Math.max(14, h.length+2)}));
-  // Colorful, "professional" header + alternating row banding — matches
-  // this dashboard's own brand navy. Cell styling in the free build of
-  // this library degrades gracefully to a plain, unstyled sheet if the
-  // installed version doesn't apply it, rather than breaking the export.
-  const headerStyle = {
-    fill: {patternType:'solid', fgColor:{rgb:'002060'}},
-    font: {bold:true, color:{rgb:'FFFFFF'}},
-    alignment: {vertical:'center', horizontal:'center'}
-  };
-  headers.forEach((h,i)=>{
-    const cellRef = XLSX.utils.encode_cell({r:0, c:i});
-    if(!ws[cellRef]) ws[cellRef] = {t:'s', v:h};
-    ws[cellRef].s = headerStyle;
-  });
-  for(let i=0;i<rows.length;i++){
-    if(i % 2 === 0) continue; // every other data row gets shaded
-    const rowNum = i + 1; // 0-based sheet row (row 0 is the header)
-    for(let c=0;c<headers.length;c++){
-      const cellRef = XLSX.utils.encode_cell({r:rowNum, c});
-      if(!ws[cellRef]) ws[cellRef] = {t:'s', v:''};
-      ws[cellRef].s = Object.assign({}, ws[cellRef].s, {fill:{patternType:'solid', fgColor:{rgb:'F2F4FA'}}});
-    }
+  if(!NO_PRODUCT_DATA.length){ toast('No data to export', true); return; }
+  const btn = event.currentTarget;
+  const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Preparing…';
+  try{
+    if(!configured()) throw new Error('__NOCFG__');
+    // Routed through the SAME backend export mechanism as the main
+    // Retail/DB reports (a real, styled Google Sheet, then exported as
+    // .xlsx) rather than building the file client-side — the free
+    // XLSX.js build loaded in this dashboard turned out to silently
+    // drop any cell styling on write (cellStyles:true had no actual
+    // effect), so a report built that way could never come out
+    // colored no matter what was set on it. This is what actually
+    // fixes it.
+    const res = await callApi({action:'exportReport', token:SESSION.token, module:'noproduct', fromDate:from, toDate:to});
+    if(!res.success) throw new Error(res.message || 'Export failed');
+    downloadBase64File(res.base64, res.filename);
+  }catch(e){
+    toast(e.message==='__NOCFG__' ? 'Backend not connected' : (e.message || 'Could not export'), true);
+  }finally{
+    btn.disabled = false; btn.innerHTML = orig;
   }
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'No Product Available');
-  downloadWorkbook(wb, `No_Product_Available_${localDateStr()}.xlsx`);
 }
 let AA_LOAD_IN_PROGRESS = false;
 let AA_DEFAULT_RANGE_SET = false;
@@ -4287,6 +4274,18 @@ function startExportProgress(){
     if(nextStatusIdx !== statusIdx){ statusIdx = nextStatusIdx; statusEl.textContent = statuses[statusIdx]; }
   }, 220);
 }
+/* Used only by the multi-batch photo-ZIP loop above — overrides
+   startExportProgress()'s own simulated auto-incrementing timer with a
+   REAL percentage and label ("Preparing batch 2 of 4…"), since across
+   several sequential batches the simulated climb-to-92%-then-stall
+   would be actively misleading (it would look stuck between batches). */
+function updateExportProgress(pct, label){
+  clearInterval(EXPORT_PROGRESS_TIMER);
+  const pctEl = document.getElementById('exportPct');
+  const statusEl = document.getElementById('exportStatus');
+  if(pctEl) pctEl.textContent = Math.round(pct) + '%';
+  if(statusEl) statusEl.textContent = label;
+}
 function finishExportProgress(){
   clearInterval(EXPORT_PROGRESS_TIMER);
   const overlay = document.getElementById('exportOverlay');
@@ -4393,6 +4392,7 @@ function togglePhotoSelectAll(box){
   else CURRENT_PHOTO_LIST.forEach(p=>SELECTED_PHOTO_KEYS.delete(photoKey(p)));
   renderPhotos();
 }
+const PHOTO_EXPORT_BATCH_SIZE = 250; // must match the backend's own PHOTO_EXPORT_BATCH_SIZE constant
 async function exportPhotosZip(){
   if(!PHOTOS_LOADED){ toast('Photos are still loading — try again in a moment', true); return; }
   const btn = event.currentTarget;
@@ -4401,7 +4401,6 @@ async function exportPhotosZip(){
   const selected = CURRENT_PHOTO_LIST.filter(p=>SELECTED_PHOTO_KEYS.has(photoKey(p)));
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    let res;
     if(selected.length){
       // Selected-photos mode — export exactly what's checked, regardless of
       // date range. A card can now represent MULTIPLE images (the 2-photo
@@ -4420,7 +4419,24 @@ async function exportPhotosZip(){
         }
       });
       const manifestHeader = ['Filename','Date','Type','Name','Source', ...(selected[0].details||[]).map(d=>d[0])];
-      res = await callApi({action:'exportSelectedPhotosZip', token:SESSION.token, items, manifestHeader}, true);
+      // A large selection is sliced into batches HERE (client-side),
+      // since this list came from checkboxes, not a server-side date
+      // query the backend can re-slice itself — same automatic-batching
+      // idea as the date-range path below, just driven from this end.
+      const totalBatches = Math.ceil(items.length / PHOTO_EXPORT_BATCH_SIZE) || 1;
+      for(let b=0; b<totalBatches; b++){
+        if(totalBatches > 1){
+          const pct = Math.round((b/totalBatches)*100);
+          updateExportProgress(pct, `Preparing batch ${b+1} of ${totalBatches}…`);
+        }
+        const batchItems = items.slice(b*PHOTO_EXPORT_BATCH_SIZE, (b+1)*PHOTO_EXPORT_BATCH_SIZE);
+        const res = await callApi({action:'exportSelectedPhotosZip', token:SESSION.token, items: batchItems, manifestHeader}, true);
+        if(!res.success) throw new Error(res.message || 'Could not create the ZIP');
+        downloadBase64File(res.base64, res.filename, 'application/zip');
+        toast(`Batch ${b+1} of ${totalBatches}: ${res.count} photo${res.count===1?'':'s'} downloaded`);
+        if(b < totalBatches-1) await new Promise(r=>setTimeout(r, 600)); // small gap so the browser doesn't drop a download that lands right on top of the previous one
+      }
+      finishExportProgress();
     } else {
       const fromDate = document.getElementById('photoFrom').value;
       const toDate = document.getElementById('photoTo').value;
@@ -4430,12 +4446,27 @@ async function exportPhotosZip(){
         btn.disabled = false; btn.innerHTML = orig;
         return;
       }
-      res = await callApi({action:'exportPhotosZip', token:SESSION.token, module:MODULE, fromDate, toDate});
+      // First call always fetches batch 0 — its response tells us
+      // totalBatches, so a date range that happens to be small still
+      // completes in exactly one round trip, same as before this existed.
+      let batchIndex = 0, totalBatches = 1;
+      do{
+        if(totalBatches > 1){
+          const pct = Math.round((batchIndex/totalBatches)*100);
+          updateExportProgress(pct, `Preparing batch ${batchIndex+1} of ${totalBatches}…`);
+        }
+        const res = await callApi({action:'exportPhotosZip', token:SESSION.token, module:MODULE, fromDate, toDate, batchIndex});
+        if(!res.success) throw new Error(res.message || 'Could not create the ZIP');
+        totalBatches = res.totalBatches || 1;
+        downloadBase64File(res.base64, res.filename, 'application/zip');
+        toast(totalBatches > 1
+          ? `Batch ${batchIndex+1} of ${totalBatches}: ${res.count} photo${res.count===1?'':'s'} downloaded`
+          : `${res.count} photo${res.count===1?'':'s'} downloaded, with a Manifest.csv listing the details`);
+        batchIndex++;
+        if(batchIndex < totalBatches) await new Promise(r=>setTimeout(r, 600));
+      } while(batchIndex < totalBatches);
+      finishExportProgress();
     }
-    if(!res.success) throw new Error(res.message || 'Could not create the ZIP');
-    finishExportProgress();
-    downloadBase64File(res.base64, res.filename, 'application/zip');
-    toast(`${res.count} photo${res.count===1?'':'s'} downloaded, with a Manifest.csv listing the details`);
   }catch(e){
     finishExportProgress();
     toast(e.message==='__NOCFG__' ? 'Backend not connected' : (e.message || 'Could not create the ZIP'), true);
