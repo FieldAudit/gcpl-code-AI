@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.6.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.7.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -859,6 +859,249 @@ function downloadBase64File(base64, filename, mime){
    failure either. This builds the same file but downloads it through
    the plain Blob+<a> mechanism already proven working elsewhere in this
    dashboard (downloadBase64File above). */
+/* ================= Local data store (IndexedDB) =================
+   localStorage only holds ~5 MB per site. Once the retail/DB history grew
+   past that, every setItem() threw QuotaExceededError — which a silent
+   try/catch swallowed — so nothing was actually being cached and every
+   load/export went back to Google Sheets. IndexedDB's quota is typically
+   hundreds of MB or more, and it stores the rows as-is (no JSON round
+   trip), so the whole history fits and reads back fast. */
+const IDB = (function(){
+  let dbp = null;
+  function open(){
+    if(dbp) return dbp;
+    dbp = new Promise((resolve, reject)=>{
+      try{
+        if(!window.indexedDB){ reject(new Error('IndexedDB unavailable')); return; }
+        const req = indexedDB.open('fieldaudit_cache', 1);
+        req.onupgradeneeded = ()=>{ req.result.createObjectStore('kv'); };
+        req.onsuccess = ()=> resolve(req.result);
+        req.onerror = ()=> reject(req.error);
+        req.onblocked = ()=> reject(new Error('IndexedDB blocked'));
+      }catch(e){ reject(e); }
+    });
+    dbp.catch(()=>{ dbp = null; });
+    return dbp;
+  }
+  async function get(key){
+    try{
+      const db = await open();
+      return await new Promise((res, rej)=>{
+        const r = db.transaction('kv','readonly').objectStore('kv').get(key);
+        r.onsuccess = ()=> res(r.result);
+        r.onerror = ()=> rej(r.error);
+      });
+    }catch(_e){ return undefined; }
+  }
+  async function set(key, value){
+    try{
+      const db = await open();
+      return await new Promise((res, rej)=>{
+        const tx = db.transaction('kv','readwrite');
+        tx.objectStore('kv').put(value, key);
+        tx.oncomplete = ()=> res(true);
+        tx.onerror = ()=> rej(tx.error);
+        tx.onabort = ()=> rej(tx.error);
+      });
+    }catch(_e){ return false; }
+  }
+  return {get, set};
+})();
+// The old localStorage caches could never hold the full history anyway — clear whatever is left of them
+// so they stop eating into the small localStorage quota the login session itself needs.
+(function clearOldLocalStorageCaches(){
+  try{
+    const stale = [];
+    for(let i=0; i<localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && (k.indexOf('fieldaudit_data_cache_')===0 || k.indexOf('fieldaudit_photos_cache_')===0 || k.indexOf('fieldaudit_aa_cache_')===0)) stale.push(k);
+    }
+    stale.forEach(k=>localStorage.removeItem(k));
+  }catch(_e){}
+})();
+
+/* Builds a "pro" styled Excel workbook entirely in the browser — a Summary
+   sheet (title banner, KPI cards, breakdown table) plus a Details sheet
+   (navy header, frozen header row, filter, zebra rows, borders, green/red
+   status cells, real clickable links). Pure function of its inputs: no DOM,
+   no network, so a report of any size comes from whatever is already
+   stored locally, with none of the server-side time/size limits.
+   spec = {title, rangeLabel, sheetName, columns, rows, kpis, breakdown, onProgress}
+   column = {h:'Header', k:'rowKey' | get:fn(row), t:'text'|'num'|'status'|'link', label:'link text', w:width} */
+async function buildProWorkbook(ExcelJS, spec){
+  const NAVY='FF12172B', CREAM='FFFAF8F1', BAND='FFF1ECE0', LINE='FFD8D2C4', ACCENT='FF5B5FEF', GREY='FF6B7280';
+  const solid = argb => ({type:'pattern', pattern:'solid', fgColor:{argb}});
+  const thin = {style:'thin', color:{argb:LINE}};
+  const BORDER = {top:thin, left:thin, bottom:thin, right:thin};
+  const FONT = {name:'Calibri', size:10};
+  const FONT_LINK = {name:'Calibri', size:10, color:{argb:'FF0563C1'}, underline:true};
+  const OK = {fill:solid('FFE7F3EC'), font:{name:'Calibri', size:10, bold:true, color:{argb:'FF1B7A43'}}};
+  const BAD = {fill:solid('FFFBEAE8'), font:{name:'Calibri', size:10, bold:true, color:{argb:'FFC0392B'}}};
+  const GOOD_WORDS = ['yes','running','verified','approved','good'];
+  const BAD_WORDS = ['no','not running','poor','not visible','rejected'];
+  const prog = spec.onProgress || function(){};
+  const yieldUi = () => new Promise(r => setTimeout(r, 0));
+  const cols = spec.columns, rows = spec.rows;
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'FieldAudit'; wb.created = new Date();
+
+  /* ---------- Summary sheet ---------- */
+  const ws1 = wb.addWorksheet('Summary', {properties:{tabColor:{argb:ACCENT}}, views:[{showGridLines:false}]});
+  const kpis = spec.kpis || [];
+  const nCols = Math.max(6, kpis.length * 2);
+  for(let c=1; c<=nCols; c++) ws1.getColumn(c).width = 16;
+  ws1.mergeCells(1,1,1,nCols);
+  for(let c=1; c<=nCols; c++) ws1.getCell(1,c).fill = solid(NAVY);
+  const tc = ws1.getCell(1,1);
+  tc.value = spec.title;
+  tc.font = {name:'Calibri', size:18, bold:true, color:{argb:'FFFFFFFF'}};
+  tc.alignment = {vertical:'middle', horizontal:'left', indent:1};
+  ws1.getRow(1).height = 40;
+  const gen = 'Generated: ' + new Date().toLocaleString('en-IN', {timeZone:'Asia/Kolkata'}) + ' IST' + (spec.rangeLabel ? '   |   ' + spec.rangeLabel : '');
+  ws1.getCell(2,1).value = gen;
+  ws1.getCell(2,1).font = {name:'Calibri', size:10, color:{argb:GREY}};
+
+  let col = 1;
+  const gap = {left:{style:'medium', color:{argb:'FFFFFFFF'}}, right:{style:'medium', color:{argb:'FFFFFFFF'}}};
+  kpis.forEach(k=>{
+    ws1.mergeCells(4,col,4,col+1); ws1.mergeCells(5,col,5,col+1);
+    const v = ws1.getCell(4,col), l = ws1.getCell(5,col);
+    v.value = k.value; v.font = {name:'Calibri', size:22, bold:true, color:{argb:NAVY}};
+    v.alignment = {horizontal:'center', vertical:'middle'};
+    l.value = k.label; l.font = {name:'Calibri', size:10, color:{argb:GREY}};
+    l.alignment = {horizontal:'center', vertical:'middle'};
+    for(let cc=col; cc<=col+1; cc++){
+      ws1.getCell(4,cc).fill = solid(BAND); ws1.getCell(5,cc).fill = solid(BAND);
+      ws1.getCell(4,cc).border = gap; ws1.getCell(5,cc).border = gap;
+    }
+    col += 2;
+  });
+  ws1.getRow(4).height = 42; ws1.getRow(5).height = 20;
+
+  const bd = spec.breakdown;
+  if(bd && bd.rows && bd.rows.length){
+    ws1.getCell(7,1).value = 'Breakdown';
+    ws1.getCell(7,1).font = {name:'Calibri', size:12, bold:true, color:{argb:NAVY}};
+    // first column spans two sheet columns (names can be long), the rest take one each
+    const place = (r, vals, isHead, i) => {
+      ws1.mergeCells(r,1,r,2);
+      vals.forEach((val, j)=>{
+        const c = j === 0 ? 1 : j + 2;
+        const cell = ws1.getCell(r, c);
+        cell.value = val;
+        cell.border = BORDER;
+        if(isHead){ cell.fill = solid(NAVY); cell.font = {name:'Calibri', size:10, bold:true, color:{argb:CREAM}}; cell.alignment = {vertical:'middle', horizontal: j===0?'left':'center'}; }
+        else { cell.font = FONT; cell.fill = solid(i % 2 ? BAND : 'FFFFFFFF'); cell.alignment = {horizontal: j===0?'left':'center'}; }
+      });
+      ws1.getCell(r,2).border = BORDER; ws1.getCell(r,2).fill = ws1.getCell(r,1).fill;
+    };
+    place(8, bd.headers, true, 0);
+    bd.rows.forEach((vals, i)=> place(9 + i, vals, false, i));
+  }
+
+  ws1.pageSetup = {orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:1, paperSize:9};
+
+  /* ---------- Details sheet ---------- */
+  const ws2 = wb.addWorksheet(spec.sheetName || 'Details', {views:[{state:'frozen', ySplit:1}]});
+  // widths: from header text and a sample of the content, clamped
+  const widths = cols.map(c=>{
+    if(c.w) return c.w;
+    if(c.t === 'link') return 18;
+    let m = String(c.h).length + 3;
+    for(let i=0; i<Math.min(rows.length, 200); i++){
+      const v = c.get ? c.get(rows[i]) : rows[i][c.k];
+      const len = v == null ? 0 : String(v).length;
+      if(len + 2 > m) m = len + 2;
+    }
+    return Math.max(10, Math.min(m, 42));
+  });
+  ws2.columns = cols.map((c,i)=>({header:c.h, key:'c'+i, width:widths[i]}));
+  const hr = ws2.getRow(1);
+  hr.height = 28;
+  hr.eachCell({includeEmpty:true}, cell=>{
+    cell.fill = solid(NAVY);
+    cell.font = {name:'Calibri', size:11, bold:true, color:{argb:CREAM}};
+    cell.alignment = {vertical:'middle', horizontal:'center', wrapText:true};
+    cell.border = BORDER;
+  });
+
+  const CHUNK = 400;
+  for(let i=0; i<rows.length; i++){
+    const r = rows[i];
+    const vals = cols.map(c=>{
+      const raw = c.get ? c.get(r) : r[c.k];
+      if(raw == null || raw === '') return '';
+      if(c.t === 'num'){ const n = Number(raw); return isFinite(n) ? n : String(raw); }
+      if(c.t === 'link'){
+        const u = String(raw).trim();
+        return /^https?:\/\//i.test(u) ? {text: c.label || 'Open', hyperlink: u} : '';
+      }
+      return String(raw);
+    });
+    // values are set cell-by-cell (not via addRow(array)) so nothing depends on how the library sniffs array types
+    const row = ws2.getRow(i + 2);
+    const zebra = i % 2 === 1;
+    for(let j=0; j<cols.length; j++){
+      const cell = row.getCell(j+1);
+      if(vals[j] !== '') cell.value = vals[j];
+      const c = cols[j];
+      cell.border = BORDER;
+      if(zebra) cell.fill = solid(BAND);
+      if(c.t === 'link' && vals[j] !== ''){ cell.font = FONT_LINK; }
+      else if(c.t === 'status' && vals[j] !== ''){
+        const low = String(vals[j]).toLowerCase();
+        if(GOOD_WORDS.indexOf(low) >= 0){ cell.fill = OK.fill; cell.font = OK.font; cell.alignment = {horizontal:'center'}; }
+        else if(BAD_WORDS.indexOf(low) >= 0){ cell.fill = BAD.fill; cell.font = BAD.font; cell.alignment = {horizontal:'center'}; }
+        else cell.font = FONT;
+      } else cell.font = FONT;
+    }
+    if((i + 1) % CHUNK === 0){ prog(Math.round(((i+1)/rows.length)*100), 'Formatting rows… ' + (i+1) + ' of ' + rows.length); await yieldUi(); }
+  }
+  if(rows.length){
+    ws2.autoFilter = {from:{row:1, column:1}, to:{row:rows.length + 1, column:cols.length}};
+  }
+  ws2.pageSetup = {orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, paperSize:9, printTitlesRow:'1:1'};
+  prog(100, 'Finishing…');
+  return wb;
+}
+
+/* ExcelJS (the library that can actually write colours/links into an .xlsx) is loaded only when a
+   report is exported, then cached by the browser. */
+let EXCELJS_PROMISE = null;
+function loadExcelJS(){
+  if(window.ExcelJS) return Promise.resolve();
+  if(EXCELJS_PROMISE) return EXCELJS_PROMISE;
+  EXCELJS_PROMISE = new Promise((resolve, reject)=>{
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    sc.onload = ()=> window.ExcelJS ? resolve() : (EXCELJS_PROMISE = null, reject(new Error('Excel engine failed to start')));
+    sc.onerror = ()=>{ EXCELJS_PROMISE = null; reject(new Error('Could not load the Excel engine — check your internet')); };
+    document.head.appendChild(sc);
+  });
+  return EXCELJS_PROMISE;
+}
+function downloadBlobFile(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 60000);
+}
+/* spec = what buildProWorkbook() takes, plus filenameBase. Everything happens in the browser. */
+async function runLocalProExport(spec){
+  updateExportProgress(10, 'Loading Excel engine…');
+  await loadExcelJS();
+  updateExportProgress(16, 'Building report…');
+  const wb = await buildProWorkbook(window.ExcelJS, Object.assign({}, spec, {
+    onProgress: (pct, label)=> updateExportProgress(16 + pct * 0.74, label)
+  }));
+  updateExportProgress(93, 'Saving file…');
+  const buf = await wb.xlsx.writeBuffer();
+  updateExportProgress(100, 'Done');
+  downloadBlobFile(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), spec.filenameBase + '.xlsx');
+}
+
 /* Shared "professional" styling for every Excel export in this
    dashboard — dark navy header (bold, white text), alternating row
    shading, and sensible column widths, so a report looks deliberately
@@ -1264,7 +1507,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.6.0';
+const FRONTEND_VERSION = 'v7.7.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2148,115 +2391,109 @@ async function loadData(){
     }catch(e){ BETAVERSE_STATUS_CHECKS = []; }
     return;
   }
-  // Renders whatever this MODULE (Retail/DB) last successfully loaded,
-  // INSTANTLY from localStorage, before the network call even starts —
-  // same reasoning as loadAdAuditData()'s identical cache: the person
-  // never sees a blank tab, only slightly-stale data for a moment while
-  // the real fetch below silently refreshes it in the background. Keyed
-  // by MODULE + role, since Sales/Marketing/Admin can each see a
-  // different shape of the same module (e.g. the external sheet only
-  // for Sales/Admin) and must never show one role's cached data to
-  // another role sharing this browser.
-  const dataCacheKey = 'fieldaudit_data_cache_' + MODULE + '_' + (SESSION.role||'');
-  try{
-    const cached = JSON.parse(localStorage.getItem(dataCacheKey) || 'null');
-    if(cached && cached.rows && cached.rows.length){
-      ALL_DATA = cached.rows;
-      rerenderActiveTab();
+  // ---- Retail / DB ----
+  // Three layers, fastest first:
+  //  1. whatever this browser stored last time (IndexedDB) — shown immediately
+  //  2. the last 7 days from the server — small and fast, merged over the stored copy
+  //  3. the full history in the background — replaces everything once it arrives and is stored locally
+  // Exports are then built from that local copy (see exportReportLocal), not from a fresh Sheets call.
+  const gen = ++DATA_LOAD_GEN;
+  const mod = MODULE;
+  BASE_ROWS = []; EXTERNAL_DB_ROWS = []; DATA_COMPLETE = false;
+  FULL_DATA_PROMISE = null; EXTERNAL_DB_PROMISE = null;
+  ALL_DATA = [];
+  // Keyed by MODULE + role, since Sales/Marketing/Admin can each see a different shape of the same
+  // module (e.g. the external sheet only for Sales/Admin) — one role's data must never show for another.
+  DATA_CACHE_KEY_CUR = 'fieldaudit_data_v2_' + MODULE + '_' + (SESSION.role||'');
+  let cachedRec = null, freshApplied = false;
+  const cacheRead = IDB.get(DATA_CACHE_KEY_CUR).then(c=>{
+    if(gen !== DATA_LOAD_GEN || !c || !c.rows || !c.rows.length) return;
+    cachedRec = c;
+    if(!freshApplied){
+      BASE_ROWS = c.rows; EXTERNAL_DB_ROWS = c.ext || []; DATA_COMPLETE = !!c.complete;
+      composeAllData(); rerenderActiveTab();
     }
-  }catch(_e){}
+  }).catch(()=>{});
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    // STEP 1 — fast path: last 7 days only, for EVERY module and role.
-    // A much smaller response (less to stringify server-side, transfer,
-    // and parse client-side) is what actually makes login/first-load
-    // feel fast, on top of whatever the cache above already showed.
-    // STEP 2 (loadFullDataInBackground below) then quietly fetches
-    // everything, replacing this partial view once it's ready — nobody
-    // is ever stuck seeing only a week's data; it's just what appears
-    // first.
     const sinceDate = localDateStr(new Date(Date.now() - 7*24*60*60*1000));
-    if(MODULE === 'db'){
-      const fastRes = await callApi({action:'getDBDataInternal', token:SESSION.token, sinceDate});
-      if(fastRes && fastRes.rows && fastRes.rows.length){
-        ALL_DATA = fastRes.rows;
-        rerenderActiveTab();
+    const action = MODULE === 'db' ? 'getDBDataInternal' : 'getData';
+    let fastRes = null;
+    try{ fastRes = await callApi({action, token:SESSION.token, sinceDate}); }catch(_e){}
+    await cacheRead; // normally long finished by now — just makes the merge below deterministic
+    if(gen !== DATA_LOAD_GEN) return;
+    if(fastRes && fastRes.rows){
+      freshApplied = true;
+      if(cachedRec && cachedRec.complete){
+        // stored full history + the fresh week = complete and current, without waiting for the full fetch
+        BASE_ROWS = mergeRecentRows_(cachedRec.rows, fastRes.rows, sinceDate);
+        EXTERNAL_DB_ROWS = cachedRec.ext || [];
+        DATA_COMPLETE = true;
+      } else {
+        BASE_ROWS = fastRes.rows;
+        EXTERNAL_DB_ROWS = (cachedRec && cachedRec.ext) || [];
+        DATA_COMPLETE = false;
       }
-      // Split into a fast internal-only fetch (what the dashboard renders
-      // immediately) and a separate, slower external-GCPL-sheet fetch that
-      // runs in the background afterward — this used to be ONE combined
-      // backend call, so a slow or fully-down external sheet blocked the
-      // entire dashboard from showing anything at all, sometimes for the
-      // full ~20s "cold cache" cost described in the loading message. Now
-      // the internal data (fast, always available) decides how quickly
-      // loadData() resolves; the external rows arrive later and get
-      // merged in + silently re-rendered on top, whenever they're ready —
-      // never holding up the rest of the dashboard being usable.
-      loadFullDataInBackground('db', dataCacheKey);
-      fetchExternalDBDataInBackground();
-      return;
+      composeAllData(); rerenderActiveTab();
     }
-    const fastRes = await callApi({action:'getData', token:SESSION.token, sinceDate});
-    if(fastRes && fastRes.rows && fastRes.rows.length){
-      ALL_DATA = fastRes.rows;
-      rerenderActiveTab();
-    }
-    loadFullDataInBackground('retail', dataCacheKey);
+    startFullDataLoad(gen, mod);
+    // The external GCPL sheet is slow and separate on purpose — it must never hold the dashboard up.
+    if(MODULE === 'db') fetchExternalDBDataInBackground(gen, mod);
   }catch(e){
-    // Cached data (if any) is already rendered from above — a failed
-    // refresh just leaves it slightly stale rather than replacing real
-    // (if older) data with a blank screen or error.
     if(!ALL_DATA.length) ALL_DATA = [];
-    // Even if the fast (7-day) fetch itself failed, still try the full
-    // background fetch below — it's a completely separate request and
-    // deserves its own independent chance to succeed.
-    loadFullDataInBackground(MODULE, dataCacheKey);
   }
 }
-/* STEP 2 of the "show this week fast, everything else quietly after"
-   pattern — a plain, un-dated fetch (every row, exactly like this
-   function always worked before sinceDate existed), run right after the
-   fast 7-day one, never blocking anything the person is already looking
-   at. Only re-renders if they're STILL on the same module by the time
-   this resolves — switching away mid-fetch shouldn't cause a jarring,
-   unrelated re-render of whatever they've moved on to. */
-async function loadFullDataInBackground(mod, dataCacheKey){
-  try{
-    if(!configured()) return;
-    const action = mod === 'db' ? 'getDBDataInternal' : 'getData';
-    const res = await callApi({action, token:SESSION.token});
-    if(res && res.rows){
-      ALL_DATA = res.rows;
-      try{ localStorage.setItem(dataCacheKey, JSON.stringify({rows: ALL_DATA, savedAt: Date.now()})); }catch(_e){}
-      if(MODULE === mod) rerenderActiveTab();
-    }
-  }catch(_e){} // the fast (7-day) data already shown stands as-is if this fails — never worse off than before this existed
+/* ---- state for the local data store ---- */
+let BASE_ROWS = [];          // current module's rows (DB: the internal sheet only)
+let EXTERNAL_DB_ROWS = [];   // DB only: rows from the external GCPL sheet (Sales/Admin)
+let DATA_COMPLETE = false;   // true once BASE_ROWS covers the whole history, not just the recent week
+let DATA_LOAD_GEN = 0;       // bumped by every loadData() so a late response from an older load/module is ignored
+let FULL_DATA_PROMISE = null;
+let EXTERNAL_DB_PROMISE = null;
+let DATA_CACHE_KEY_CUR = '';
+function composeAllData(){
+  ALL_DATA = (MODULE === 'db' && EXTERNAL_DB_ROWS.length) ? BASE_ROWS.concat(EXTERNAL_DB_ROWS) : BASE_ROWS;
 }
-let EXTERNAL_DB_FETCH_IN_FLIGHT = false;
-function fetchExternalDBDataInBackground(){
-  if(EXTERNAL_DB_FETCH_IN_FLIGHT) return; // a tab-switch back to DB while the first fetch is still out shouldn't start a second, overlapping one
-  EXTERNAL_DB_FETCH_IN_FLIGHT = true;
-  callApi({action:'getDBDataExternal', token:SESSION.token})
+function saveDataCache(){
+  if(!DATA_CACHE_KEY_CUR) return;
+  IDB.set(DATA_CACHE_KEY_CUR, {rows: BASE_ROWS, ext: EXTERNAL_DB_ROWS, complete: DATA_COMPLETE, savedAt: Date.now()});
+}
+function rowYmd_(r){ const d = parseDateFlexible(r.date); return d ? dateToYMD(d) : ''; }
+// stored rows older than the fresh window + the fresh rows (anything stored inside that window is dropped, so deletions/edits show up)
+function mergeRecentRows_(storedRows, freshRows, sinceYmd){
+  const older = storedRows.filter(r=>{ const y = rowYmd_(r); return !y || y < sinceYmd; });
+  return older.concat(freshRows);
+}
+/* STEP 3 — plain, un-dated fetch of every row; never blocks what the person is already looking at. */
+function startFullDataLoad(gen, mod){
+  if(!configured()) return Promise.resolve(false);
+  const action = mod === 'db' ? 'getDBDataInternal' : 'getData';
+  const p = (async ()=>{
+    try{
+      const res = await callApi({action, token:SESSION.token});
+      if(gen !== DATA_LOAD_GEN || MODULE !== mod) return false;
+      if(res && res.rows){
+        BASE_ROWS = res.rows; DATA_COMPLETE = true;
+        composeAllData(); saveDataCache(); rerenderActiveTab();
+        return true;
+      }
+    }catch(_e){} // whatever is already on screen stands — never worse off than before
+    return false;
+  })();
+  FULL_DATA_PROMISE = p;
+  return p;
+}
+function fetchExternalDBDataInBackground(gen, mod){
+  const p = callApi({action:'getDBDataExternal', token:SESSION.token})
     .then(res=>{
-      if(!res || !res.success || !res.rows || !res.rows.length) return; // empty/failed — the internal-only data already shown stands as-is, nothing to merge
-      // Only ever ADDS rows this session never had — if the person has
-      // switched away from DB entirely by the time this resolves, ALL_DATA
-      // has already been replaced by whatever module they're on now, and
-      // appending here would silently corrupt it. MODULE/SOURCE_FILTER are
-      // re-checked at merge time, not just at the start of the fetch.
-      if(MODULE !== 'db') return;
-      ALL_DATA = ALL_DATA.concat(res.rows);
-      // Re-render whichever view is actually on screen right now — same
-      // views loadData()'s own callers already re-render after a normal
-      // (fast) load, just triggered a little later this time.
-      const activeTab = document.querySelector('nav.tabs button.active');
-      const name = activeTab ? activeTab.dataset.tab : 'dash';
-      if(name==='dash') renderDashboard();
-      else if(name==='history') renderHistory();
-      else if(name==='map') renderMap();
+      if(gen !== DATA_LOAD_GEN || MODULE !== mod) return;
+      if(!res || !res.success || !res.rows || !res.rows.length) return; // empty/failed — the internal-only data stands, nothing to merge
+      EXTERNAL_DB_ROWS = res.rows;
+      composeAllData(); saveDataCache(); rerenderActiveTab();
     })
-    .catch(()=>{}) // the external sheet staying out of this session's data is an accepted, expected outcome — never surfaced as an error
-    .finally(()=>{ EXTERNAL_DB_FETCH_IN_FLIGHT = false; });
+    .catch(()=>{}); // the external sheet staying out of a session's data is an accepted outcome, never an error
+  EXTERNAL_DB_PROMISE = p;
+  return p;
 }
 
 /* The Photos tab needs BOTH modules' data at once (unlike Dashboard/History,
@@ -2280,7 +2517,7 @@ async function loadPhotosData(){
   // has to happen once per browser, not once per tab-open.
   if(!PHOTOS_LOADED){
     try{
-      const cached = JSON.parse(localStorage.getItem(photosCacheKey()) || 'null');
+      const cached = await IDB.get(photosCacheKey());
       if(cached && (cached.retail || cached.db)){
         PHOTO_RETAIL_DATA = cached.retail || [];
         PHOTO_DB_DATA = cached.db || [];
@@ -2321,7 +2558,7 @@ async function loadPhotosData(){
       PHOTO_RETAIL_DATA = retailRes.rows || [];
       PHOTO_DB_DATA = dbRes.rows || [];
       PHOTOS_LOADED = true;
-      try{ localStorage.setItem(photosCacheKey(), JSON.stringify({retail: PHOTO_RETAIL_DATA, db: PHOTO_DB_DATA, savedAt: Date.now()})); }catch(_e){}
+      IDB.set(photosCacheKey(), {retail: PHOTO_RETAIL_DATA, db: PHOTO_DB_DATA, savedAt: Date.now()});
       renderPhotos(); // re-render with the fresh data even if cache already rendered something slightly stale above
     }catch(e){
       if(!PHOTOS_LOADED){ PHOTO_RETAIL_DATA = []; PHOTO_DB_DATA = []; }
@@ -2948,24 +3185,52 @@ function renderNoProductReport(){
   `).join('');
 }
 async function exportNoProductReport(){
+  const search = (document.getElementById('noProductSearch').value||'').toLowerCase();
   const from = document.getElementById('noProductFrom').value, to = document.getElementById('noProductTo').value;
-  if(!NO_PRODUCT_DATA.length){ toast('No data to export', true); return; }
+  const rows = NO_PRODUCT_DATA.filter(r=>{
+    if(from && r.date < from) return false;
+    if(to && r.date > to) return false;
+    if(search){
+      const hay = `${r.outletName||''} ${r.auditor||''} ${r.address||''}`.toLowerCase();
+      if(!hay.includes(search)) return false;
+    }
+    return true;
+  });
+  if(!rows.length){ toast('No data to export', true); return; }
   const btn = event.currentTarget;
   const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Preparing…';
+  startExportProgress();
   try{
+    // Preferred: built right here from the data already on screen — nothing to time out.
+    try{
+      const byAuditor = {};
+      rows.forEach(r=>{ const k = r.auditor || 'Unknown'; byAuditor[k] = (byAuditor[k]||0)+1; });
+      await runLocalProExport({
+        title:'FieldAudit — No Product Available Report', rangeLabel: exportRangeLabel_(from,to), sheetName:'No Product Available',
+        filenameBase:'No_Product_Available_' + localDateStr(),
+        columns:[
+          {h:'Date',k:'date'},{h:'Auditor',k:'auditor'},{h:'Auditor Mobile',k:'auditorMobile'},{h:'Outlet Name',k:'outletName'},{h:'Address',k:'address',w:36},
+          {h:'Latitude',k:'lat',t:'num'},{h:'Longitude',k:'lng',t:'num'},
+          {h:'Photo',k:'photoUrl',t:'link',label:'📷 View Photo'},
+          {h:'Map View',get:r=>(r.lat&&r.lng) ? `https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}` : '',t:'link',label:'📍 View Map'},
+          {h:'Additional Feedback',k:'additionalFeedback',w:36}
+        ],
+        rows,
+        kpis:[{label:'Total Visits', value:rows.length},{label:'Auditors', value:Object.keys(byAuditor).length},{label:'Outlets', value:new Set(rows.map(r=>r.outletName)).size}],
+        breakdown:{headers:['Auditor','Visits'], rows:Object.entries(byAuditor).sort((x,y)=>y[1]-x[1]).slice(0,10)}
+      });
+      finishExportProgress();
+      toast(`Report downloaded — ${rows.length} visit${rows.length===1?'':'s'}`);
+      return;
+    }catch(localErr){ console.warn('Local NPA export failed — falling back to the server export:', localErr); }
+    // Fallback: the Google-Sheets-based export.
     if(!configured()) throw new Error('__NOCFG__');
-    // Routed through the SAME backend export mechanism as the main
-    // Retail/DB reports (a real, styled Google Sheet, then exported as
-    // .xlsx) rather than building the file client-side — the free
-    // XLSX.js build loaded in this dashboard turned out to silently
-    // drop any cell styling on write (cellStyles:true had no actual
-    // effect), so a report built that way could never come out
-    // colored no matter what was set on it. This is what actually
-    // fixes it.
     const res = await callApi({action:'exportReport', token:SESSION.token, module:'noproduct', fromDate:from, toDate:to});
     if(!res.success) throw new Error(res.message || 'Export failed');
+    finishExportProgress();
     downloadBase64File(res.base64, res.filename);
   }catch(e){
+    finishExportProgress();
     toast(e.message==='__NOCFG__' ? 'Backend not connected' : (e.message || 'Could not export'), true);
   }finally{
     btn.disabled = false; btn.innerHTML = orig;
@@ -3011,7 +3276,7 @@ async function preloadAdAuditAllTimeInBackground(){
     const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAllAdAudits&_t=${Date.now()}`, {cache:'no-store'}, 30000);
     const j = await r.json();
     if(j && j.audits){
-      try{ localStorage.setItem(cacheKey, JSON.stringify({rows: j.audits, savedAt: Date.now()})); }catch(_e){}
+      IDB.set(cacheKey, {rows: j.audits, savedAt: Date.now()});
     }
   }catch(_e){} // best-effort only — the visible "This Week" view already loaded fine on its own either way
 }
@@ -3038,7 +3303,7 @@ async function loadAdAuditData(){
   // label.
   let renderedFromCache = false;
   try{
-    const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+    const cached = await IDB.get(cacheKey);
     if(cached && cached.rows && cached.rows.length){
       AA_DATA = cached.rows;
       const typeSel0 = document.getElementById('aaTypeFilter');
@@ -3063,7 +3328,7 @@ async function loadAdAuditData(){
     const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?${params.toString()}&_t=${Date.now()}`, {cache:'no-store'}, 20000);
     const j = await r.json();
     AA_DATA = j.audits || [];
-    try{ localStorage.setItem(cacheKey, JSON.stringify({rows: AA_DATA, savedAt: Date.now()})); }catch(_e){} // best-effort — a full localStorage quota just means no cache benefit next time, never a failed load
+    IDB.set(cacheKey, {rows: AA_DATA, savedAt: Date.now()}); // best-effort — a storage failure just means no cache benefit next time, never a failed load
     const typeSel = document.getElementById('aaTypeFilter');
     if(typeSel.options.length <= 1){
       [...FIXED_AD_TYPES_JS, ...MOVABLE_AD_TYPES_JS].forEach(t=> typeSel.add(new Option(t,t)));
@@ -3638,7 +3903,53 @@ async function uploadAdMasterExcel(){
 /* Excel export — built client-side (SheetJS, already loaded), same
    column set as the on-screen report, plus a real clickable HYPERLINK
    formula for Photo and Map so both work directly from Excel. */
-function exportAdAuditReport(){
+/* Ad Audit export — built locally with real colours (the plain XLSX.js build this used to rely on
+   silently drops all cell styling); the old basic export remains below as a last-resort fallback. */
+async function exportAdAuditReport(){
+  if(!AA_DATA.length){ toast('No data loaded to export', true); return; }
+  startExportProgress();
+  try{
+    const rows = AA_DATA;
+    const n = rows.length;
+    const running = rows.filter(a=>a.runningStatus==='Yes').length;
+    const typeCounts = {};
+    rows.forEach(a=>{ if(a.adType) typeCounts[a.adType] = (typeCounts[a.adType]||0)+1; });
+    const from = (document.getElementById('aaFrom')||{}).value, to = (document.getElementById('aaTo')||{}).value;
+    await runLocalProExport({
+      title:'FieldAudit — Ad Audit Report', rangeLabel: exportRangeLabel_(from,to), sheetName:'Ad Audit Report',
+      filenameBase:'AdAuditReport_' + localDateStr(),
+      columns:[
+        {h:'Ad ID',k:'adId'},{h:'Ad Type',k:'adType'},
+        {h:'Location ID / Vehicle No.',get:a=>a.isMovable ? (a.vehicleNumber||'') : (a.locationId||'')},
+        {h:'Address / Route',w:34,get:a=>a.isMovable ? ((a.routeFrom||a.routeTo) ? `${a.routeFrom||'?'} → ${a.routeTo||'?'}` : '') : (a.locationName||'⚠️ Address missing')},
+        {h:'Route From',k:'routeFrom'},{h:'Route To',k:'routeTo'},
+        {h:'Size',get:a=>(!a.isMovable && a.height && a.width) ? `${a.height}×${a.width} ${a.measurementUnit||''} = ${a.area||''}` : ''},
+        {h:'Auditor Name',k:'auditorName'},{h:'Auditor Mobile',k:'auditorMobile'},{h:'Audit Date',k:'date'},{h:'Audit Time',k:'time'},
+        {h:'Latitude',k:'lat',t:'num'},{h:'Longitude',k:'lng',t:'num'},
+        {h:'Running Status',get:a=>a.runningStatus==='Yes' ? 'Running' : 'Not Running',t:'status'},
+        {h:'Photo',k:'photoUrl',t:'link',label:'📷 View Photo'},
+        {h:'Map',get:a=>(a.lat&&a.lng) ? `https://www.google.com/maps?q=${a.lat},${a.lng}` : '',t:'link',label:'📍 View Map'},
+        {h:'Verification Status',k:'verificationStatus',t:'status'},{h:'Verified By',k:'verifiedBy'},{h:'Verified Role',k:'verifierRole'},
+        {h:'Verification Date',k:'verificationDate'},{h:'Remarks',k:'remarks',w:32}
+      ],
+      rows,
+      kpis:[
+        {label:'Total Audits', value:n},
+        {label:'Unique Ads', value:new Set(rows.map(a=>a.adId)).size},
+        {label:'Running', value:running},
+        {label:'Not Running', value:n-running}
+      ],
+      breakdown:{headers:['Ad Type','Audits'], rows:Object.entries(typeCounts).sort((x,y)=>y[1]-x[1]).slice(0,10)}
+    });
+    finishExportProgress();
+    toast(`Report downloaded — ${n} audit${n===1?'':'s'}`);
+  }catch(e){
+    finishExportProgress();
+    console.warn('Styled Ad Audit export failed — using the basic export:', e);
+    exportAdAuditReportBasic();
+  }
+}
+function exportAdAuditReportBasic(){
   if(!AA_DATA.length){ toast('No data loaded to export', true); return; }
   const headers = ['Ad ID','Ad Type','Location ID / Vehicle No.','Address / Route','Route From','Route To','Size','Auditor Name','Auditor Mobile','Audit Date','Audit Time','Latitude','Longitude','Running Status','Photo','Map','Verification Status','Verified By','Verified Role','Verification Date','Remarks'];
   const body = AA_DATA.map(a=>[
@@ -4199,13 +4510,12 @@ function renderRetailHistory(){
   });
   const thead = document.querySelector('#histTable thead');
   const tbody = document.querySelector('#histTable tbody');
-  thead.innerHTML = `<tr><th>Date</th><th>Outlet</th><th>City</th><th>Distributor</th><th>Auditor</th><th>Distribution</th><th>POSM</th><th>Invoice GST</th><th>Visibility</th><th>Lat, Long</th><th>Map</th><th>Invoice PDF</th></tr>`;
-  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="12"><div class="empty"><b>No matching audits</b>Try a different search or filter.</div></td></tr>`; return; }
+  thead.innerHTML = `<tr><th>Date</th><th>Outlet</th><th>City</th><th>Distributor</th><th>Auditor</th><th>Distribution</th><th>POSM</th><th>Visibility</th><th>Lat, Long</th><th>Map</th><th>Invoice PDF</th></tr>`;
+  if(!rows.length){ tbody.innerHTML = `<tr><td colspan="11"><div class="empty"><b>No matching audits</b>Try a different search or filter.</div></td></tr>`; return; }
   tbody.innerHTML = rows.map(r=>`<tr>
     <td class="mono">${r.date||''}</td><td>${r.outletName||''}</td><td>${r.city||''}</td><td>${r.distributor||''}</td><td>${r.auditor||''}</td>
     <td><span class="tag ${r.q1_distribution==='Yes'?'tag-yes':'tag-no'}">${r.q1_distribution||'—'}</span></td>
     <td><span class="tag ${r.q9_posmAvailable==='Yes'?'tag-yes':'tag-no'}">${r.q9_posmAvailable||'—'}</span></td>
-    <td><span class="tag ${r.invoiceGSTDetected==='GST'?'tag-yes':'tag-no'}">${r.invoiceGSTDetected||'—'}</span></td>
     <td>${r.q8_visibilityRating?r.q8_visibilityRating+'★':'—'}</td>
     <td class="mono">${r.lat&&r.lng?(Number(r.lat).toFixed(5)+', '+Number(r.lng).toFixed(5)):'—'}</td>
     <td>${mapLinkHtml(mapsLinkFromLatLng(r.lat, r.lng, r.mapsLink))}</td>
@@ -4295,6 +4605,98 @@ function finishExportProgress(){
   setTimeout(()=>overlay.classList.remove('show'), 500);
 }
 
+/* ---- History "Export pro report": built in the browser from the locally stored data ----
+   No server round trip means no Apps Script time/size limit, so any date range (or the whole history)
+   exports; the Google Sheets path below is only the fallback if this one cannot run. */
+function exportRangeLabel_(from, to){
+  return (!from && !to) ? 'Range: all dates' : ('Range: ' + (from || 'start') + ' to ' + (to || 'today'));
+}
+function retailExportSpec_(rows, from, to){
+  const n = rows.length;
+  const yes = k => rows.filter(r=>String(r[k]||'').toLowerCase()==='yes').length;
+  const cityCounts = {};
+  rows.forEach(r=>{ if(r.city) cityCounts[r.city] = (cityCounts[r.city]||0)+1; });
+  const topCities = Object.entries(cityCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  return {
+    title:'FieldAudit — Retail Outlet Audit Report', rangeLabel: exportRangeLabel_(from,to), sheetName:'Details',
+    filenameBase:'Retail_Audit_Report_' + localDateStr(),
+    columns:[
+      {h:'Date',k:'date'},{h:'Auditor',k:'auditor'},{h:'District',k:'district'},{h:'City',k:'city'},{h:'Distributor',k:'distributor'},{h:'Route',k:'route'},
+      {h:'Outlet Name',k:'outletName'},{h:'Outlet Type',k:'outletType'},{h:'Address',k:'address'},{h:'Owner Name',k:'ownerName'},{h:'Retailer Phone',k:'retailerPhone'},
+      {h:'Distribution',k:'q1_distribution',t:'status'},{h:'DB Count',k:'q2_dbCount',t:'num'},{h:'Spice Avail',k:'q3_spiceAvailable',t:'status'},{h:'Happy w/ DB',k:'q4_happyWithDB',t:'status'},
+      {h:'Price Source',k:'q5_priceSource'},{h:'Bill Type',k:'q7_billType'},{h:'Visibility',k:'q8_visibilityRating',t:'num'},{h:'POSM',k:'q9_posmAvailable',t:'status'},{h:'NLB/GSB Brand',k:'q10_nlbGsbBrand'},
+      {h:'Outlet Photo',k:'photoUrl',t:'link',label:'📷 View Photo'},{h:'Bills PDF',k:'invoicePdfUrl',t:'link',label:'🧾 View Bills PDF'},{h:'Bill Count',k:'billCount',t:'num'},
+      {h:'Latitude',k:'lat',t:'num'},{h:'Longitude',k:'lng',t:'num'},
+      {h:'Maps Link',get:r=>mapsLinkFromLatLng(r.lat,r.lng,r.mapsLink),t:'link',label:'📍 View Map'},
+      {h:'Additional Feedback',k:'additionalFeedback',w:36}
+    ],
+    rows,
+    kpis:[
+      {label:'Total Audits', value:n},
+      {label:'GCPL Distribution', value:(n?Math.round(100*yes('q1_distribution')/n):0)+'%'},
+      {label:'POSM Available', value:(n?Math.round(100*yes('q9_posmAvailable')/n):0)+'%'},
+      {label:'Avg. Visibility', value:(n?(rows.reduce((t,r)=>t+(+r.q8_visibilityRating||0),0)/n).toFixed(1):'0')+'★'}
+    ],
+    breakdown:{headers:['City','Audit Count'], rows: topCities.map(([c,v])=>[c,v])}
+  };
+}
+function dbExportSpec_(rows, from, to){
+  const n = rows.length;
+  const bags = [['ATTA (Bags)','atta'],['MAIDA (Bags)','maida'],['SOOJI (Bags)','sooji'],['SATTU (Bags)','sattu'],['BESAN (Bags)','besan'],['DALIA (Bags)','dalia'],['OTHERS (Bags)','others'],['Spices Total (Bags)','spicesTotal']];
+  const kgs = [['Haldi (Kgs)','haldi'],['Chili (Kgs)','chili'],['Dhania (Kgs)','dhania'],['Jeera Powder (Kgs)','jeeraPowder'],['Jeera Whole (Kgs)','jeeraWhole'],['Panch Foron (Kgs)','panchForon'],['Methi (Kgs)','methi'],
+    ['Ajwain (Kgs)','ajwain'],['Saunf (Kgs)','saunf'],['Sarson (Kgs)','sarson'],['Shahi Garam Masala (Kgs)','shahiGaramMasala'],['Chicken Masala (Kgs)','chickenMasala'],['Meat Masala (Kgs)','meatMasala'],
+    ['Kashmiri Mirch (Kgs)','kashmiriMirch'],['Kalajeera (Kgs)','kalajeera']];
+  const sum = list => rows.reduce((t,r)=>t+list.reduce((t2,[,k])=>t2+(+r[k]||0),0),0);
+  const dist = {};
+  rows.forEach(r=>{ if(r.dbName) dist[r.dbName] = (dist[r.dbName]||0)+1; });
+  const topDist = Object.entries(dist).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  return {
+    title:'FieldAudit — DB Stock Audit Report', rangeLabel: exportRangeLabel_(from,to), sheetName:'Details',
+    filenameBase:'DB_Stock_Audit_Report_' + localDateStr(),
+    columns:[
+      {h:'Date',k:'date'},{h:'Audit Type',k:'auditType'},{h:'DB Code',k:'dbCode'},{h:'DB Name',k:'dbName'},{h:'DB City',k:'dbCity'},
+      {h:'SO Phone',k:'soPhone'},{h:'SO Name',k:'soName'},{h:'ASM Name',k:'asmName'},{h:'Address',k:'address'},
+      ...bags.map(([h,k])=>({h,k,t:'num'})), ...kgs.map(([h,k])=>({h,k,t:'num'})),
+      {h:'Godown Photo',k:'photoUrlWide',t:'link',label:'🏭 View Godown'},{h:'Product Rack Photo',k:'photoUrlRack',t:'link',label:'📦 View Rack'},
+      {h:'Audit PDF',k:'auditPdfUrl',t:'link',label:'📄 View PDF'},
+      {h:'Latitude',k:'lat',t:'num'},{h:'Longitude',k:'lng',t:'num'},
+      {h:'Maps Link',get:r=>mapsLinkFromLatLng(r.lat,r.lng,r.mapsLink),t:'link',label:'📍 View Map'}
+    ],
+    rows,
+    kpis:[
+      {label:'Stock Audits', value:n},
+      {label:'Total Bags', value:Math.round(sum(bags))},
+      {label:'Total Kgs', value:Math.round(sum(kgs))},
+      {label:'Distributors', value:Object.keys(dist).length}
+    ],
+    breakdown:{headers:['DB Name','Audit Count'], rows: topDist.map(([c,v])=>[c,v])}
+  };
+}
+// Stored data only counts for an export once it covers the whole history; if the full fetch is still
+// running, wait for it (once more on its own if it failed) rather than silently exporting a partial set.
+async function ensureLocalDataForExport(){
+  if(DATA_COMPLETE) return true;
+  updateExportProgress(6, 'Loading complete data…');
+  if(FULL_DATA_PROMISE) await FULL_DATA_PROMISE;
+  if(!DATA_COMPLETE) await startFullDataLoad(DATA_LOAD_GEN, MODULE);
+  return DATA_COMPLETE;
+}
+async function exportReportLocal(){
+  const from = document.getElementById('histFrom').value;
+  const to = document.getElementById('histTo').value;
+  updateExportProgress(4, 'Checking local data…');
+  if(!(await ensureLocalDataForExport())) return false; // not available locally → caller falls back to the server export
+  if(MODULE === 'db' && EXTERNAL_DB_PROMISE) await EXTERNAL_DB_PROMISE; // so Sales/Admin exports include the external sheet's rows too
+  const rows = ALL_DATA.filter(r=>{
+    if(!from && !to) return true;
+    const y = rowYmd_(r);
+    return !!y && (!from || y >= from) && (!to || y <= to);
+  });
+  if(!rows.length){ toast('No audits in that date range', true); return true; }
+  await runLocalProExport(MODULE === 'db' ? dbExportSpec_(rows, from, to) : retailExportSpec_(rows, from, to));
+  toast(`Report downloaded — ${rows.length} audit${rows.length===1?'':'s'}`);
+  return true;
+}
 async function exportReport(){
   if(MODULE==='betaverse'){ exportBetaverseAuditorReport(); return; }
   if(!ALL_DATA.length){ toast('No data to export yet', true); return; }
@@ -4302,6 +4704,11 @@ async function exportReport(){
   const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Preparing…';
   startExportProgress();
   try{
+    // Preferred path: build the report here, from the locally stored data (no server limits).
+    try{
+      if(await exportReportLocal()){ finishExportProgress(); return; }
+    }catch(localErr){ console.warn('Local export failed — falling back to the server export:', localErr); }
+    // Fallback: the original Google-Sheets-based export.
     if(!configured()) throw new Error('__NOCFG__');
     const fromDate = document.getElementById('histFrom').value;
     const toDate = document.getElementById('histTo').value;
@@ -4495,8 +4902,8 @@ function exportPlainFallback(){
     downloadWorkbook(wb, `DB_Stock_Audit_Report_${localDateStr()}.xlsx`);
     return;
   }
-  const headers = ['Date','Auditor','District','City','Distributor','Route','Outlet Name','Outlet Type','Address','Owner Name','Retailer Phone','Distribution (Y/N)','DB Count','Spice Avail (Y/N)','Happy w/ DB (Y/N)','Price Source','Bill Type','Invoice GST Scan','Visibility (1-5)','POSM (Y/N)','NLB/GSB Brand','Latitude','Longitude','Maps Link'];
-  const keyMap = ['date','auditor','district','city','distributor','route','outletName','outletType','address','ownerName','retailerPhone','q1_distribution','q2_dbCount','q3_spiceAvailable','q4_happyWithDB','q5_priceSource','q7_billType','invoiceGSTDetected','q8_visibilityRating','q9_posmAvailable','q10_nlbGsbBrand','lat','lng','mapsLink'];
+  const headers = ['Date','Auditor','District','City','Distributor','Route','Outlet Name','Outlet Type','Address','Owner Name','Retailer Phone','Distribution (Y/N)','DB Count','Spice Avail (Y/N)','Happy w/ DB (Y/N)','Price Source','Bill Type','Visibility (1-5)','POSM (Y/N)','NLB/GSB Brand','Latitude','Longitude','Maps Link'];
+  const keyMap = ['date','auditor','district','city','distributor','route','outletName','outletType','address','ownerName','retailerPhone','q1_distribution','q2_dbCount','q3_spiceAvailable','q4_happyWithDB','q5_priceSource','q7_billType','q8_visibilityRating','q9_posmAvailable','q10_nlbGsbBrand','lat','lng','mapsLink'];
   const aoa = [headers, ...ALL_DATA.map(r=>keyMap.map(k=>r[k]??''))];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = headers.map(h=>({wch: Math.max(12, h.length+2)}));
