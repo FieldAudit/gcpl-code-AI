@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.8.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.8.2 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1510,7 +1510,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.8.0';
+const FRONTEND_VERSION = 'v7.8.2';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2353,7 +2353,7 @@ async function callApi(payload, usePost){
     // For payloads too large/complex for a URL (arrays, many fields) —
     // POST body has no such limit, unlike a GET query string.
     const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body: JSON.stringify(payload)}, 25000);
-    return safeJson(r);
+    return noteIfSessionExpired_(await safeJson(r));
   }
   // Cache-buster (_t=timestamp) forces every request to be genuinely fresh
   // — without it, a GET request with the exact same URL (same action+token)
@@ -2363,7 +2363,55 @@ async function callApi(payload, usePost){
   // underneath it was stale and cached from before the fix).
   const qs = new URLSearchParams({...payload, _t: Date.now()}).toString();
   const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 25000);
-  return safeJson(r);
+  return noteIfSessionExpired_(await safeJson(r));
+}
+/* The server answers {success:false, message:'Session expired…'} when the saved login token no longer matches
+   (e.g. the Users sheet was edited or tokens were regenerated). Nothing used to look for that, so a stale
+   "Remember me" login just produced an empty, error-free dashboard. Now it sends the person back to the login screen. */
+function noteIfSessionExpired_(res){
+  if(res && res.success === false && /session expired/i.test(String(res.message||''))) handleSessionExpired_();
+  return res;
+}
+let SESSION_EXPIRED_HANDLED_ = false;
+function handleSessionExpired_(){
+  if(SESSION_EXPIRED_HANDLED_ || !SESSION) return;
+  SESSION_EXPIRED_HANDLED_ = true;
+  try{ logout(); }catch(_e){}
+  try{ hideLoadProgress(); }catch(_e){}
+  try{ hideDataBanner_(); }catch(_e){}
+  const el = document.getElementById('loginError');
+  if(el){ el.textContent = 'Aapka login session expire ho gaya hai — kripya dobara login kariye.'; el.style.display = 'block'; }
+  setTimeout(()=>{ SESSION_EXPIRED_HANDLED_ = false; }, 3000);
+}
+/* A visible, honest status line — instead of an empty dashboard that says "No audits yet" when the real
+   situation is "the server did not answer". kind: 'error' (with a retry button) or 'info'. */
+function showDataBanner_(kind, text){
+  let el = document.getElementById('dataLoadBanner');
+  if(!el){
+    el = document.createElement('div'); el.id = 'dataLoadBanner';
+    el.style.cssText = 'position:fixed; top:84px; left:50%; transform:translateX(-50%); z-index:250; max-width:92%; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:600; box-shadow:0 6px 24px rgba(0,0,0,.18); display:flex; gap:12px; align-items:center;';
+    document.body.appendChild(el);
+  }
+  const err = kind === 'error';
+  el.style.background = err ? '#FBEAE8' : '#E8EEFB';
+  el.style.color = err ? '#7A1F14' : '#1B3A7A';
+  el.style.border = '1px solid ' + (err ? '#C0392B' : '#5B5FEF');
+  el.textContent = '';
+  const span = document.createElement('span'); span.textContent = (err ? '⚠️ ' : '⏳ ') + text; el.appendChild(span);
+  if(err){ const b = document.createElement('button'); b.className = 'btn btn-outline'; b.textContent = '↻ Dobara try'; b.onclick = retryDataLoad_; el.appendChild(b); }
+  el.style.display = 'flex';
+}
+function hideDataBanner_(){ const el = document.getElementById('dataLoadBanner'); if(el) el.style.display = 'none'; }
+async function retryDataLoad_(){ hideDataBanner_(); try{ await loadData(); }catch(_e){} try{ rerenderActiveTab(); }catch(_e){} }
+function describeLoadProblem_(res, err){
+  if(res && res.message) return res.message;
+  if(err){
+    if(err.name === 'AbortError') return 'server ne time par jawab nahi diya (slow internet ya server busy)';
+    if(err.message === 'SERVER_RETURNED_NON_JSON') return 'server se galat jawab aaya (Google Apps Script ka limit ya error ho sakta hai)';
+    if(err.message === 'DATA_FETCH_FAILED') return 'server se data nahi mil paya';
+    return err.message || String(err);
+  }
+  return 'server ne koi data nahi bheja';
 }
 function rerenderActiveTab(){
   const activeTab = document.querySelector('nav.tabs button.active');
@@ -2423,10 +2471,13 @@ async function loadData(){
   try{
     if(!configured()) throw new Error('__NOCFG__');
     const action = MODULE === 'db' ? 'getDBDataInternal' : 'getData';
-    let fastRes = null;
-    try{ fastRes = await callApi({action, token:SESSION.token, sinceDate}); }catch(_e){}
-    await cacheRead; // normally long finished by now — just makes the merge below deterministic
+    let fastRes = null, fastErr = null;
+    try{ fastRes = await callApiSlow_({action, token:SESSION.token, sinceDate}, 60000, 0); }catch(e){ fastErr = e; }
+    // normally long finished by now — only makes the merge below deterministic; bounded so a slow/blocked
+    // browser-storage read can never hold the whole load up
+    await Promise.race([cacheRead, new Promise(r=>setTimeout(r, 2500))]);
     if(gen !== DATA_LOAD_GEN) return;
+    if(!SESSION) return; // the saved login turned out to be expired and the person was sent back to the login screen
     if(fastRes && fastRes.rows){
       freshApplied = true; DATA_RECENT_APPLIED = true;
       if(cachedRec && cachedRec.complete){
@@ -2440,7 +2491,11 @@ async function loadData(){
         DATA_COMPLETE = false;
       }
       composeAllData(); safeRerender_();
+    } else if(!ALL_DATA.length){
+      // Nothing from the server and nothing stored — say so, instead of a dashboard that claims "No audits yet".
+      showDataBanner_('error', 'Data load nahi hua: ' + describeLoadProblem_(fastRes, fastErr));
     }
+    if(ALL_DATA.length) hideDataBanner_();
     // A stored copy is trusted for 6 hours; after that (or if there is none) the history is re-fetched in
     // the background, which also clears out rows that were deleted from the sheet since it was stored.
     const storedIsFresh = DATA_COMPLETE && DATA_FULL_AT && (Date.now() - DATA_FULL_AT) < 6*3600*1000;
@@ -2448,7 +2503,7 @@ async function loadData(){
     // The external GCPL sheet is slow and separate on purpose — it must never hold the dashboard up.
     if(MODULE === 'db') fetchExternalDBDataInBackground(gen, mod);
   }catch(e){
-    if(!ALL_DATA.length) ALL_DATA = [];
+    if(!ALL_DATA.length){ ALL_DATA = []; if(SESSION) showDataBanner_('error', 'Data load nahi hua: ' + describeLoadProblem_(null, e)); }
   }
 }
 /* A drawing error (one odd row, a chart hiccup) must never stop data from loading — every re-render in
@@ -2490,9 +2545,9 @@ function addDaysYmd_(ymd, n){
 async function callApiSlow_(payload, ms, retries){
   const qs = new URLSearchParams(Object.assign({}, payload, {_t: Date.now()})).toString();
   const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, ms, retries);
-  return safeJson(r);
+  return noteIfSessionExpired_(await safeJson(r));
 }
-const HISTORY_WINDOW_DAYS = 30, HISTORY_PARALLEL = 3;
+const HISTORY_WINDOW_DAYS = 30, HISTORY_PARALLEL = 2;
 /* Fetches a module's history in date windows (30 days each, 3 at a time) instead of one enormous request.
    Needs the backend's getDataMeta; an older deployment without it gets one plain call, as before.
    opts: {upToYmd — last day of the part to fetch (default: the newest row), includeAfter — also fetch
@@ -2502,10 +2557,17 @@ async function fetchModuleHistoryChunked_(mod, opts){
   opts = opts || {};
   const action = mod === 'db' ? 'getDBDataInternal' : 'getData';
   let meta = null;
-  try{ meta = await callApiSlow_({action:'getDataMeta', token:SESSION.token, module:mod}, 30000, 1); }catch(_e){}
+  // A timeout/network error here must NOT escalate to the heavy plain call below — a server that is already
+  // struggling would just get more work. Only a backend that genuinely doesn't know this action (an older
+  // deployment) takes that path.
+  try{ meta = await callApiSlow_({action:'getDataMeta', token:SESSION.token, module:mod}, 40000, 0); }
+  catch(e){ throw new Error(describeLoadProblem_(null, e)); }
   if(!meta || !meta.success){
-    const res = await callApiSlow_({action, token:SESSION.token}, 90000, 0);
-    if(!res || !res.rows) throw new Error('DATA_FETCH_FAILED');
+    if(!(meta && /unknown action|not found|unsupported/i.test(String(meta.message||'')))) throw new Error(describeLoadProblem_(meta, null));
+    let res = null;
+    try{ res = await callApiSlow_({action, token:SESSION.token}, 90000, 0); }
+    catch(e){ throw new Error(describeLoadProblem_(null, e)); }
+    if(!res || !res.rows) throw new Error(describeLoadProblem_(res, null));
     if(opts.onProgress) opts.onProgress(1, 1);
     return {rows: res.rows, whole: true};
   }
@@ -2540,11 +2602,19 @@ async function fetchModuleHistoryChunked_(mod, opts){
       const payload = {action, token:SESSION.token, sinceDate:w.since};
       if(w.until) payload.untilDate = w.until;
       if(w.undated) payload.includeUndated = '1';
-      let res = null;
+      let res = null, lastRes = null, lastErr = null;
       for(let attempt=0; attempt<2 && !res; attempt++){
-        try{ const r = await callApiSlow_(payload, 45000, 1); if(r && r.rows) res = r; }catch(_e){}
+        try{ const r = await callApiSlow_(payload, 60000, 0); if(r && r.rows) res = r; else lastRes = r; }
+        catch(e){
+          lastErr = e;
+          // a timed-out request is very likely STILL RUNNING on the server — sending it again would only
+          // pile a second copy on top of it. Re-send only after errors that mean the request never got through.
+          if(e && e.name === 'AbortError') break;
+          await new Promise(r=>setTimeout(r, 1500));
+        }
       }
-      if(!res){ failed = true; throw new Error('DATA_FETCH_FAILED'); }
+      // keep the REAL reason (server message / timeout / bad reply) so the person sees it, not a generic failure
+      if(!res){ failed = true; throw new Error(describeLoadProblem_(lastRes, lastErr)); }
       results[i] = res.rows; done++; report();
     }
   }
@@ -2564,7 +2634,10 @@ function startFullDataLoad(gen, mod){
       const stillCurrent = ()=> gen === DATA_LOAD_GEN && MODULE === mod;
       const r = await fetchModuleHistoryChunked_(mod, {
         upToYmd: addDaysYmd_(sinceYmd, -1), includeAfter: !DATA_RECENT_APPLIED,
-        onProgress: (d,t)=>{ if(DATA_PROGRESS_CB) DATA_PROGRESS_CB(d,t); }, cancelled: ()=>!stillCurrent()
+        onProgress: (d,t)=>{
+          if(DATA_PROGRESS_CB) DATA_PROGRESS_CB(d,t);
+          if(stillCurrent() && !ALL_DATA.length && t) showDataBanner_('info', `Data load ho raha hai… ${d} of ${t}`);
+        }, cancelled: ()=>!stillCurrent()
       });
       if(!stillCurrent()) return false;
       if(r.whole) BASE_ROWS = r.rows;
@@ -2574,8 +2647,12 @@ function startFullDataLoad(gen, mod){
       }
       DATA_COMPLETE = true; DATA_FULL_AT = Date.now();
       composeAllData(); saveDataCache(); safeRerender_();
+      hideDataBanner_();
       return true;
-    }catch(_e){} // whatever is already on screen stands — never worse off than before
+    }catch(e){
+      // whatever is already on screen stands — never worse off than before; but if there is NOTHING on screen, say why
+      if(gen === DATA_LOAD_GEN && MODULE === mod && SESSION && !ALL_DATA.length) showDataBanner_('error', 'Data load nahi hua: ' + describeLoadProblem_(null, e));
+    }
     return false;
   })();
   FULL_DATA_PROMISE = p;
