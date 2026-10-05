@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.8.2 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.8.3 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1248,7 +1248,12 @@ async function fetchWithTimeout(url, opts, ms, _retriesLeft){
 async function safeJson(response){
   const text = await response.text();
   try{ return JSON.parse(text); }
-  catch(e){ throw new Error('SERVER_RETURNED_NON_JSON'); }
+  catch(e){
+    const err = new Error('SERVER_RETURNED_NON_JSON');
+    // what the error page actually says, tags stripped and shortened — shown in the load-error banner
+    err.serverText = String(text).replace(/<(style|script)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+    throw err;
+  }
 }
 
 /* ============================================================
@@ -1510,7 +1515,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.8.2';
+const FRONTEND_VERSION = 'v7.8.3';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2380,7 +2385,7 @@ function handleSessionExpired_(){
   try{ hideLoadProgress(); }catch(_e){}
   try{ hideDataBanner_(); }catch(_e){}
   const el = document.getElementById('loginError');
-  if(el){ el.textContent = 'Aapka login session expire ho gaya hai — kripya dobara login kariye.'; el.style.display = 'block'; }
+  if(el){ el.textContent = 'Your login session has expired — please sign in again.'; el.style.display = 'block'; }
   setTimeout(()=>{ SESSION_EXPIRED_HANDLED_ = false; }, 3000);
 }
 /* A visible, honest status line — instead of an empty dashboard that says "No audits yet" when the real
@@ -2398,7 +2403,7 @@ function showDataBanner_(kind, text){
   el.style.border = '1px solid ' + (err ? '#C0392B' : '#5B5FEF');
   el.textContent = '';
   const span = document.createElement('span'); span.textContent = (err ? '⚠️ ' : '⏳ ') + text; el.appendChild(span);
-  if(err){ const b = document.createElement('button'); b.className = 'btn btn-outline'; b.textContent = '↻ Dobara try'; b.onclick = retryDataLoad_; el.appendChild(b); }
+  if(err){ const b = document.createElement('button'); b.className = 'btn btn-outline'; b.textContent = '↻ Try again'; b.onclick = retryDataLoad_; el.appendChild(b); }
   el.style.display = 'flex';
 }
 function hideDataBanner_(){ const el = document.getElementById('dataLoadBanner'); if(el) el.style.display = 'none'; }
@@ -2406,12 +2411,16 @@ async function retryDataLoad_(){ hideDataBanner_(); try{ await loadData(); }catc
 function describeLoadProblem_(res, err){
   if(res && res.message) return res.message;
   if(err){
-    if(err.name === 'AbortError') return 'server ne time par jawab nahi diya (slow internet ya server busy)';
-    if(err.message === 'SERVER_RETURNED_NON_JSON') return 'server se galat jawab aaya (Google Apps Script ka limit ya error ho sakta hai)';
-    if(err.message === 'DATA_FETCH_FAILED') return 'server se data nahi mil paya';
+    if(err.name === 'AbortError') return 'The server took too long to respond (slow internet, or the server is busy).';
+    if(err.message === 'SERVER_RETURNED_NON_JSON'){
+      // serverText = what the error page itself says (e.g. "Exceeded maximum execution time"), when it had any text
+      return 'The server returned an error page instead of data' + (err.serverText ? ' (“' + err.serverText + '”)' : '') +
+        '. Google Apps Script is probably busy or over its quota — wait a few minutes, then try again.';
+    }
+    if(err.message === 'DATA_FETCH_FAILED') return 'The server did not return the data.';
     return err.message || String(err);
   }
-  return 'server ne koi data nahi bheja';
+  return 'The server did not return any data.';
 }
 function rerenderActiveTab(){
   const activeTab = document.querySelector('nav.tabs button.active');
@@ -2493,7 +2502,7 @@ async function loadData(){
       composeAllData(); safeRerender_();
     } else if(!ALL_DATA.length){
       // Nothing from the server and nothing stored — say so, instead of a dashboard that claims "No audits yet".
-      showDataBanner_('error', 'Data load nahi hua: ' + describeLoadProblem_(fastRes, fastErr));
+      showDataBanner_('error', 'Could not load data: ' + describeLoadProblem_(fastRes, fastErr));
     }
     if(ALL_DATA.length) hideDataBanner_();
     // A stored copy is trusted for 6 hours; after that (or if there is none) the history is re-fetched in
@@ -2503,7 +2512,7 @@ async function loadData(){
     // The external GCPL sheet is slow and separate on purpose — it must never hold the dashboard up.
     if(MODULE === 'db') fetchExternalDBDataInBackground(gen, mod);
   }catch(e){
-    if(!ALL_DATA.length){ ALL_DATA = []; if(SESSION) showDataBanner_('error', 'Data load nahi hua: ' + describeLoadProblem_(null, e)); }
+    if(!ALL_DATA.length){ ALL_DATA = []; if(SESSION) showDataBanner_('error', 'Could not load data: ' + describeLoadProblem_(null, e)); }
   }
 }
 /* A drawing error (one odd row, a chart hiccup) must never stop data from loading — every re-render in
@@ -2636,7 +2645,7 @@ function startFullDataLoad(gen, mod){
         upToYmd: addDaysYmd_(sinceYmd, -1), includeAfter: !DATA_RECENT_APPLIED,
         onProgress: (d,t)=>{
           if(DATA_PROGRESS_CB) DATA_PROGRESS_CB(d,t);
-          if(stillCurrent() && !ALL_DATA.length && t) showDataBanner_('info', `Data load ho raha hai… ${d} of ${t}`);
+          if(stillCurrent() && !ALL_DATA.length && t) showDataBanner_('info', `Loading older records… ${d} of ${t}`);
         }, cancelled: ()=>!stillCurrent()
       });
       if(!stillCurrent()) return false;
@@ -2651,7 +2660,7 @@ function startFullDataLoad(gen, mod){
       return true;
     }catch(e){
       // whatever is already on screen stands — never worse off than before; but if there is NOTHING on screen, say why
-      if(gen === DATA_LOAD_GEN && MODULE === mod && SESSION && !ALL_DATA.length) showDataBanner_('error', 'Data load nahi hua: ' + describeLoadProblem_(null, e));
+      if(gen === DATA_LOAD_GEN && MODULE === mod && SESSION && !ALL_DATA.length) showDataBanner_('error', 'Could not load data: ' + describeLoadProblem_(null, e));
     }
     return false;
   })();
@@ -4901,7 +4910,7 @@ async function exportReport(){
       // false = the complete history could not be loaded. The server export needs that very same big read,
       // so retrying it there would only hang for another minute — say so plainly instead.
       finishExportProgress();
-      toast('Poora data load nahi ho paya — internet check karke thodi der baad dobara try kariye', true);
+      toast('Could not load the complete data — check your internet and try again in a moment.', true);
       return;
     }catch(localErr){ console.warn('Local export failed — falling back to the server export:', localErr); }
     // Fallback: the original Google-Sheets-based export.
