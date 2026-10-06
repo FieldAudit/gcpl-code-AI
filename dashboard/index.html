@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.9.1 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.10.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1339,6 +1339,7 @@ async function doLogin(){
   console.log('[login] starting, configured():', configured());
   try{
     SESSION_REMEMBER = remember;
+    let signedIn = false;   // true once the person is in (via either service) — a late reply from the slower one must not redraw the sign-in screen
     // The main server (Google Apps Script) — what the dashboard has always signed in with. It can be slow, or over its quota.
     const mainLogin = async ()=>{
       if(!configured()) throw new Error('__NOCFG__');
@@ -1350,7 +1351,7 @@ async function doLogin(){
       // 20 s: Apps Script can genuinely take that long on a lightweight call with nothing wrong.
       const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 20000);
       console.log('[login] fetch resolved after', Date.now()-startTime, 'ms — HTTP status:', r.status);
-      showLoadProgress(40, 'Checking credentials…');
+      if(!signedIn) showLoadProgress(40, 'Checking credentials…');   // after the person is already in, this would bring the progress ring back with nothing left to hide it
       const res = await safeJson(r);
       console.log('[login] parsed JSON:', res);
       if(!res.success) throw new Error(res.message || 'Invalid credentials');
@@ -1365,6 +1366,7 @@ async function doLogin(){
     if(sbRes && sbRes.success){
       SESSION = {userId:user, name:sbRes.name || user, role:sbRes.role || 'Manager', token:null, sb:{token:sbRes.token, expires_at:sbRes.expires_at}};
       persistSession_();
+      signedIn = true;
       enterApp();
       // the main sign-in keeps going in the background; when it arrives, the features that need it switch on
       mainP.then(res=>{ if(res && res.success && SESSION){ SESSION.token = res.token; persistSession_(); onMainServerReady_(); } })
@@ -1530,7 +1532,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.9.1';
+const FRONTEND_VERSION = 'v7.10.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2069,17 +2071,33 @@ function goToHistory(searchText){
 
 /* ---- Team roster + individual Journey (Admin / Marketing) ---- */
 let TEAM_DATA = [];
+let TEAM_ERROR = '';
 async function loadTeamData(){
   document.getElementById('teamGridContent').innerHTML = `<div class="empty"><b>Loading team…</b>Fetching check-ins and audit activity.</div>`;
+  TEAM_ERROR = '';
+  let sbErr = null;
+  // 1) the data service: the people are worked out inside the database, so only a few hundred bytes come back
+  if(SB_ACTIVE()){
+    try{ const res = await sbCall_('fa_team', {}); TEAM_DATA = res.users || []; return; }
+    catch(e){ sbNoteFailure_(e); sbErr = e; }
+  }
+  // 2) the main server. One attempt with a generous wait — not 3 attempts of 25 s, which also triples the work it is asked to do.
   try{
+    if(!SESSION || !SESSION.token) throw (sbErr || new Error('MAIN_SERVER_OFFLINE'));
     if(!configured()) throw new Error('__NOCFG__');
-    const res = await callApi({action:'getTeam', token:SESSION.token});
+    const res = await callApiSlow_({action:'getTeam', token:SESSION.token}, 60000, 0);
+    if(!res || res.success === false) throw new Error(describeLoadProblem_(res, null));
     TEAM_DATA = res.users || [];
-  }catch(e){ TEAM_DATA = []; }
+  }catch(e){ TEAM_DATA = []; TEAM_ERROR = describeLoadProblem_(null, e); }   // say why, instead of a list that looks empty
 }
 
 function renderTeamGrid(){
   const el = document.getElementById('teamGridContent');
+  if(TEAM_ERROR){
+    const safe = String(TEAM_ERROR).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    el.innerHTML = `<div class="empty"><b>Could not load the team</b>${safe}<br><button class="btn btn-outline" style="margin-top:10px;" onclick="loadTeamData().then(renderTeamGrid)">↻ Try again</button></div>`;
+    return;
+  }
   const q = document.getElementById('teamSearch').value.toLowerCase();
   const list = TEAM_DATA.filter(u => !q || (u.name+' '+u.phone).toLowerCase().includes(q));
   if(!list.length){ el.innerHTML = `<div class="empty"><b>No team members yet</b>Once an SO checks in for the first time, they'll appear here.</div>`; return; }
