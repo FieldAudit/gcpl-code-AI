@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.8.3 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.9.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1338,34 +1338,42 @@ async function doLogin(){
   showLoadProgress(15, 'Signing in…');
   console.log('[login] starting, configured():', configured());
   try{
-    if(!configured()) throw new Error('__NOCFG__');
-    // Cache-buster (_t) + cache:'no-store' — same as every other working
-    // API call in this file. Without these, a browser can serve this GET
-    // from its own HTTP cache (or leave it stuck behind a prior pending
-    // request to the exact same URL) instead of making a fresh network
-    // call — which is exactly what a silent, indefinite "stuck at 15%"
-    // looks like from the outside.
-    const qs = new URLSearchParams({action:'login', userId:user, password:pass, _t:Date.now()}).toString();
-    console.log('[login] fetching…', `${SCRIPT_URL}?action=login&userId=${user}&password=***&_t=...`);
-    const startTime = Date.now();
-    // 20s timeout (bumped up from 10s — Apps Script's own response time
-    // can genuinely run past 10s occasionally, even for a lightweight
-    // call like this one, with nothing actually wrong; the old 10s limit
-    // was cutting off logins that would have succeeded fine a couple
-    // seconds later) — a login call that never resolves at all still
-    // leaves the person staring at a frozen progress ring forever with no
-    // error and no way forward, so this still guarantees an actionable
-    // message eventually, just with more real headroom first.
-    const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 20000);
-    console.log('[login] fetch resolved after', Date.now()-startTime, 'ms — HTTP status:', r.status);
-    showLoadProgress(40, 'Checking credentials…');
-    const res = await safeJson(r);
-    console.log('[login] parsed JSON:', res);
-    if(!res.success) throw new Error(res.message || 'Invalid credentials');
-    SESSION = {userId:user, name:res.name || user, role:res.role || 'Manager', token:res.token};
-    if(remember){
-      try{ localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(SESSION)); }catch(_e){}
+    SESSION_REMEMBER = remember;
+    // The main server (Google Apps Script) — what the dashboard has always signed in with. It can be slow, or over its quota.
+    const mainLogin = async ()=>{
+      if(!configured()) throw new Error('__NOCFG__');
+      // Cache-buster (_t) + cache:'no-store' — a GET to the exact same URL can otherwise be served from the browser's own
+      // cache (or sit behind an earlier pending request), which looks like a silent, endless "stuck at 15%".
+      const qs = new URLSearchParams({action:'login', userId:user, password:pass, _t:Date.now()}).toString();
+      console.log('[login] fetching…', `${SCRIPT_URL}?action=login&userId=${user}&password=***&_t=...`);
+      const startTime = Date.now();
+      // 20 s: Apps Script can genuinely take that long on a lightweight call with nothing wrong.
+      const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, 20000);
+      console.log('[login] fetch resolved after', Date.now()-startTime, 'ms — HTTP status:', r.status);
+      showLoadProgress(40, 'Checking credentials…');
+      const res = await safeJson(r);
+      console.log('[login] parsed JSON:', res);
+      if(!res.success) throw new Error(res.message || 'Invalid credentials');
+      return res;
+    };
+    // Both sign-ins start together. The data service answers in a fraction of a second; whichever way the person gets in,
+    // they get in the moment it works — a slow or failing main server no longer keeps them out.
+    const sbP = sbConfigured() ? sbLogin(user, pass, remember).catch(e=>({success:false, message:e.message})) : null;
+    const mainP = mainLogin();
+    mainP.catch(()=>{});            // handled below, or deliberately ignored when the data-service sign-in is enough
+    const sbRes = sbP ? await sbP : null;
+    if(sbRes && sbRes.success){
+      SESSION = {userId:user, name:sbRes.name || user, role:sbRes.role || 'Manager', token:null, sb:{token:sbRes.token, expires_at:sbRes.expires_at}};
+      persistSession_();
+      enterApp();
+      // the main sign-in keeps going in the background; when it arrives, the features that need it switch on
+      mainP.then(res=>{ if(res && res.success && SESSION){ SESSION.token = res.token; persistSession_(); onMainServerReady_(); } })
+           .catch(()=>{ if(SESSION && !SESSION.token) showDataBanner_('info', 'The main server did not accept the sign-in right now. Your data is available; other features need it and will work once it responds.'); });
+      return;
     }
+    const res = await mainP;       // no usable data-service sign-in → the main server decides, as before
+    SESSION = {userId:user, name:res.name || user, role:res.role || 'Manager', token:res.token};
+    persistSession_();
     enterApp(); // takes over the progress ring itself, through to 100%
   }catch(e){
     console.error('[login] failed:', e.name, e.message);
@@ -1391,7 +1399,10 @@ async function doLogin(){
   }
 }
 function logout(){
-  SESSION = null;
+  if(SESSION && SESSION.sb && SESSION.sb.token && sbConfigured()){
+    try{ sbRpcRaw_('fa_logout', {p_token: SESSION.sb.token}, 5000).catch(()=>{}); }catch(_e){}   // best effort — ends the data-service session too
+  }
+  SESSION = null; SESSION_REMEMBER = false;
   try{ localStorage.removeItem(SESSION_STORAGE_KEY); }catch(_e){}
   document.getElementById('screen-app').style.display='none';
   document.getElementById('screen-login').style.display='flex';
@@ -1515,7 +1526,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.8.3';
+const FRONTEND_VERSION = 'v7.9.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2346,7 +2357,192 @@ async function saveMasterData(type){
   }
 }
 
+/* ================= Supabase: where the dashboard READS its data from =================
+   The Google Sheet is still where the field app WRITES; a sync keeps a copy of it in Supabase, and the
+   dashboard reads that copy — a real database with indexes, so no Apps Script quota, no 6-minute limit,
+   and a page load no longer re-reads the whole sheet. Leave both values empty and everything works exactly
+   as before (the old Apps Script path). If Supabase ever fails, the dashboard falls back to that old path by itself. */
+const SUPABASE_URL = '';   // e.g. 'https://abcdefgh.supabase.co'   (Supabase → Project Settings → API → Project URL)
+const SUPABASE_KEY = '';   // the PUBLIC key only: "anon" (legacy) or "publishable". NEVER the secret / service_role key.
+let SESSION_REMEMBER = false;
+let SB_FAIL_UNTIL = 0;     // after a transport failure the data service is skipped for two minutes, so a dead service can't slow every click
+function sbConfigured(){ return !!(SUPABASE_URL && SUPABASE_KEY); }
+function SB_ACTIVE(){ return sbConfigured() && !!(SESSION && SESSION.sb && SESSION.sb.token) && Date.now() >= SB_FAIL_UNTIL; }
+function persistSession_(){ if(!SESSION_REMEMBER) return; try{ localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(SESSION)); }catch(_e){} }
+function setDataSourceBadge_(label){
+  const host = document.getElementById('backendVerCheck'); if(!host) return;
+  let b = document.getElementById('dataSrcBadge');
+  if(!b){ b = document.createElement('span'); b.id = 'dataSrcBadge'; host.insertAdjacentElement('afterend', b); }
+  b.textContent = ' · data: ' + label;
+}
+/* One call to a Supabase database function. Resolves with the parsed JSON. Errors that mean "the service itself is
+   unreachable or broken" carry sbTransport=true (these trip the two-minute skip); a refusal (wrong role, expired
+   session) does not. */
+async function sbRpcRaw_(fn, args, ms){
+  const headers = {'Content-Type':'application/json', apikey: SUPABASE_KEY};
+  if(SUPABASE_KEY.indexOf('eyJ') === 0) headers.Authorization = 'Bearer ' + SUPABASE_KEY; // legacy JWT-style keys also want this header; new-style keys must not send it
+  let r;
+  try{ r = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {method:'POST', headers, body: JSON.stringify(args || {})}, ms || 30000, 1); }
+  catch(e){ e.sbTransport = true; throw e; }
+  const text = await r.text();
+  let body = null; try{ body = JSON.parse(text); }catch(_e){}
+  if(!r.ok){
+    const err = new Error((body && (body.message || body.hint)) || ('The data service returned an error (HTTP ' + r.status + ').'));
+    err.status = r.status; err.sbTransport = r.status >= 500 || r.status === 401 || r.status === 404;
+    throw err;
+  }
+  if(body === null){ const err = new Error('The data service returned an unreadable reply.'); err.sbTransport = true; throw err; }
+  return body;
+}
+async function sbLogin(user, pass, remember){ return sbRpcRaw_('fa_login', {p_user:user, p_pass:pass, p_remember: !!remember}, 15000); }
+function sbDropSession_(){
+  if(!SESSION || !SESSION.sb) return;
+  delete SESSION.sb; persistSession_();
+  if(!SESSION.token) handleSessionExpired_();   // signed in only through the data service, and that session is gone → back to the login screen
+}
+function sbNoteFailure_(e){
+  if(e && e.sbTransport) SB_FAIL_UNTIL = Date.now() + 2*60*1000;
+  console.warn('[data service] ' + (e && e.message ? e.message : e));
+}
+/* An authenticated call: adds the session token, and turns {success:false} into an error. */
+async function sbCall_(fn, args, ms){
+  if(!SESSION || !SESSION.sb){ const e = new Error('Session expired — please log in again'); e.sbSession = true; throw e; }
+  const res = await sbRpcRaw_(fn, Object.assign({p_token: SESSION.sb.token}, args || {}), ms);
+  if(res && res.success === false){
+    const err = new Error(res.message || 'The data service refused the request.');
+    if(/session expired/i.test(err.message)){ err.sbSession = true; sbDropSession_(); }
+    throw err;
+  }
+  return res;
+}
+const SB_PAGE = 500, SB_PAGE_PARALLEL = 3;
+function dedupeByKey_(rows){
+  const seen = new Set(), out = [];
+  rows.forEach(r=>{ const k = r._k; if(k){ if(seen.has(k)) return; seen.add(k); } out.push(r); });
+  return out;
+}
+/* Every row matching `filters` (see fa_rows_page), page by page. With the dataset size known the pages are fetched in
+   parallel; rows added meanwhile are picked up by one more sequential look past the last planned page. */
+async function sbFetchRows_(tbl, filters, opts){
+  opts = opts || {};
+  const base = Object.assign({p_tbl: tbl, p_limit: SB_PAGE}, filters || {});
+  let out = [];
+  const total = opts.total || 0;
+  let off = 0;
+  if(total > SB_PAGE){
+    const pages = Math.ceil(total / SB_PAGE), results = new Array(pages);
+    let next = 0, done = 0;
+    const worker = async ()=>{
+      while(true){
+        if(opts.cancelled && opts.cancelled()) return;
+        const i = next++; if(i >= pages) return;
+        const r = await sbCall_('fa_rows_page', Object.assign({}, base, {p_offset: i * SB_PAGE}));
+        results[i] = r.rows; done++;
+        if(opts.onProgress) opts.onProgress(done, pages);
+      }
+    };
+    await Promise.all(Array.from({length: Math.min(SB_PAGE_PARALLEL, pages)}, ()=>worker()));
+    results.forEach(r=>{ out = out.concat(r || []); });
+    off = pages * SB_PAGE;
+  }
+  while(true){
+    if(opts.cancelled && opts.cancelled()) break;
+    const r = await sbCall_('fa_rows_page', Object.assign({}, base, {p_offset: off}));
+    out = out.concat(r.rows);
+    if(r.rows.length < SB_PAGE) break;
+    off += SB_PAGE;
+  }
+  return dedupeByKey_(out);
+}
+function sortByDate_(rows){
+  const dec = rows.map((r, i)=>[rowYmd_(r), i, r]);
+  dec.sort((a, b)=> a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]);
+  return dec.map(x=>x[2]);
+}
+/* What the browser already holds + the rows that changed or arrived since (matched by _k). */
+function mergeByKey_(rows, delta){
+  if(!delta.length) return rows;
+  const idx = new Map(); rows.forEach((r, i)=>{ if(r._k) idx.set(r._k, i); });
+  const out = rows.slice(), added = [];
+  delta.forEach(d=>{ const i = idx.get(d._k); if(i === undefined) added.push(d); else out[i] = d; });
+  return added.length ? sortByDate_(out.concat(added)) : out;
+}
+/* Everything in a module — the same {rows, whole} shape the Apps Script loader returns, plus the cursor
+   (taken BEFORE the rows, so anything changing during the load is simply picked up by the next quick check). */
+async function fetchModuleHistorySb_(mod, opts){
+  opts = opts || {};
+  const tbl = mod === 'db' ? 'db' : 'retail';
+  const meta = await sbCall_('fa_meta', {p_tbl: tbl});
+  DATA_SB_META = meta;
+  const rows = await sbFetchRows_(tbl, {}, {total: meta.total, onProgress: opts.onProgress, cancelled: opts.cancelled});
+  if(opts.cancelled && opts.cancelled()) throw new Error('CANCELLED');
+  return {rows, whole: true, src: 'sb', cursor: meta.max_updated || ''};
+}
+function noteSbSyncAge_(meta){
+  const t = meta && meta.last_sync ? Date.parse(meta.last_sync) : NaN;
+  if(isNaN(t)) return;                         // no heartbeat yet (first setup) — nothing to compare with
+  const mins = Math.round((Date.now() - t) / 60000);
+  if(mins >= 45) showDataBanner_('info', 'Showing data last synced ' + (mins >= 120 ? Math.round(mins/60) + ' hours' : mins + ' minutes') + ' ago — the copy from Google Sheets looks delayed.');
+}
+/* Retail / DB loading through Supabase. Returns true when it handled the load, false to let the old path take over. */
+async function loadDataSb_(gen, mod, sinceDate, st, cacheRead){
+  const tbl = mod === 'db' ? 'db' : 'retail';
+  try{
+    const meta = await sbCall_('fa_meta', {p_tbl: tbl});
+    DATA_SB_META = meta;
+    await Promise.race([cacheRead, new Promise(r=>setTimeout(r, 2500))]);
+    if(gen !== DATA_LOAD_GEN || !SESSION) return true;
+    const rec = st.cachedRec;
+    const usable = rec && rec.complete && rec.src === 'sb' && rec.sbCursor && rec.fullAt && (Date.now() - rec.fullAt) < 7*86400000;
+    if(usable){
+      // what this browser already holds + only what changed since — usually a handful of rows
+      const delta = await sbFetchRows_(tbl, {p_updated_after: rec.sbCursor});
+      if(gen !== DATA_LOAD_GEN || !SESSION) return true;
+      let rows = mergeByKey_(rec.rows, delta);
+      if(rows.length !== meta.total){              // something was deleted from the sheet — find out what
+        const ids = await sbCall_('fa_ids', {p_tbl: tbl});
+        if(gen !== DATA_LOAD_GEN || !SESSION) return true;
+        const keep = new Set(ids.ids);
+        rows = rows.filter(r => keep.has(r._k));
+      }
+      st.freshApplied = true; DATA_RECENT_APPLIED = true;
+      BASE_ROWS = rows; EXTERNAL_DB_ROWS = rec.ext || [];
+      DATA_COMPLETE = true; DATA_FULL_AT = rec.fullAt; DATA_SOURCE = 'sb'; DATA_SB_CURSOR = meta.max_updated || rec.sbCursor;
+      composeAllData(); saveDataCache(); safeRerender_(); hideDataBanner_(); noteSbSyncAge_(meta);
+    } else {
+      // nothing usable stored: the newest week first (merged over whatever older copy the browser has), then everything
+      const recent = await sbFetchRows_(tbl, {p_since: sinceDate});
+      if(gen !== DATA_LOAD_GEN || !SESSION) return true;
+      st.freshApplied = true; DATA_RECENT_APPLIED = true;
+      if(rec && rec.rows && rec.rows.length){
+        BASE_ROWS = mergeRecentRows_(rec.rows, recent, sinceDate);
+        EXTERNAL_DB_ROWS = rec.ext || []; DATA_COMPLETE = !!rec.complete;
+      } else {
+        BASE_ROWS = recent; EXTERNAL_DB_ROWS = []; DATA_COMPLETE = false;
+      }
+      DATA_SOURCE = 'sb';
+      composeAllData(); safeRerender_(); hideDataBanner_();
+      startFullDataLoad(gen, mod);
+    }
+    setDataSourceBadge_('Supabase');
+    if(mod === 'db') fetchExternalDBDataInBackground(gen, mod);
+    return true;
+  }catch(e){
+    sbNoteFailure_(e); st.sbError = e;
+    return false;
+  }
+}
+/* The main (Apps Script) sign-in can finish after the person is already in, via the data service. */
+function onMainServerReady_(){
+  try{ hideDataBanner_(); }catch(_e){}
+  try{ if(CAN_APPROVE()) refreshPendingApprovalBadge(); }catch(_e){}
+  try{ if(MODULE === 'db') fetchExternalDBDataInBackground(DATA_LOAD_GEN, MODULE); }catch(_e){}
+}
+
 async function callApi(payload, usePost){
+  // Signed in through the data service only (the main server has not answered yet, or is down): say so at once
+  // instead of sending a token-less request that would come back as "session expired" and sign the person out.
+  if(!SESSION || !SESSION.token) return {success:false, message:'The main server is not connected yet.', mainServerOffline:true};
   // Upgraded to the same fetchWithTimeout (auto-retry) + safeJson (clean
   // failure instead of a raw "Unexpected token '<'... DOCTYPE" crash)
   // that the login flow already had — this one function is what almost
@@ -2380,6 +2576,12 @@ function noteIfSessionExpired_(res){
 let SESSION_EXPIRED_HANDLED_ = false;
 function handleSessionExpired_(){
   if(SESSION_EXPIRED_HANDLED_ || !SESSION) return;
+  if(SESSION.sb && SESSION.sb.token && SESSION.token){
+    // the main-server login lapsed, but the data service session is fine — keep the dashboard usable instead of signing out
+    SESSION.token = null; persistSession_();
+    showDataBanner_('info', 'The main server session has expired. Your data is still available; sign in again to use the other features.');
+    return;
+  }
   SESSION_EXPIRED_HANDLED_ = true;
   try{ logout(); }catch(_e){}
   try{ hideLoadProgress(); }catch(_e){}
@@ -2418,6 +2620,7 @@ function describeLoadProblem_(res, err){
         '. Google Apps Script is probably busy or over its quota — wait a few minutes, then try again.';
     }
     if(err.message === 'DATA_FETCH_FAILED') return 'The server did not return the data.';
+    if(err.message === 'MAIN_SERVER_OFFLINE') return 'the main server is not connected yet.';
     return err.message || String(err);
   }
   return 'The server did not return any data.';
@@ -2461,6 +2664,7 @@ async function loadData(){
   const gen = ++DATA_LOAD_GEN;
   const mod = MODULE;
   BASE_ROWS = []; EXTERNAL_DB_ROWS = []; DATA_COMPLETE = false; DATA_FULL_AT = 0; DATA_RECENT_APPLIED = false;
+  DATA_SOURCE = 'as'; DATA_SB_CURSOR = ''; DATA_SB_META = null;
   FULL_DATA_PROMISE = null; EXTERNAL_DB_PROMISE = null;
   ALL_DATA = [];
   // Keyed by MODULE + role, since Sales/Marketing/Admin can each see a different shape of the same
@@ -2468,17 +2672,24 @@ async function loadData(){
   DATA_CACHE_KEY_CUR = 'fieldaudit_data_v2_' + MODULE + '_' + (SESSION.role||'');
   const sinceDate = localDateStr(new Date(Date.now() - 7*24*60*60*1000));
   DATA_SINCE_YMD = sinceDate;
-  let cachedRec = null, freshApplied = false;
+  const st = {cachedRec:null, freshApplied:false, sbError:null};
   const cacheRead = IDB.get(DATA_CACHE_KEY_CUR).then(c=>{
     if(gen !== DATA_LOAD_GEN || !c || !c.rows || !c.rows.length) return;
-    cachedRec = c;
-    if(!freshApplied){
+    st.cachedRec = c;
+    if(!st.freshApplied){
       BASE_ROWS = c.rows; EXTERNAL_DB_ROWS = c.ext || []; DATA_COMPLETE = !!c.complete; DATA_FULL_AT = c.fullAt || 0;
       composeAllData(); safeRerender_();
     }
   }).catch(()=>{});
   try{
+    // 1) the new data service (Supabase); if it can't serve this load, the old path below takes over by itself
+    if(SB_ACTIVE()){
+      if(await loadDataSb_(gen, mod, sinceDate, st, cacheRead)) return;
+      if(gen !== DATA_LOAD_GEN || !SESSION) return;
+    }
+    // 2) the main server (Google Apps Script)
     if(!configured()) throw new Error('__NOCFG__');
+    if(!SESSION.token) throw new Error('MAIN_SERVER_OFFLINE');
     const action = MODULE === 'db' ? 'getDBDataInternal' : 'getData';
     let fastRes = null, fastErr = null;
     try{ fastRes = await callApiSlow_({action, token:SESSION.token, sinceDate}, 60000, 0); }catch(e){ fastErr = e; }
@@ -2488,17 +2699,18 @@ async function loadData(){
     if(gen !== DATA_LOAD_GEN) return;
     if(!SESSION) return; // the saved login turned out to be expired and the person was sent back to the login screen
     if(fastRes && fastRes.rows){
-      freshApplied = true; DATA_RECENT_APPLIED = true;
-      if(cachedRec && cachedRec.complete){
+      st.freshApplied = true; DATA_RECENT_APPLIED = true;
+      if(st.cachedRec && st.cachedRec.complete){
         // stored full history + the fresh week = complete and current, without waiting for anything else
-        BASE_ROWS = mergeRecentRows_(cachedRec.rows, fastRes.rows, sinceDate);
-        EXTERNAL_DB_ROWS = cachedRec.ext || [];
-        DATA_COMPLETE = true; DATA_FULL_AT = cachedRec.fullAt || 0;
+        BASE_ROWS = mergeRecentRows_(st.cachedRec.rows, fastRes.rows, sinceDate);
+        EXTERNAL_DB_ROWS = st.cachedRec.ext || [];
+        DATA_COMPLETE = true; DATA_FULL_AT = st.cachedRec.fullAt || 0;
       } else {
         BASE_ROWS = fastRes.rows;
-        EXTERNAL_DB_ROWS = (cachedRec && cachedRec.ext) || [];
+        EXTERNAL_DB_ROWS = (st.cachedRec && st.cachedRec.ext) || [];
         DATA_COMPLETE = false;
       }
+      DATA_SOURCE = 'as'; setDataSourceBadge_('Google Sheets');
       composeAllData(); safeRerender_();
     } else if(!ALL_DATA.length){
       // Nothing from the server and nothing stored — say so, instead of a dashboard that claims "No audits yet".
@@ -2512,7 +2724,7 @@ async function loadData(){
     // The external GCPL sheet is slow and separate on purpose — it must never hold the dashboard up.
     if(MODULE === 'db') fetchExternalDBDataInBackground(gen, mod);
   }catch(e){
-    if(!ALL_DATA.length){ ALL_DATA = []; if(SESSION) showDataBanner_('error', 'Could not load data: ' + describeLoadProblem_(null, e)); }
+    if(!ALL_DATA.length){ ALL_DATA = []; if(SESSION) showDataBanner_('error', 'Could not load data: ' + describeLoadProblem_(null, (e && e.message === 'MAIN_SERVER_OFFLINE' && st.sbError) ? st.sbError : e)); }
   }
 }
 /* A drawing error (one odd row, a chart hiccup) must never stop data from loading — every re-render in
@@ -2529,13 +2741,16 @@ let DATA_LOAD_GEN = 0;       // bumped by every loadData() so a late response fr
 let FULL_DATA_PROMISE = null;
 let EXTERNAL_DB_PROMISE = null;
 let DATA_CACHE_KEY_CUR = '';
+let DATA_SOURCE = 'as';     // which service produced BASE_ROWS: 'sb' (Supabase) or 'as' (Apps Script)
+let DATA_SB_CURSOR = '';     // Supabase: "everything up to here is already held" — the next load fetches only what changed after it
+let DATA_SB_META = null;
 let DATA_PROGRESS_CB = null; // (done, total) — set by an export that is waiting for the history to finish loading
 function composeAllData(){
   ALL_DATA = (MODULE === 'db' && EXTERNAL_DB_ROWS.length) ? BASE_ROWS.concat(EXTERNAL_DB_ROWS) : BASE_ROWS;
 }
 function saveDataCache(){
   if(!DATA_CACHE_KEY_CUR || !DATA_COMPLETE) return; // never store a partial history as if it were the whole thing
-  IDB.set(DATA_CACHE_KEY_CUR, {rows: BASE_ROWS, ext: EXTERNAL_DB_ROWS, complete: true, fullAt: DATA_FULL_AT, savedAt: Date.now()});
+  IDB.set(DATA_CACHE_KEY_CUR, {rows: BASE_ROWS, ext: EXTERNAL_DB_ROWS, complete: true, fullAt: DATA_FULL_AT, src: DATA_SOURCE, sbCursor: DATA_SB_CURSOR, savedAt: Date.now()});
 }
 function rowYmd_(r){ const d = parseDateFlexible(r.date); return d ? dateToYMD(d) : ''; }
 // stored rows older than the fresh window + the fresh rows (anything stored inside that window is dropped, so deletions/edits show up)
@@ -2552,6 +2767,7 @@ function addDaysYmd_(ymd, n){
    deserve a generous-but-bounded wait and ONE retry (callApi's 25 s × 3 attempts is what made a stuck
    request look like a one-minute hang). */
 async function callApiSlow_(payload, ms, retries){
+  if(!SESSION || !SESSION.token) throw new Error('MAIN_SERVER_OFFLINE');
   const qs = new URLSearchParams(Object.assign({}, payload, {_t: Date.now()})).toString();
   const r = await fetchWithTimeout(`${SCRIPT_URL}?${qs}`, {cache:'no-store'}, ms, retries);
   return noteIfSessionExpired_(await safeJson(r));
@@ -2564,6 +2780,10 @@ const HISTORY_WINDOW_DAYS = 30, HISTORY_PARALLEL = 2;
    Returns {rows, whole}: rows oldest→newest; whole=true means rows already contain the entire history. */
 async function fetchModuleHistoryChunked_(mod, opts){
   opts = opts || {};
+  if(SB_ACTIVE()){
+    try{ return await fetchModuleHistorySb_(mod, opts); }
+    catch(e){ sbNoteFailure_(e); if(!(SESSION && SESSION.token)) throw e; }   // no main-server token to fall back on → say what went wrong
+  }
   const action = mod === 'db' ? 'getDBDataInternal' : 'getData';
   let meta = null;
   // A timeout/network error here must NOT escalate to the heavy plain call below — a server that is already
@@ -2636,7 +2856,7 @@ async function fetchModuleHistoryChunked_(mod, opts){
 }
 /* STEP 3 — the rest of the history. Never blocks what the person is already looking at. */
 function startFullDataLoad(gen, mod){
-  if(!configured()) return Promise.resolve(false);
+  if(!configured() && !SB_ACTIVE()) return Promise.resolve(false);
   const sinceYmd = DATA_SINCE_YMD || localDateStr(new Date(Date.now() - 7*24*60*60*1000));
   const p = (async ()=>{
     try{
@@ -2649,14 +2869,16 @@ function startFullDataLoad(gen, mod){
         }, cancelled: ()=>!stillCurrent()
       });
       if(!stillCurrent()) return false;
-      if(r.whole) BASE_ROWS = r.rows;
+      if(r.whole){ BASE_ROWS = r.rows; DATA_SOURCE = r.src || 'as'; DATA_SB_CURSOR = r.cursor || ''; }
       else {
         const recent = DATA_RECENT_APPLIED ? BASE_ROWS.filter(x=>{ const y = rowYmd_(x); return y && y >= sinceYmd; }) : [];
         BASE_ROWS = r.rows.concat(recent);
+        DATA_SOURCE = 'as'; DATA_SB_CURSOR = '';
       }
       DATA_COMPLETE = true; DATA_FULL_AT = Date.now();
       composeAllData(); saveDataCache(); safeRerender_();
       hideDataBanner_();
+      if(DATA_SOURCE === 'sb'){ setDataSourceBadge_('Supabase'); noteSbSyncAge_(DATA_SB_META); } else setDataSourceBadge_('Google Sheets');
       return true;
     }catch(e){
       // whatever is already on screen stands — never worse off than before; but if there is NOTHING on screen, say why
@@ -2690,7 +2912,7 @@ let PHOTOS_LOADED = false;
 let PHOTOS_LOADING_PROMISE = null; // guards against overlapping calls (tab-switch + sync button clicked close together) stepping on each other's progress bar
 function photosCacheKey(){ return 'fieldaudit_photos_cache_v1_' + (SESSION && SESSION.role || ''); }
 async function loadPhotosData(){
-  if(!configured()) return;
+  if(!configured() && !SB_ACTIVE()) return;
   // Renders instantly from whatever this role last saw, before any
   // network call — same reasoning as the Dashboard/Ad Audit caches:
   // opening Photos used to ALWAYS trigger its own full re-fetch of every
@@ -3343,8 +3565,15 @@ let NO_PRODUCT_DATA = [];
 async function loadNoProductReport(){
   document.getElementById('noProductGrid').innerHTML = `<div class="empty"><span class="spin"></span> Loading…</div>`;
   try{
-    const res = await callApi({action:'getNoProductReport', token:SESSION.token});
-    NO_PRODUCT_DATA = res.rows || [];
+    let done = false;
+    if(SB_ACTIVE()){
+      try{ NO_PRODUCT_DATA = await sbFetchRows_('npa', {}); done = true; }
+      catch(e){ sbNoteFailure_(e); }              // fall back to the main server below
+    }
+    if(!done){
+      const res = await callApi({action:'getNoProductReport', token:SESSION.token});
+      NO_PRODUCT_DATA = res.rows || [];
+    }
   }catch(e){
     NO_PRODUCT_DATA = [];
   }
@@ -5557,7 +5786,9 @@ if(!configured()) document.getElementById('cfgWarning').style.display='block';
     const raw = localStorage.getItem(SESSION_STORAGE_KEY);
     if(raw){
       SESSION = JSON.parse(raw);
-      if(SESSION && SESSION.token) enterApp();
+      SESSION_REMEMBER = true;
+      if(SESSION && SESSION.sb && SESSION.sb.expires_at && Date.parse(SESSION.sb.expires_at) < Date.now()) delete SESSION.sb;   // that data-service session has run out
+      if(SESSION && (SESSION.token || (SESSION.sb && SESSION.sb.token))) enterApp(); else SESSION = null;
     }
   }catch(_e){}
 })();
