@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.9.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.9.1 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1368,7 +1368,11 @@ async function doLogin(){
       enterApp();
       // the main sign-in keeps going in the background; when it arrives, the features that need it switch on
       mainP.then(res=>{ if(res && res.success && SESSION){ SESSION.token = res.token; persistSession_(); onMainServerReady_(); } })
-           .catch(()=>{ if(SESSION && !SESSION.token) showDataBanner_('info', 'The main server did not accept the sign-in right now. Your data is available; other features need it and will work once it responds.'); });
+           .catch(()=>{
+             if(!SESSION || SESSION.token) return;
+             if(ALL_DATA.length) showDataBanner_('info', 'The main server did not accept the sign-in right now. Your data is available; other features need it and will work once it responds.');
+             else showDataBanner_('error', 'Could not load data: the main server is not responding, and the data service has no records yet.');
+           });
       return;
     }
     const res = await mainP;       // no usable data-service sign-in → the main server decides, as before
@@ -1526,7 +1530,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.9.0';
+const FRONTEND_VERSION = 'v7.9.1';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2362,11 +2366,13 @@ async function saveMasterData(type){
    dashboard reads that copy — a real database with indexes, so no Apps Script quota, no 6-minute limit,
    and a page load no longer re-reads the whole sheet. Leave both values empty and everything works exactly
    as before (the old Apps Script path). If Supabase ever fails, the dashboard falls back to that old path by itself. */
-const SUPABASE_URL = '';   // e.g. 'https://abcdefgh.supabase.co'   (Supabase → Project Settings → API → Project URL)
-const SUPABASE_KEY = '';   // the PUBLIC key only: "anon" (legacy) or "publishable". NEVER the secret / service_role key.
+const SUPABASE_URL = 'https://qwyorroptzablkauxpas.supabase.co';   // e.g. 'https://abcdefgh.supabase.co'   (the Project URL, without anything after .supabase.co)
+const SUPABASE_KEY = 'sb_publishable_PENraDDVP5_0s8QPhRELmw_EIG25klJ';   // the PUBLIC key only: "anon" (legacy) or "publishable". NEVER the secret / service_role key.
 let SESSION_REMEMBER = false;
 let SB_FAIL_UNTIL = 0;     // after a transport failure the data service is skipped for two minutes, so a dead service can't slow every click
-function sbConfigured(){ return !!(SUPABASE_URL && SUPABASE_KEY); }
+// accepts the bare Project URL, and also forgives a pasted ".../rest/v1/" ending or stray spaces
+const SB_BASE_URL = String(SUPABASE_URL || '').trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+function sbConfigured(){ return !!(SB_BASE_URL && String(SUPABASE_KEY || '').trim()); }
 function SB_ACTIVE(){ return sbConfigured() && !!(SESSION && SESSION.sb && SESSION.sb.token) && Date.now() >= SB_FAIL_UNTIL; }
 function persistSession_(){ if(!SESSION_REMEMBER) return; try{ localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(SESSION)); }catch(_e){} }
 function setDataSourceBadge_(label){
@@ -2379,10 +2385,11 @@ function setDataSourceBadge_(label){
    unreachable or broken" carry sbTransport=true (these trip the two-minute skip); a refusal (wrong role, expired
    session) does not. */
 async function sbRpcRaw_(fn, args, ms){
-  const headers = {'Content-Type':'application/json', apikey: SUPABASE_KEY};
-  if(SUPABASE_KEY.indexOf('eyJ') === 0) headers.Authorization = 'Bearer ' + SUPABASE_KEY; // legacy JWT-style keys also want this header; new-style keys must not send it
+  const key = String(SUPABASE_KEY).trim();
+  const headers = {'Content-Type':'application/json', apikey: key};
+  if(key.indexOf('eyJ') === 0) headers.Authorization = 'Bearer ' + key; // legacy JWT-style keys also want this header; new-style keys must not send it
   let r;
-  try{ r = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {method:'POST', headers, body: JSON.stringify(args || {})}, ms || 30000, 1); }
+  try{ r = await fetchWithTimeout(`${SB_BASE_URL}/rest/v1/rpc/${fn}`, {method:'POST', headers, body: JSON.stringify(args || {})}, ms || 30000, 1); }
   catch(e){ e.sbTransport = true; throw e; }
   const text = await r.text();
   let body = null; try{ body = JSON.parse(text); }catch(_e){}
@@ -2474,6 +2481,7 @@ async function fetchModuleHistorySb_(mod, opts){
   const tbl = mod === 'db' ? 'db' : 'retail';
   const meta = await sbCall_('fa_meta', {p_tbl: tbl});
   DATA_SB_META = meta;
+  if(!meta.total && SESSION && SESSION.token) throw new Error('The data service has no rows yet.');   // same reasoning as in loadDataSb_
   const rows = await sbFetchRows_(tbl, {}, {total: meta.total, onProgress: opts.onProgress, cancelled: opts.cancelled});
   if(opts.cancelled && opts.cancelled()) throw new Error('CANCELLED');
   return {rows, whole: true, src: 'sb', cursor: meta.max_updated || ''};
@@ -2490,6 +2498,16 @@ async function loadDataSb_(gen, mod, sinceDate, st, cacheRead){
   try{
     const meta = await sbCall_('fa_meta', {p_tbl: tbl});
     DATA_SB_META = meta;
+    // A copy with no rows at all most likely means the first sync has not finished (or failed partway) — not that
+    // the business has no audits. While the main server can still answer, let it, rather than show an empty dashboard.
+    if(!meta.total){
+      if(SESSION && SESSION.token) throw new Error('The data service has no rows yet.');
+      // nothing to fall back on right now (main server not connected): say plainly why the screen is empty
+      if(gen !== DATA_LOAD_GEN || !SESSION) return true;
+      BASE_ROWS = []; EXTERNAL_DB_ROWS = []; DATA_COMPLETE = false; DATA_SOURCE = 'sb'; composeAllData(); safeRerender_();
+      showDataBanner_('error', 'Could not load data: the data service has no records yet — the first copy from Google Sheets may not have finished.');
+      return true;
+    }
     await Promise.race([cacheRead, new Promise(r=>setTimeout(r, 2500))]);
     if(gen !== DATA_LOAD_GEN || !SESSION) return true;
     const rec = st.cachedRec;
@@ -2535,6 +2553,8 @@ async function loadDataSb_(gen, mod, sinceDate, st, cacheRead){
 /* The main (Apps Script) sign-in can finish after the person is already in, via the data service. */
 function onMainServerReady_(){
   try{ hideDataBanner_(); }catch(_e){}
+  // if the data service had nothing to show, the main server can answer now — load again
+  try{ if(!ALL_DATA.length && (MODULE === 'retail' || MODULE === 'db')) loadData().then(()=>{ try{ rerenderActiveTab(); }catch(_e){} }); }catch(_e){}
   try{ if(CAN_APPROVE()) refreshPendingApprovalBadge(); }catch(_e){}
   try{ if(MODULE === 'db') fetchExternalDBDataInBackground(DATA_LOAD_GEN, MODULE); }catch(_e){}
 }
