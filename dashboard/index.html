@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.10.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.11.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -834,6 +834,15 @@ function toast(msg, isErr){
   clearTimeout(t._h); t._h = setTimeout(()=>t.style.display='none', 3200);
 }
 function configured(){ return SCRIPT_URL && SCRIPT_URL.indexOf('PASTE_YOUR') === -1; }
+/* ---- Supabase settings (where the dashboard reads its data from) — declared HERE, near the top, because the page-load code
+   below already asks whether it is configured. See the long comment further down for what each value is. ---- */
+const SUPABASE_URL = 'https://qwyorroptzablkauxpas.supabase.co';   // e.g. 'https://abcdefgh.supabase.co'   (the Project URL, without anything after .supabase.co)
+const SUPABASE_KEY = 'sb_publishable_PENraDDVP5_0s8QPhRELmw_EIG25klJ';   // the PUBLIC key only: "anon" (legacy) or "publishable". NEVER the secret / service_role key.
+// accepts the bare Project URL, and also forgives a pasted ".../rest/v1/" ending or stray spaces
+const SB_BASE_URL = String(SUPABASE_URL || '').trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+let SESSION_REMEMBER = false;
+let SB_FAIL_UNTIL = 0;     // after a transport failure the data service is skipped for two minutes, so a dead service can't slow every click
+
 
 /* Triggers a direct local download of the .xlsx the backend just generated
    and shipped back as base64 — this is what actually fixes "You need
@@ -1002,8 +1011,9 @@ async function buildProWorkbook(ExcelJS, spec){
 
   ws1.pageSetup = {orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:1, paperSize:9};
 
-  /* ---------- Details sheet ---------- */
-  const ws2 = wb.addWorksheet(spec.sheetName || 'Details', {views:[{state:'frozen', ySplit:1}]});
+  /* ---------- Details sheet(s) ---------- */
+  const writeDetails = async (sheetName, cols, rows, report)=>{
+  const ws2 = wb.addWorksheet(sheetName, {views:[{state:'frozen', ySplit:1}]});
   // widths: from header text and a sample of the content, clamped
   const widths = cols.map(c=>{
     if(c.w) return c.w;
@@ -1056,12 +1066,16 @@ async function buildProWorkbook(ExcelJS, spec){
         else cell.font = FONT;
       } else cell.font = FONT;
     }
-    if((i + 1) % CHUNK === 0){ prog(Math.round(((i+1)/rows.length)*100), 'Formatting rows… ' + (i+1) + ' of ' + rows.length); await yieldUi(); }
+    if((i + 1) % CHUNK === 0){ if(report) prog(Math.round(((i+1)/rows.length)*100), 'Formatting rows… ' + (i+1) + ' of ' + rows.length); await yieldUi(); }
   }
   if(rows.length){
     ws2.autoFilter = {from:{row:1, column:1}, to:{row:rows.length + 1, column:cols.length}};
   }
   ws2.pageSetup = {orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, paperSize:9, printTitlesRow:'1:1'};
+  };
+  await writeDetails(spec.sheetName || 'Details', cols, rows, true);
+  // further sheets in the same workbook (e.g. a person's audits AND their check-ins)
+  for(const x of (spec.extraSheets || [])) await writeDetails(x.sheetName, x.columns, x.rows || [], false);
   prog(100, 'Finishing…');
   return wb;
 }
@@ -1218,6 +1232,31 @@ function cancelLoadProgress(){
    and by then it's a genuine, persistent problem worth surfacing (the
    systemHealthBanner check elsewhere already gives that its own clear
    message rather than a raw error). */
+/* ---- reads that follow a write ----
+   The Google Sheet is where everything is written; the dashboard reads a copy that is refreshed every ~10 minutes. So right after
+   someone WRITES from the dashboard (approves an ad, uploads a list, verifies an audit, edits master data…) the copy is briefly
+   behind. For 12 minutes after a write, the screens it affects read straight from the Sheet's own server instead — the person sees
+   their change at once, exactly as before — and then go back to the fast copy. */
+const LAST_WRITE_KEY = 'fieldaudit_last_write_v1';
+let LAST_WRITE_AT = (function(){ try{ return JSON.parse(localStorage.getItem(LAST_WRITE_KEY) || '{}') || {}; }catch(_e){ return {}; } })();
+const AD_DATASETS_ = ['subs','checks','uploads','aaudit','ads','changelog'];
+const MAIN_EDITABLE_DATASETS_ = ['mkt','mktmeta','dbmaster','somaster'];
+const READ_ONLY_POST_ACTIONS_ = ['exportSelectedPhotosZip'];
+function noteWrite_(kind){ LAST_WRITE_AT[kind] = Date.now(); try{ localStorage.setItem(LAST_WRITE_KEY, JSON.stringify(LAST_WRITE_AT)); }catch(_e){} }
+function noteWriteIfAny_(url, opts){
+  if(!opts || String(opts.method || '').toUpperCase() !== 'POST') return;
+  const u = String(url);
+  if(typeof BETAVERSE_SCRIPT_URL !== 'undefined' && BETAVERSE_SCRIPT_URL && u.indexOf(BETAVERSE_SCRIPT_URL) === 0){ noteWrite_('ad'); return; }
+  if(typeof SCRIPT_URL !== 'undefined' && SCRIPT_URL && u.indexOf(SCRIPT_URL) === 0){
+    let action = ''; try{ action = JSON.parse(opts.body || '{}').action || ''; }catch(_e){}
+    if(READ_ONLY_POST_ACTIONS_.indexOf(action) < 0) noteWrite_('main');
+  }
+}
+function recentlyWrote_(tbl){
+  const kind = AD_DATASETS_.indexOf(tbl) >= 0 ? 'ad' : (MAIN_EDITABLE_DATASETS_.indexOf(tbl) >= 0 ? 'main' : '');
+  return !!kind && Date.now() - (LAST_WRITE_AT[kind] || 0) < 12 * 60 * 1000;
+}
+function useSb_(tbl){ return SB_ACTIVE() && !recentlyWrote_(tbl); }
 async function fetchWithTimeout(url, opts, ms, _retriesLeft){
   if(_retriesLeft === undefined) _retriesLeft = 2;
   const controller = new AbortController();
@@ -1225,6 +1264,7 @@ async function fetchWithTimeout(url, opts, ms, _retriesLeft){
   try{
     const r = await fetch(url, Object.assign({}, opts, {signal:controller.signal}));
     clearTimeout(timer);
+    if(r && r.ok) noteWriteIfAny_(url, opts);   // a successful POST to either backend = something was written
     return r;
   }catch(e){
     clearTimeout(timer);
@@ -1287,6 +1327,9 @@ async function checkOneBackendHealth(url, label){
   }
 }
 async function checkSystemHealth(){
+  // With the data service configured, screens read from it, so the old servers being slow is not what the person is waiting on
+  // (and pinging both every 5 minutes only adds to the load that was causing trouble). A write that needs them reports its own error.
+  if(sbConfigured()){ const hb = document.getElementById('systemHealthBanner'); if(hb) hb.style.display = 'none'; return; }
   const results = await Promise.all([
     checkOneBackendHealth(typeof SCRIPT_URL!=='undefined'?SCRIPT_URL:'', 'Retail/DB/Marketing backend'),
     checkOneBackendHealth(typeof BETAVERSE_SCRIPT_URL!=='undefined'?BETAVERSE_SCRIPT_URL:'', 'Ad Manager backend')
@@ -1357,26 +1400,33 @@ async function doLogin(){
       if(!res.success) throw new Error(res.message || 'Invalid credentials');
       return res;
     };
-    // Both sign-ins start together. The data service answers in a fraction of a second; whichever way the person gets in,
-    // they get in the moment it works — a slow or failing main server no longer keeps them out.
+    // Sign in to the data service first — it answers in a fraction of a second AND hands over this person's main-server token,
+    // so a normal sign-in never has to wait for (or even touch) Google Apps Script.
     const sbP = sbConfigured() ? sbLogin(user, pass, remember).catch(e=>({success:false, message:e.message})) : null;
-    const mainP = mainLogin();
-    mainP.catch(()=>{});            // handled below, or deliberately ignored when the data-service sign-in is enough
+    let mainP = null;
+    const startMain = ()=>{ if(!mainP){ mainP = mainLogin(); mainP.catch(()=>{}); } return mainP; };
+    if(!sbP) startMain();                                    // no data service configured → the old sign-in, as before
+    const slowTimer = sbP ? setTimeout(startMain, 1500) : null;   // data service slow or down → start the main sign-in as well, so nobody is kept out
     const sbRes = sbP ? await sbP : null;
+    clearTimeout(slowTimer);
     if(sbRes && sbRes.success){
-      SESSION = {userId:user, name:sbRes.name || user, role:sbRes.role || 'Manager', token:null, sb:{token:sbRes.token, expires_at:sbRes.expires_at}};
+      const mainToken = sbRes.main_token ? String(sbRes.main_token) : null;
+      SESSION = {userId:user, name:sbRes.name || user, role:sbRes.role || 'Manager', token:mainToken, sb:{token:sbRes.token, expires_at:sbRes.expires_at}};
       persistSession_();
       signedIn = true;
       enterApp();
-      // the main sign-in keeps going in the background; when it arrives, the features that need it switch on
-      mainP.then(res=>{ if(res && res.success && SESSION){ SESSION.token = res.token; persistSession_(); onMainServerReady_(); } })
+      if(!mainToken || mainP){
+        // no stored main-server token for this person yet (a brand-new user), or the main sign-in had already started: finish it in the background
+        startMain().then(res=>{ if(res && res.success && SESSION){ SESSION.token = res.token; persistSession_(); onMainServerReady_(); } })
            .catch(()=>{
              if(!SESSION || SESSION.token) return;
              if(ALL_DATA.length) showDataBanner_('info', 'The main server did not accept the sign-in right now. Your data is available; other features need it and will work once it responds.');
              else showDataBanner_('error', 'Could not load data: the main server is not responding, and the data service has no records yet.');
            });
+      }
       return;
     }
+    startMain();
     const res = await mainP;       // no usable data-service sign-in → the main server decides, as before
     SESSION = {userId:user, name:res.name || user, role:res.role || 'Manager', token:res.token};
     persistSession_();
@@ -1464,7 +1514,7 @@ function enterApp(){
     // backend that's a version or two behind this page is completely normal
     // day-to-day (most updates only touch one file, not both), and doesn't
     // mean anything is actually wrong.
-    if(configured()){
+    if(configured() && !SB_ACTIVE()){   // with the data service in use, the main server isn't pinged at every sign-in
       fetchWithTimeout(`${SCRIPT_URL}?action=version&_t=${Date.now()}`, {cache:'no-store'}, 10000)
         .then(safeJson)
         .then(j=>{
@@ -1515,15 +1565,22 @@ function showAppLoadError(e){
    roles that can actually act on it, so a Sales/Manager login never sees
    an approval count they have no way to do anything about. */
 function refreshPendingApprovalBadge(){
-  if(!betaverseConfigured()) return;
-  fetch(`${BETAVERSE_SCRIPT_URL}?action=getPendingApprovalsCount&_t=${Date.now()}`, {cache:'no-store'})
-    .then(r=>r.json()).then(res=>{
-      const badge = document.getElementById('pendingApprovalBadge');
-      if(!badge) return;
-      const count = res.count || 0;
-      badge.textContent = count;
-      badge.style.display = count > 0 ? 'inline-block' : 'none';
-    }).catch(()=>{});
+  const apply = count => {
+    const badge = document.getElementById('pendingApprovalBadge');
+    if(!badge) return;
+    badge.textContent = count;
+    badge.style.display = count > 0 ? 'inline-block' : 'none';
+  };
+  const legacy = ()=>{
+    if(!betaverseConfigured()) return;
+    fetch(`${BETAVERSE_SCRIPT_URL}?action=getPendingApprovalsCount&_t=${Date.now()}`, {cache:'no-store'})
+      .then(r=>r.json()).then(res=>apply(res.count || 0)).catch(()=>{});
+  };
+  if(useSb_('subs')){
+    sbCall_('fa_pending_approvals', {}).then(res=>apply(res.count || 0)).catch(e=>{ sbNoteFailure_(e); legacy(); });
+    return;
+  }
+  legacy();
 }
 
 /* Detects when a NEWER dashboard.html has been deployed to GitHub Pages
@@ -1532,7 +1589,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.10.0';
+const FRONTEND_VERSION = 'v7.11.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2151,12 +2208,13 @@ async function loadJourney(fromDate, toDate){
   const el = document.getElementById('journeyContent');
   if(el) el.innerHTML = `<div class="empty"><b>Loading journey…</b>Fetching activity for this date range.</div>`;
   try{
-    if(!configured()) throw new Error('__NOCFG__');
-    const res = await callApi({action:'getUserJourney', token:SESSION.token, phone:JOURNEY_PHONE, fromDate, toDate});
+    const res = await fetchJourneyData_(JOURNEY_PHONE, fromDate, toDate);
+    if(res && res.success === false && !/no activity/i.test(res.message || '')){ throw new Error(res.message || 'Could not load the journey'); }
     JOURNEY_DATA = res;
     renderJourneyContent(res, fromDate, toDate);
   }catch(e){
-    document.getElementById('journeyContent').innerHTML = `<div class="empty"><b>Could not load journey</b>Check your connection and try again.</div>`;
+    const safe = String(describeLoadProblem_(null, e)).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    document.getElementById('journeyContent').innerHTML = `<div class="empty"><b>Could not load journey</b>${safe}</div>`;
   }
 }
 function renderJourneyContent(res, fromDate, toDate){
@@ -2256,16 +2314,49 @@ async function exportJourney(){
   const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Preparing…';
   startExportProgress();
   try{
-    if(!configured()) throw new Error('__NOCFG__');
     const fromDate = document.getElementById('journeyFrom').value;
     const toDate = document.getElementById('journeyTo').value;
+    // Preferred: built right here from the person's activity (no server limit, real colours, clickable links).
+    try{
+      updateExportProgress(4, 'Loading this person\'s activity…');
+      const data = await fetchJourneyData_(JOURNEY_PHONE, fromDate, toDate);
+      if(!data || data.success === false) throw new Error((data && data.message) || 'no data');
+      const audits = data.audits || [], checkins = data.checkins || [];
+      if(!audits.length && !checkins.length){ finishExportProgress(); toast('No activity in that date range', true); return; }
+      const byType = {}; audits.forEach(a=>{ const k = a.auditType || 'Other'; byType[k] = (byType[k]||0) + 1; });
+      const who = data.name || JOURNEY_NAME || JOURNEY_PHONE;
+      await runLocalProExport({
+        title:'FieldAudit — ' + who + ' · Activity Report', rangeLabel: exportRangeLabel_(fromDate, toDate), sheetName:'Audits',
+        filenameBase:'Journey_' + String(JOURNEY_PHONE).replace(/\D/g,'') + '_' + localDateStr(),
+        columns:[
+          {h:'Date',k:'date'},{h:'Module',get:a=>a.module==='db' ? 'DB Stock Audit' : 'Retail Audit'},{h:'Audit Type',k:'auditType'},{h:'DB Code',k:'dbCode'},
+          {h:'Outlet / DB',k:'dbName',w:28},{h:'City',k:'dbCity'},{h:'Address',k:'geoAddress',w:36},{h:'Latitude',k:'lat',t:'num'},{h:'Longitude',k:'lng',t:'num'},
+          {h:'Photo',k:'photoUrlWide',t:'link',label:'📷 View Photo'},{h:'Map',get:a=>mapsLinkFromLatLng(a.lat,a.lng,a.mapsLink),t:'link',label:'📍 View Map'},{h:'AI Summary',k:'aiStockSummary',w:40}
+        ],
+        rows: audits,
+        extraSheets:[{sheetName:'Check-ins', rows: checkins, columns:[
+          {h:'Date',k:'date'},{h:'Selfie',k:'photoUrl',t:'link',label:'🤳 View Selfie'},{h:'Latitude',k:'lat',t:'num'},{h:'Longitude',k:'lng',t:'num'},
+          {h:'Map',get:c=>mapsLinkFromLatLng(c.lat,c.lng,c.mapsLink),t:'link',label:'📍 View Map'}]}],
+        kpis:[
+          {label:'Audits', value:audits.length}, {label:'Check-ins', value:checkins.length},
+          {label:'First audit', value: audits.length ? audits[audits.length-1].date : '—'}, {label:'Most recent', value: audits.length ? audits[0].date : '—'}
+        ],
+        breakdown:{headers:['Audit Type','Audits'], rows:Object.entries(byType).sort((x,y)=>y[1]-x[1])}
+      });
+      finishExportProgress();
+      toast(`Report downloaded — ${audits.length} audit${audits.length===1?'':'s'}, ${checkins.length} check-in${checkins.length===1?'':'s'}`);
+      return;
+    }catch(localErr){ console.warn('Local journey export failed — falling back to the server export:', localErr); }
+    // Fallback: the main server builds it.
+    if(!configured()) throw new Error('__NOCFG__');
+    if(!SESSION.token) throw new Error('MAIN_SERVER_OFFLINE');
     const res = await callApi({action:'exportReport', token:SESSION.token, module:'journey', phone:JOURNEY_PHONE, fromDate, toDate});
     if(!res.success) throw new Error(res.message || 'Export failed');
     finishExportProgress();
     downloadBase64File(res.base64, res.filename);
   }catch(e){
     finishExportProgress();
-    toast(e.message==='__NOCFG__' ? 'Backend not connected' : (e.message || 'Could not export'), true);
+    toast(e.message==='__NOCFG__' ? 'Backend not connected' : (describeLoadProblem_(null, e) || 'Could not export'), true);
   }finally{
     btn.disabled = false; btn.innerHTML = orig;
   }
@@ -2279,16 +2370,34 @@ async function loadMasterData(){
   if(MODULE === 'betaverse'){
     document.getElementById('uploadAdsResult').textContent = 'Loading…';
     try{
-      const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getUploadedAds&_t=${Date.now()}`, {cache:'no-store'}, 15000);
-      const res = await r.json();
-      const count = (res.ads||[]).length;
+      let count;
+      if(useSb_('uploads')){ try{ count = (await sbCall_('fa_meta', {p_tbl:'uploads'})).total; }catch(e){ sbNoteFailure_(e); } }
+      if(count === undefined){
+        const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getUploadedAds&_t=${Date.now()}`, {cache:'no-store'}, 15000);
+        const res = await r.json();
+        count = (res.ads||[]).length;
+      }
       document.getElementById('uploadAdsResult').textContent = `${count} ad${count===1?'':'s'} already on file`;
     }catch(e){ document.getElementById('uploadAdsResult').textContent = 'Could not load count'; }
     return;
   }
   document.getElementById('dbMasterCount').textContent = 'Loading…';
   document.getElementById('soMasterCount').textContent = 'Loading…';
+  const fill = (dbRows, soRows)=>{
+    document.getElementById('dbMasterInput').value = dbRows.map(r=>r.join(',')).join('\n');
+    document.getElementById('dbMasterCount').textContent = `${dbRows.length} DB${dbRows.length===1?'':'s'} on file`;
+    document.getElementById('soMasterInput').value = soRows.map(r=>r.join(',')).join('\n');
+    document.getElementById('soMasterCount').textContent = `${soRows.length} SO${soRows.length===1?'':'s'} on file`;
+  };
+  if(useSb_('dbmaster') && useSb_('somaster')){
+    try{
+      const [d, so] = await Promise.all([sbFetchRows_('dbmaster', {}), sbFetchRows_('somaster', {})]);
+      fill(d.map(r=>[r.code, r.name, r.city]), so.map(r=>[r.phone, r.name]));
+      return;
+    }catch(e){ sbNoteFailure_(e); }   // fall through to the old server
+  }
   try{
+    if(!SESSION.token) throw new Error('MAIN_SERVER_OFFLINE');
     const [dbRes, soRes] = await Promise.all([
       callApi({action:'getMasterData', token:SESSION.token, type:'db'}),
       callApi({action:'getMasterData', token:SESSION.token, type:'so'})
@@ -2384,12 +2493,6 @@ async function saveMasterData(type){
    dashboard reads that copy — a real database with indexes, so no Apps Script quota, no 6-minute limit,
    and a page load no longer re-reads the whole sheet. Leave both values empty and everything works exactly
    as before (the old Apps Script path). If Supabase ever fails, the dashboard falls back to that old path by itself. */
-const SUPABASE_URL = 'https://qwyorroptzablkauxpas.supabase.co';   // e.g. 'https://abcdefgh.supabase.co'   (the Project URL, without anything after .supabase.co)
-const SUPABASE_KEY = 'sb_publishable_PENraDDVP5_0s8QPhRELmw_EIG25klJ';   // the PUBLIC key only: "anon" (legacy) or "publishable". NEVER the secret / service_role key.
-let SESSION_REMEMBER = false;
-let SB_FAIL_UNTIL = 0;     // after a transport failure the data service is skipped for two minutes, so a dead service can't slow every click
-// accepts the bare Project URL, and also forgives a pasted ".../rest/v1/" ending or stray spaces
-const SB_BASE_URL = String(SUPABASE_URL || '').trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
 function sbConfigured(){ return !!(SB_BASE_URL && String(SUPABASE_KEY || '').trim()); }
 function SB_ACTIVE(){ return sbConfigured() && !!(SESSION && SESSION.sb && SESSION.sb.token) && Date.now() >= SB_FAIL_UNTIL; }
 function persistSession_(){ if(!SESSION_REMEMBER) return; try{ localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(SESSION)); }catch(_e){} }
@@ -2514,7 +2617,17 @@ function noteSbSyncAge_(meta){
 async function loadDataSb_(gen, mod, sinceDate, st, cacheRead){
   const tbl = mod === 'db' ? 'db' : 'retail';
   try{
-    const meta = await sbCall_('fa_meta', {p_tbl: tbl});
+    const metaP = sbCall_('fa_meta', {p_tbl: tbl});
+    metaP.catch(()=>{});                // its error is handled where it is awaited below
+    // The stored copy is being read while that first call is in flight; when it is usable, the "what changed" request goes out
+    // straight away too — one round trip instead of two.
+    await Promise.race([cacheRead, new Promise(r=>setTimeout(r, 2500))]);
+    if(gen !== DATA_LOAD_GEN || !SESSION) return true;
+    const rec = st.cachedRec;
+    const usable = rec && rec.complete && rec.src === 'sb' && rec.sbCursor && rec.fullAt && (Date.now() - rec.fullAt) < 7*86400000;
+    const deltaP = usable ? sbFetchRows_(tbl, {p_updated_after: rec.sbCursor}) : null;
+    if(deltaP) deltaP.catch(()=>{});
+    const meta = await metaP;
     DATA_SB_META = meta;
     // A copy with no rows at all most likely means the first sync has not finished (or failed partway) — not that
     // the business has no audits. While the main server can still answer, let it, rather than show an empty dashboard.
@@ -2526,13 +2639,9 @@ async function loadDataSb_(gen, mod, sinceDate, st, cacheRead){
       showDataBanner_('error', 'Could not load data: the data service has no records yet — the first copy from Google Sheets may not have finished.');
       return true;
     }
-    await Promise.race([cacheRead, new Promise(r=>setTimeout(r, 2500))]);
-    if(gen !== DATA_LOAD_GEN || !SESSION) return true;
-    const rec = st.cachedRec;
-    const usable = rec && rec.complete && rec.src === 'sb' && rec.sbCursor && rec.fullAt && (Date.now() - rec.fullAt) < 7*86400000;
     if(usable){
       // what this browser already holds + only what changed since — usually a handful of rows
-      const delta = await sbFetchRows_(tbl, {p_updated_after: rec.sbCursor});
+      const delta = await deltaP;
       if(gen !== DATA_LOAD_GEN || !SESSION) return true;
       let rows = mergeByKey_(rec.rows, delta);
       if(rows.length !== meta.total){              // something was deleted from the sheet — find out what
@@ -2577,6 +2686,78 @@ function onMainServerReady_(){
   try{ if(MODULE === 'db') fetchExternalDBDataInBackground(DATA_LOAD_GEN, MODULE); }catch(_e){}
 }
 
+/* ---- everything below: one helper per screen, each trying the data service first and the old server second ---- */
+const AUDIT_DESC_ = rows => rows.slice().sort((a, b)=> String(b.date + b.time).localeCompare(String(a.date + a.time)));
+async function getExternalRows_(){
+  if(!(SESSION && (SESSION.role === 'Admin' || SESSION.role === 'Sales'))) return {success:true, rows:[]};   // the external GCPL sheet is for these two roles only
+  if(SB_ACTIVE()){
+    try{ const rows = await sbFetchRows_('dbext', {}); if(rows.length) return {success:true, rows}; }
+    catch(e){ sbNoteFailure_(e); }
+  }
+  if(!SESSION.token) return {success:false, rows:[]};
+  return callApi({action:'getDBDataExternal', token:SESSION.token});
+}
+async function fetchJourneyData_(phone, fromDate, toDate){
+  if(SB_ACTIVE()){
+    try{ return await sbCall_('fa_user_journey', {p_phone: phone, p_from: fromDate || null, p_to: toDate || null}); }
+    catch(e){ sbNoteFailure_(e); }
+  }
+  if(!configured()) throw new Error('__NOCFG__');
+  if(!SESSION || !SESSION.token) throw new Error('MAIN_SERVER_OFFLINE');
+  return callApi({action:'getUserJourney', token:SESSION.token, phone, fromDate, toDate});
+}
+async function fetchAdJourney_(id){
+  if(useSb_('checks')){ try{ return await sbCall_('fa_ad_journey', {p_id: id}); }catch(e){ sbNoteFailure_(e); } }
+  const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAdJourney&id=${encodeURIComponent(id)}&_t=${Date.now()}`, {cache:'no-store'}, 15000);
+  return r.json();
+}
+async function fetchAdAuditJourney_(adId){
+  if(useSb_('aaudit')){ try{ return await sbCall_('fa_ad_audit_journey', {p_ad_id: adId}); }catch(e){ sbNoteFailure_(e); } }
+  const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAdAuditJourney&adId=${encodeURIComponent(adId)}&_t=${Date.now()}`, {cache:'no-store'}, 15000);
+  return r.json();
+}
+async function fetchChangeLog_(){
+  if(useSb_('changelog')){ try{ return {entries: (await sbFetchRows_('changelog', {})).reverse()}; }catch(e){ sbNoteFailure_(e); } }   // stored oldest → newest; the screen wants newest first
+  const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getChangeLog&_t=${Date.now()}`, {cache:'no-store'}, 20000);
+  return r.json();
+}
+async function fetchAdAudits_(from, to){
+  if(useSb_('aaudit')){
+    try{ return AUDIT_DESC_(await sbFetchRows_('aaudit', {p_since: from || undefined, p_until: to || undefined})); }
+    catch(e){ sbNoteFailure_(e); }
+  }
+  const params = new URLSearchParams({action:'getAllAdAudits'});
+  if(from) params.set('fromDate', from);
+  if(to) params.set('toDate', to);
+  const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?${params.toString()}&_t=${Date.now()}`, {cache:'no-store'}, 20000);
+  const j = await r.json();
+  return j.audits || [];
+}
+function mktOptionsFromRows_(rows){
+  const brands = new Set(), activities = new Set(), actCats = new Set(), agencies = new Set();
+  rows.forEach(r=>{
+    if(r.brand) brands.add(r.brand);
+    if(r.activity) activities.add(String(r.activity).trim());
+    if(r.activityCategory) actCats.add(String(r.activityCategory).trim());
+    if(r.agency) agencies.add(String(r.agency).trim());
+  });
+  // seed lists so the form has sensible options even before any data exists (same as the server did)
+  ['Sattu','Core','Spice','Soya','Corporate'].forEach(b=>brands.add(b));
+  ['HOARDING','POSM','TRANSIT','RETAILER BOARD','MELA','YOU TUBE ADV','TVC','META ADV','WALL PAINTING','VAN BRANDING','FSU','FISH MARKET BRANDING','PRINT','INFLUENCER','SAMPLING'].forEach(a=>activities.add(a));
+  ['ATL','BTL','DIGITAL'].forEach(a=>actCats.add(a));
+  return {brands:Array.from(brands).sort(), activities:Array.from(activities).sort(), activityCategories:Array.from(actCats).sort(), agencies:Array.from(agencies).sort()};
+}
+async function fetchMktExpense_(){
+  if(useSb_('mkt')){
+    try{
+      const [rows, meta] = await Promise.all([sbFetchRows_('mkt', {}), sbFetchRows_('mktmeta', {})]);
+      return {success:true, rows, options: mktOptionsFromRows_(rows), meta: meta[0] || {lastUpdatedBy:'', lastUpdatedDate:'', lastUpdateSource:''}};
+    }catch(e){ sbNoteFailure_(e); }
+  }
+  if(!SESSION || !SESSION.token) throw new Error('MAIN_SERVER_OFFLINE');
+  const r = await fetchWithTimeout(`${SCRIPT_URL}?action=getMktExpenseData&token=${encodeURIComponent(SESSION.token)}&_t=${Date.now()}`, {cache:'no-store'}, 20000);
+  return r.json();
+}
 async function callApi(payload, usePost){
   // Signed in through the data service only (the main server has not answered yet, or is down): say so at once
   // instead of sending a token-less request that would come back as "session expired" and sign the person out.
@@ -2657,6 +2838,7 @@ function describeLoadProblem_(res, err){
       return 'The server returned an error page instead of data' + (err.serverText ? ' (“' + err.serverText + '”)' : '') +
         '. Google Apps Script is probably busy or over its quota — wait a few minutes, then try again.';
     }
+    if(/failed to fetch|networkerror|load failed|network request failed/i.test(String(err.message))) return 'Could not reach the server — check your internet connection (or the server may be down).';
     if(err.message === 'DATA_FETCH_FAILED') return 'The server did not return the data.';
     if(err.message === 'MAIN_SERVER_OFFLINE') return 'the main server is not connected yet.';
     return err.message || String(err);
@@ -2680,6 +2862,15 @@ async function loadData(){
     ALL_DATA = [];
     BETAVERSE_STATUS_CHECKS = [];
     if(!betaverseConfigured()) return;
+    if(useSb_('subs')){
+      try{
+        const [subs, checks] = await Promise.all([sbFetchRows_('subs', {}), sbFetchRows_('checks', {})]);
+        ALL_DATA = subs; BETAVERSE_STATUS_CHECKS = checks;
+        setDataSourceBadge_('Supabase');
+        sbCall_('fa_meta', {p_tbl:'subs'}).then(noteSbSyncAge_).catch(()=>{});   // warns if the Ad Manager copy has stopped refreshing
+        return;
+      }catch(e){ sbNoteFailure_(e); ALL_DATA = []; BETAVERSE_STATUS_CHECKS = []; }   // fall through to the old server
+    }
     try{
       const r = await fetch(`${BETAVERSE_SCRIPT_URL}?action=getSubmissionsData&_t=${Date.now()}`, {cache:'no-store'});
       const res = await r.json();
@@ -2928,7 +3119,7 @@ function startFullDataLoad(gen, mod){
   return p;
 }
 function fetchExternalDBDataInBackground(gen, mod){
-  const p = callApi({action:'getDBDataExternal', token:SESSION.token})
+  const p = getExternalRows_()
     .then(res=>{
       if(gen !== DATA_LOAD_GEN || MODULE !== mod) return;
       if(!res || !res.success || !res.rows || !res.rows.length) return; // empty/failed — the internal-only data stands, nothing to merge
@@ -3009,7 +3200,7 @@ async function loadPhotosData(){
       const [retailR, dbR, extRes] = await Promise.all([
         fetchModuleHistoryChunked_('retail', {onProgress:(d,t)=>{ prog.r = [d,t]; showProg(); }}),
         fetchModuleHistoryChunked_('db', {onProgress:(d,t)=>{ prog.d = [d,t]; showProg(); }}),
-        callApi({action:'getDBDataExternal', token:SESSION.token}).catch(()=>null) // Sales/Admin only; empty for everyone else
+        getExternalRows_().catch(()=>null) // Sales/Admin only; empty for everyone else
       ]);
       PHOTO_RETAIL_DATA = retailR.rows || [];
       PHOTO_DB_DATA = (dbR.rows || []).concat((extRes && extRes.success && extRes.rows) ? extRes.rows : []);
@@ -3509,8 +3700,7 @@ async function loadAdJourney(){
   if(!id){ toast('Enter an Ad ID or Submission ID first', true); return; }
   el.innerHTML = `<div class="empty"><b>Loading…</b></div>`;
   try{
-    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAdJourney&id=${encodeURIComponent(id)}&_t=${Date.now()}`, {cache:'no-store'}, 15000);
-    const j = await r.json();
+    const j = await fetchAdJourney_(id);
     if(!j.success || j.source==='Unknown'){ el.innerHTML = `<div class="empty">No record found for "${id}" — check the ID and try again.</div>`; return; }
     const checks = j.checks || [];
     const runningCount = checks.filter(c=>c.isRunning==='Yes').length;
@@ -3734,13 +3924,10 @@ function setAaRangePreset(preset){
    picks this up instantly instead of waiting on a fresh full fetch. */
 async function preloadAdAuditAllTimeInBackground(){
   try{
-    if(!betaverseConfigured()) return;
     const cacheKey = 'fieldaudit_aa_cache__'; // matches loadAdAuditData()'s own key format for from='' to=''
-    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAllAdAudits&_t=${Date.now()}`, {cache:'no-store'}, 30000);
-    const j = await r.json();
-    if(j && j.audits){
-      IDB.set(cacheKey, {rows: j.audits, savedAt: Date.now()});
-    }
+    if(!useSb_('aaudit') && !betaverseConfigured()) return;
+    const audits = await fetchAdAudits_('', '');
+    if(audits && audits.length) IDB.set(cacheKey, {rows: audits, savedAt: Date.now()});
   }catch(_e){} // best-effort only — the visible "This Week" view already loaded fine on its own either way
 }
 async function loadAdAuditData(){
@@ -3785,12 +3972,7 @@ async function loadAdAuditData(){
   }
   const tbody = document.querySelector('#aaTable tbody');
   try{
-    const params = new URLSearchParams({action:'getAllAdAudits'});
-    if(from) params.set('fromDate', from);
-    if(to) params.set('toDate', to);
-    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?${params.toString()}&_t=${Date.now()}`, {cache:'no-store'}, 20000);
-    const j = await r.json();
-    AA_DATA = j.audits || [];
+    AA_DATA = await fetchAdAudits_(from, to);
     IDB.set(cacheKey, {rows: AA_DATA, savedAt: Date.now()}); // best-effort — a storage failure just means no cache benefit next time, never a failed load
     const typeSel = document.getElementById('aaTypeFilter');
     if(typeSel.options.length <= 1){
@@ -4134,8 +4316,7 @@ async function openAdJourney(adId){
   document.getElementById('adJourneySubtitle').textContent = '';
   document.getElementById('adJourneyBody').innerHTML = `<div class="empty"><span class="spin"></span> Loading journey…</div>`;
   try{
-    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAdAuditJourney&adId=${encodeURIComponent(adId)}&_t=${Date.now()}`, {cache:'no-store'}, 15000);
-    const j = await r.json();
+    const j = await fetchAdAuditJourney_(adId);
     if(!j.success) throw new Error(j.message||'Could not load journey');
     const ad = j.ad;
     const locDetail = ad.isMovable ? `${ad.vehicleNumber||'—'} · ${(ad.routeFrom&&ad.routeTo)?ad.routeFrom+' → '+ad.routeTo:'⚠️ route missing'}` : `${ad.locationId||'⚠️ no Location ID'} · ${ad.locationName||'⚠️ address missing'}`;
@@ -4286,8 +4467,7 @@ async function loadAdChangeLog(){
   thead.innerHTML = `<tr><th>When</th><th>Action</th><th>Entity ID</th><th>Field</th><th>Old Value</th><th>New Value</th><th>Changed By</th><th>Role</th></tr>`;
   tbody.innerHTML = `<tr><td colspan="8"><div class="empty"><span class="spin"></span> Loading change log…</div></td></tr>`;
   try{
-    const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getChangeLog&_t=${Date.now()}`, {cache:'no-store'}, 20000);
-    const j = await r.json();
+    const j = await fetchChangeLog_();
     const entries = j.entries || [];
     if(!entries.length){ tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No changes logged yet.</div></td></tr>`; return; }
     tbody.innerHTML = entries.map(e=>`<tr>
@@ -4465,8 +4645,7 @@ function switchMktExpenseTab(tab){
 async function loadMktExpenseData(){
   document.getElementById('mexKpiRow').innerHTML = `<div class="empty"><b>Loading…</b></div>`;
   try{
-    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=getMktExpenseData&token=${encodeURIComponent(SESSION.token)}&_t=${Date.now()}`, {cache:'no-store'}, 20000);
-    const j = await r.json();
+    const j = await fetchMktExpense_();
     if(!j.success) throw new Error(j.message || 'Could not load expense data');
     MEX_DATA = j;
     renderMktExpenseStaleBanner(j.meta);
@@ -4474,7 +4653,9 @@ async function loadMktExpenseData(){
     renderMktExpenseAnalytics(j.rows);
     renderMktExpenseTable();
   }catch(e){
-    document.getElementById('mexKpiRow').innerHTML = `<div class="empty">Internet is slower than expected — please wait a moment and try again.</div>`;
+    const why = (e && e.message && e.message !== 'MAIN_SERVER_OFFLINE') ? describeLoadProblem_(null, e) : 'Internet is slower than expected — please wait a moment and try again.';
+    const safe = String(why).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    document.getElementById('mexKpiRow').innerHTML = `<div class="empty">${safe}</div>`;
   }
 }
 
@@ -4762,7 +4943,45 @@ async function uploadMktExpenseExcel(){
   }
 }
 
+/* Built right here from the expense data already on screen — real colours and a summary sheet, no server limit. The
+   old server-built export (below) is only the fallback. */
 async function exportMktExpenseReport(){
+  startExportProgress();
+  try{
+    updateExportProgress(4, 'Loading expense data…');
+    const data = (MEX_DATA && MEX_DATA.rows) ? MEX_DATA : await fetchMktExpense_();
+    if(!data || data.success === false) throw new Error((data && data.message) || 'no data');
+    const rows = data.rows || [];
+    if(!rows.length){ finishExportProgress(); toast('No expense data to export', true); return; }
+    const MONTHS = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
+    let totalYtd = 0; const byCat = {}, byBrand = {};
+    rows.forEach(r=>{ const y = Number(r.ytd)||0; totalYtd += y; const c = r.activityCategory || 'Unspecified', b = r.brand || 'Unspecified'; byCat[c] = (byCat[c]||0) + y; byBrand[b] = (byBrand[b]||0) + y; });
+    const kpi = v => Math.abs(v) >= 10000000 ? (v/10000000).toFixed(2) + ' Cr' : (v/100000).toFixed(2) + ' L';
+    await runLocalProExport({
+      title:'FieldAudit — Marketing Expense Report', rangeLabel: data.meta && data.meta.lastUpdatedBy ? ('Last updated by ' + data.meta.lastUpdatedBy) : '', sheetName:'Expenses',
+      filenameBase:'MktExpenseReport_' + localDateStr(),
+      columns:[
+        {h:'Description',k:'description',w:34},{h:'Brand',k:'brand'},{h:'Activity',k:'activity'},{h:'Activity Category',k:'activityCategory'},{h:'Agency',k:'agency'},
+        {h:'PO Number',k:'poNumber'},{h:'PO Date',k:'poDate'},{h:'PO Amount',k:'poAmount',t:'num'},
+        ...MONTHS.map(m=>({h:m, get:r=>(r.months||{})[m] || 0, t:'num'})),
+        {h:'YTD Total',k:'ytd',t:'num'},{h:'Source',k:'source'},{h:'Last Updated By',k:'lastUpdatedBy'}
+      ],
+      rows,
+      kpis:[
+        {label:'Total Entries', value:rows.length}, {label:'YTD Spend', value:kpi(totalYtd)},
+        {label:'ATL Spend', value:kpi(byCat['ATL']||0)}, {label:'BTL Spend', value:kpi(byCat['BTL']||0)}, {label:'Digital Spend', value:kpi(byCat['DIGITAL']||0)}
+      ],
+      breakdown:{headers:['Brand','YTD Spend (₹)'], rows:Object.entries(byBrand).sort((x,y)=>y[1]-x[1]).map(([k,v])=>[k, Math.round(v)])}
+    });
+    finishExportProgress();
+    toast(`Report downloaded — ${rows.length} entr${rows.length===1?'y':'ies'}`);
+  }catch(localErr){
+    console.warn('Local expense export failed — falling back to the server export:', localErr);
+    finishExportProgress();
+    exportMktExpenseReportServer_();
+  }
+}
+async function exportMktExpenseReportServer_(){
   startExportProgress();
   const attempt = async () => {
     const r = await fetchWithTimeout(`${SCRIPT_URL}?action=exportReport&token=${encodeURIComponent(SESSION.token)}&module=mktexpense&_t=${Date.now()}`, {cache:'no-store'}, 60000);
