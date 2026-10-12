@@ -354,7 +354,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.11.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.13.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -409,7 +409,8 @@ table.data tr:hover td{background:var(--paper-2);}
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
-            <option value="all" selected>All time</option>
+            <option value="6m" selected>Last 6 months</option>
+            <option value="all">All time (older records come from Google Sheets)</option>
           </select>
           <button class="btn btn-dark" onclick="exportAnalyticsPPT()" id="pptExportBtn">📊 Export PPT Report</button>
         </div>
@@ -480,7 +481,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <div class="filters" style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
           <label style="font-size:13px; display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="photoSelectAll" onchange="togglePhotoSelectAll(this)"> Select all shown</label>
           <span id="photoSelectedCount" style="font-size:12px; color:var(--slate);">0 selected</span>
-          <button class="btn btn-dark" onclick="exportPhotosZip()">📦 Download ZIP <span id="zipScopeLabel">(by date range)</span></button>
+          <button class="btn btn-dark" onclick="exportPhotosZip()">📦 Download ZIP <span id="zipScopeLabel">(all shown)</span></button>
         </div>
       </div>
       <div id="photosContent"><div class="empty photos-loading"><div class="mini-progress-track"><div class="mini-progress-fill" id="photosProgressFill"></div></div><div class="mini-progress-label" id="photosProgressLabel">Fetching photo records… 0%</div></div></div>
@@ -1257,6 +1258,122 @@ function recentlyWrote_(tbl){
   return !!kind && Date.now() - (LAST_WRITE_AT[kind] || 0) < 12 * 60 * 1000;
 }
 function useSb_(tbl){ return SB_ACTIVE() && !recentlyWrote_(tbl); }
+
+/* ============================================================
+   THE 6-MONTH WINDOW
+   Supabase holds only the latest 6 months of the big, growing datasets (retail, DB, NPA, check-ins, external DB, Ad Audit,
+   change log) so it can never fill up. The Google Sheet always keeps everything. Whenever a screen, report or export asks for
+   a date range that reaches back before the window, the older part is read from the Google Sheet (through Apps Script) and
+   joined to the newer part from Supabase. Older records never change, so they are kept in this browser once fetched.
+   ============================================================ */
+function computeRetainedSince_(){            // same rule as the database: today (India time) minus 6 months, month-end clamped
+  const t = new Date(Date.now() + 5.5*3600*1000);
+  let y = t.getUTCFullYear(), m = t.getUTCMonth() - 6, d = t.getUTCDate();
+  while(m < 0){ m += 12; y--; }
+  const dim = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  if(d > dim) d = dim;
+  return y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
+var RETAINED_SINCE = computeRetainedSince_();   // replaced by the database's own value as soon as any fa_meta call answers
+const OLD_STORE = {}, OLD_INFLIGHT = {}, OLD_IDB_TRIED = {}, OLD_FAILED_AT = {}, OLD_UI_BUSY = {};
+function beforeWindow_(fromYmd){ return !fromYmd || fromYmd < RETAINED_SINCE; }
+function clampWin_(rows){ return rows.filter(r=>{ const y = rowYmd_(r); return !y || y >= RETAINED_SINCE; }); }
+function oldId_(kind){ return kind + '|' + ((SESSION && SESSION.role) || ''); }
+function oldRows_(kind){ const s = OLD_STORE[oldId_(kind)]; return s ? s.rows : []; }
+function oldCovers_(kind, fromYmd){
+  const s = OLD_STORE[oldId_(kind)];
+  return !!s && s.from <= (fromYmd || '0000-01-01') && s.to >= addDaysYmd_(RETAINED_SINCE, -1);
+}
+async function oldFetcher_(kind, since, until, onProgress){
+  const inRange = r=>{ const y = rowYmd_(r); return !!y && y >= since && y <= until; };
+  if(kind === 'retail' || kind === 'db'){
+    const r = await fetchModuleHistoryChunked_(kind, {forceSheet:true, fromYmd:since, upToYmd:until, skipUndated:true, onProgress});
+    let rows = (r.rows || []).filter(inRange);
+    if(kind === 'db' && SESSION && SESSION.token && (SESSION.role === 'Admin' || SESSION.role === 'Sales')){
+      const ext = await callApi({action:'getDBDataExternal', token:SESSION.token});
+      if(ext && ext.success && ext.rows) rows = rows.concat(ext.rows.filter(inRange));
+    }
+    return rows;
+  }
+  if(kind === 'npa'){
+    const res = await callApi({action:'getNoProductReport', token:SESSION.token});
+    if(!res || !res.rows) throw new Error(describeLoadProblem_(res, null));
+    return res.rows.filter(inRange);
+  }
+  throw new Error('Unknown dataset ' + kind);
+}
+/* Makes sure the records of `kind` from `fromYmd` up to the start of the window are held in this browser. Resolves true when
+   they are; throws when Google Sheets could not be read. Safe to call many times (a call already running is joined). */
+async function ensureOlder_(kind, fromYmd, onProgress){
+  if(!beforeWindow_(fromYmd)) return true;
+  const id = oldId_(kind), need = fromYmd || '0000-01-01', upTo = addDaysYmd_(RETAINED_SINCE, -1);
+  if(!OLD_IDB_TRIED[id]){
+    OLD_IDB_TRIED[id] = true;
+    try{ const c = await IDB.get('fieldaudit_old_v1_' + id); if(c && c.rows && !OLD_STORE[id]) OLD_STORE[id] = {from:c.from, to:c.to, rows:c.rows}; }catch(_e){}
+  }
+  if(oldCovers_(kind, fromYmd)) return true;
+  if(OLD_INFLIGHT[id]){ try{ await OLD_INFLIGHT[id]; }catch(_e){} if(oldCovers_(kind, fromYmd)) return true; }
+  const p = (async ()=>{
+    const s = OLD_STORE[id] || null, pieces = [];
+    if(!s) pieces.push([need, upTo]);
+    else {
+      if(need < s.from) pieces.push([need, addDaysYmd_(s.from, -1)]);
+      if(s.to < upTo) pieces.push([addDaysYmd_(s.to, 1), upTo]);   // days that have moved out of the window since this browser last looked
+    }
+    let rows = s ? s.rows.slice() : [];
+    for(const pc of pieces){
+      if(pc[0] > pc[1]) continue;
+      rows = rows.concat(await oldFetcher_(kind, pc[0], pc[1], onProgress));
+    }
+    const ns = {from: s ? (need < s.from ? need : s.from) : need, to: upTo, rows: sortByDate_(rows)};
+    OLD_STORE[id] = ns;
+    IDB.set('fieldaudit_old_v1_' + id, Object.assign({savedAt: Date.now()}, ns));
+  })();
+  OLD_INFLIGHT[id] = p;
+  try{ await p; } finally { delete OLD_INFLIGHT[id]; }
+  return oldCovers_(kind, fromYmd);
+}
+/* Used by screens that draw synchronously: starts the older-records load in the background (with a visible notice),
+   then calls `after` so the screen redraws with everything. Never loops: a failure is remembered for 30 seconds. */
+function triggerOlder_(kinds, fromYmd, after){
+  if(!beforeWindow_(fromYmd)) return false;
+  kinds = [].concat(kinds);
+  const todo = kinds.filter(k => !oldCovers_(k, fromYmd) && Date.now() - (OLD_FAILED_AT[oldId_(k)] || 0) > 30000);
+  if(!todo.length) return false;
+  const busyKey = todo.join(',') + '|' + (fromYmd || '');
+  if(OLD_UI_BUSY[busyKey]) return true;
+  OLD_UI_BUSY[busyKey] = true;
+  showDataBanner_('info', 'Loading records older than 6 months from Google Sheets… this takes a little longer.');
+  (async ()=>{
+    let failed = null;
+    for(const k of todo){
+      try{
+        await ensureOlder_(k, fromYmd, (d,t)=>{ if(t) showDataBanner_('info', `Loading records older than 6 months from Google Sheets… ${d} of ${t}`); });
+      }catch(e){ OLD_FAILED_AT[oldId_(k)] = Date.now(); failed = e; }
+    }
+    delete OLD_UI_BUSY[busyKey];
+    if(failed) showDataBanner_('error', 'Could not load records older than 6 months from Google Sheets: ' + describeLoadProblem_(null, failed));
+    else hideDataBanner_();
+    try{ composeAllData(); }catch(_e){}
+    try{ if(after) after(); }catch(_e){}
+  })();
+  return true;
+}
+function olderLoadingNow_(){ return Object.keys(OLD_UI_BUSY).length > 0; }
+/* The retail / DB screens: only when this module's rows came from Supabase (a load straight from the Sheet already holds everything). */
+function guardOlderModule_(fromYmd){
+  if(DATA_SOURCE !== 'sb' || (MODULE !== 'retail' && MODULE !== 'db')) return;
+  triggerOlder_(MODULE, fromYmd, safeRerender_);
+}
+/* From-dates start at the window, so nobody triggers a Google Sheets read just by opening a tab; clearing the date asks for everything. */
+const DEFAULTED_INPUTS_ = {};
+function defaultFromOnce_(id){
+  if(DEFAULTED_INPUTS_[id]) return;
+  const el = document.getElementById(id); if(!el) return;
+  DEFAULTED_INPUTS_[id] = true;
+  if(!el.value) el.value = RETAINED_SINCE;
+  el.title = 'Records older than 6 months are loaded from Google Sheets when you pick an earlier date (or clear this date).';
+}
 async function fetchWithTimeout(url, opts, ms, _retriesLeft){
   if(_retriesLeft === undefined) _retriesLeft = 2;
   const controller = new AbortController();
@@ -1589,7 +1706,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.11.0';
+const FRONTEND_VERSION = 'v7.13.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2541,6 +2658,7 @@ async function sbCall_(fn, args, ms){
     if(/session expired/i.test(err.message)){ err.sbSession = true; sbDropSession_(); }
     throw err;
   }
+  if(fn === 'fa_meta' && res && res.retained_since) RETAINED_SINCE = String(res.retained_since).slice(0, 10);
   return res;
 }
 const SB_PAGE = 500, SB_PAGE_PARALLEL = 3;
@@ -2643,7 +2761,7 @@ async function loadDataSb_(gen, mod, sinceDate, st, cacheRead){
       // what this browser already holds + only what changed since — usually a handful of rows
       const delta = await deltaP;
       if(gen !== DATA_LOAD_GEN || !SESSION) return true;
-      let rows = mergeByKey_(rec.rows, delta);
+      let rows = clampWin_(mergeByKey_(rec.rows, delta));   // days that have moved out of the 6-month window leave the stored copy
       if(rows.length !== meta.total){              // something was deleted from the sheet — find out what
         const ids = await sbCall_('fa_ids', {p_tbl: tbl});
         if(gen !== DATA_LOAD_GEN || !SESSION) return true;
@@ -2651,7 +2769,7 @@ async function loadDataSb_(gen, mod, sinceDate, st, cacheRead){
         rows = rows.filter(r => keep.has(r._k));
       }
       st.freshApplied = true; DATA_RECENT_APPLIED = true;
-      BASE_ROWS = rows; EXTERNAL_DB_ROWS = rec.ext || [];
+      BASE_ROWS = rows; EXTERNAL_DB_ROWS = clampWin_(rec.ext || []);
       DATA_COMPLETE = true; DATA_FULL_AT = rec.fullAt; DATA_SOURCE = 'sb'; DATA_SB_CURSOR = meta.max_updated || rec.sbCursor;
       composeAllData(); saveDataCache(); safeRerender_(); hideDataBanner_(); noteSbSyncAge_(meta);
     } else {
@@ -2660,8 +2778,8 @@ async function loadDataSb_(gen, mod, sinceDate, st, cacheRead){
       if(gen !== DATA_LOAD_GEN || !SESSION) return true;
       st.freshApplied = true; DATA_RECENT_APPLIED = true;
       if(rec && rec.rows && rec.rows.length){
-        BASE_ROWS = mergeRecentRows_(rec.rows, recent, sinceDate);
-        EXTERNAL_DB_ROWS = rec.ext || []; DATA_COMPLETE = !!rec.complete;
+        BASE_ROWS = clampWin_(mergeRecentRows_(rec.rows, recent, sinceDate));
+        EXTERNAL_DB_ROWS = clampWin_(rec.ext || []); DATA_COMPLETE = !!rec.complete;
       } else {
         BASE_ROWS = recent; EXTERNAL_DB_ROWS = []; DATA_COMPLETE = false;
       }
@@ -2699,7 +2817,29 @@ async function getExternalRows_(){
 }
 async function fetchJourneyData_(phone, fromDate, toDate){
   if(SB_ACTIVE()){
-    try{ return await sbCall_('fa_user_journey', {p_phone: phone, p_from: fromDate || null, p_to: toDate || null}); }
+    try{
+      // Newer part from Supabase; the part before the 6-month window (if the range reaches back that far) from Google Sheets.
+      const oldTo = (toDate && toDate < RETAINED_SINCE) ? toDate : addDaysYmd_(RETAINED_SINCE, -1);
+      const wantOld = beforeWindow_(fromDate) && (!toDate || !fromDate || toDate >= fromDate);
+      const wantNew = !toDate || toDate >= RETAINED_SINCE;
+      const sbP = wantNew ? sbCall_('fa_user_journey', {p_phone: phone, p_from: (fromDate && fromDate > RETAINED_SINCE) ? fromDate : RETAINED_SINCE, p_to: toDate || null}) : Promise.resolve(null);
+      let oldP = Promise.resolve(null);
+      if(wantOld){
+        oldP = (SESSION && SESSION.token && configured())
+          ? callApi({action:'getUserJourney', token:SESSION.token, phone, fromDate: fromDate || '', toDate: oldTo}).catch(()=>({success:false, failed:true}))
+          : Promise.resolve({success:false, failed:true});
+      }
+      const [n, o] = await Promise.all([sbP, oldP]);
+      if(o && o.failed) toast('Records older than 6 months could not be loaded from Google Sheets right now — showing the last 6 months only.', true);
+      const nOk = n && n.success !== false, oOk = o && o.success !== false && !o.failed;
+      if(!nOk && !oOk) return n || o || {success:false, message:'No activity found'};
+      return {
+        success: true, phone,
+        name: (nOk && n.name) || (oOk && o.name) || '',
+        audits: ((nOk && n.audits) || []).concat((oOk && o.audits) || []),          // both parts are newest → oldest
+        checkins: ((nOk && n.checkins) || []).concat((oOk && o.checkins) || [])
+      };
+    }
     catch(e){ sbNoteFailure_(e); }
   }
   if(!configured()) throw new Error('__NOCFG__');
@@ -2712,7 +2852,20 @@ async function fetchAdJourney_(id){
   return r.json();
 }
 async function fetchAdAuditJourney_(adId){
-  if(useSb_('aaudit')){ try{ return await sbCall_('fa_ad_audit_journey', {p_ad_id: adId}); }catch(e){ sbNoteFailure_(e); } }
+  if(useSb_('aaudit')){
+    try{
+      const r = await sbCall_('fa_ad_audit_journey', {p_ad_id: adId});
+      // an ad created before the 6-month window may have older audits that only the Sheet holds → read the whole journey from the Sheet
+      const created = r && r.ad && r.ad.createdDate;
+      if(!(r && r.success && (!created || String(created).slice(0,10) < RETAINED_SINCE)) || !betaverseConfigured()) return r;
+      try{
+        const r2 = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAdAuditJourney&adId=${encodeURIComponent(adId)}&_t=${Date.now()}`, {cache:'no-store'}, 15000);
+        const j2 = await r2.json();
+        if(j2 && j2.success) return j2;
+      }catch(_e){}
+      return r;
+    }catch(e){ sbNoteFailure_(e); }
+  }
   const r = await fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?action=getAdAuditJourney&adId=${encodeURIComponent(adId)}&_t=${Date.now()}`, {cache:'no-store'}, 15000);
   return r.json();
 }
@@ -2723,7 +2876,24 @@ async function fetchChangeLog_(){
 }
 async function fetchAdAudits_(from, to){
   if(useSb_('aaudit')){
-    try{ return AUDIT_DESC_(await sbFetchRows_('aaudit', {p_since: from || undefined, p_until: to || undefined})); }
+    try{
+      // newer part from Supabase, the part before the 6-month window from Google Sheets (disjoint dates, so just joined)
+      const wantNew = !to || to >= RETAINED_SINCE;
+      const wantOld = beforeWindow_(from) && (!to || !from || to >= from);
+      const oldTo = (to && to < RETAINED_SINCE) ? to : addDaysYmd_(RETAINED_SINCE, -1);
+      const newP = wantNew ? sbFetchRows_('aaudit', {p_since: (from && from > RETAINED_SINCE) ? from : undefined, p_until: to || undefined}) : Promise.resolve([]);
+      let oldP = Promise.resolve([]);
+      if(wantOld && betaverseConfigured()){
+        const params = new URLSearchParams({action:'getAllAdAudits'});
+        if(from) params.set('fromDate', from);
+        params.set('toDate', oldTo);
+        oldP = fetchWithTimeout(`${BETAVERSE_SCRIPT_URL}?${params.toString()}&_t=${Date.now()}`, {cache:'no-store'}, 25000)
+          .then(r=>r.json()).then(j=>j.audits || [])
+          .catch(()=>{ toast('Records older than 6 months could not be loaded from Google Sheets right now — showing the last 6 months only.', true); return []; });
+      }
+      const [nr, orr] = await Promise.all([newP, oldP]);
+      return AUDIT_DESC_(nr.concat(orr));
+    }
     catch(e){ sbNoteFailure_(e); }
   }
   const params = new URLSearchParams({action:'getAllAdAudits'});
@@ -2907,6 +3077,7 @@ async function loadData(){
     st.cachedRec = c;
     if(!st.freshApplied){
       BASE_ROWS = c.rows; EXTERNAL_DB_ROWS = c.ext || []; DATA_COMPLETE = !!c.complete; DATA_FULL_AT = c.fullAt || 0;
+      if(c.src === 'sb'){ DATA_SOURCE = 'sb'; BASE_ROWS = clampWin_(BASE_ROWS); EXTERNAL_DB_ROWS = clampWin_(EXTERNAL_DB_ROWS); }
       composeAllData(); safeRerender_();
     }
   }).catch(()=>{});
@@ -2929,7 +3100,7 @@ async function loadData(){
     if(!SESSION) return; // the saved login turned out to be expired and the person was sent back to the login screen
     if(fastRes && fastRes.rows){
       st.freshApplied = true; DATA_RECENT_APPLIED = true;
-      if(st.cachedRec && st.cachedRec.complete){
+      if(st.cachedRec && st.cachedRec.complete && st.cachedRec.src !== 'sb'){   // a copy saved from the data service holds only the 6-month window — not a full history
         // stored full history + the fresh week = complete and current, without waiting for anything else
         BASE_ROWS = mergeRecentRows_(st.cachedRec.rows, fastRes.rows, sinceDate);
         EXTERNAL_DB_ROWS = st.cachedRec.ext || [];
@@ -2975,7 +3146,12 @@ let DATA_SB_CURSOR = '';     // Supabase: "everything up to here is already held
 let DATA_SB_META = null;
 let DATA_PROGRESS_CB = null; // (done, total) — set by an export that is waiting for the history to finish loading
 function composeAllData(){
-  ALL_DATA = (MODULE === 'db' && EXTERNAL_DB_ROWS.length) ? BASE_ROWS.concat(EXTERNAL_DB_ROWS) : BASE_ROWS;
+  let base = BASE_ROWS;
+  if(DATA_SOURCE === 'sb' && (MODULE === 'retail' || MODULE === 'db')){
+    const old = oldRows_(MODULE);                       // records older than the 6-month window (from Google Sheets), when somebody asked for them
+    if(old.length) base = old.concat(BASE_ROWS);
+  }
+  ALL_DATA = (MODULE === 'db' && EXTERNAL_DB_ROWS.length) ? base.concat(EXTERNAL_DB_ROWS) : base;
 }
 function saveDataCache(){
   if(!DATA_CACHE_KEY_CUR || !DATA_COMPLETE) return; // never store a partial history as if it were the whole thing
@@ -3009,7 +3185,7 @@ const HISTORY_WINDOW_DAYS = 30, HISTORY_PARALLEL = 2;
    Returns {rows, whole}: rows oldest→newest; whole=true means rows already contain the entire history. */
 async function fetchModuleHistoryChunked_(mod, opts){
   opts = opts || {};
-  if(SB_ACTIVE()){
+  if(SB_ACTIVE() && !opts.forceSheet){
     try{ return await fetchModuleHistorySb_(mod, opts); }
     catch(e){ sbNoteFailure_(e); if(!(SESSION && SESSION.token)) throw e; }   // no main-server token to fall back on → say what went wrong
   }
@@ -3030,17 +3206,18 @@ async function fetchModuleHistoryChunked_(mod, opts){
     return {rows: res.rows, whole: true};
   }
   const upTo = opts.upToYmd || meta.maxDate;
+  const lo = (opts.fromYmd && meta.minDate && opts.fromYmd > meta.minDate) ? opts.fromYmd : meta.minDate;   // optional lower bound (older-than-6-months reads)
   const wins = [];
-  if(meta.minDate && upTo && meta.minDate <= upTo){
+  if(lo && upTo && lo <= upTo){
     let end = upTo;
-    while(end >= meta.minDate){
+    while(end >= lo){
       let start = addDaysYmd_(end, -(HISTORY_WINDOW_DAYS - 1));
-      if(start < meta.minDate) start = meta.minDate;
+      if(start < lo) start = lo;
       wins.push({since:start, until:end});
       end = addDaysYmd_(start, -1);
     }
   }
-  if(meta.undated > 0){
+  if(meta.undated > 0 && !opts.skipUndated){
     if(wins.length) wins[wins.length-1].undated = true;               // the oldest window also carries rows whose date can't be read
     else wins.push({since:'0000-01-01', until:'0000-01-02', undated:true});
   }
@@ -3137,6 +3314,9 @@ function fetchExternalDBDataInBackground(gen, mod){
    Marketing/Admin) applies here too, automatically, same as everywhere else. */
 let PHOTO_RETAIL_DATA = [];
 let PHOTO_DB_DATA = [];
+let PHOTO_WIN = {retail:false, db:false};   // true = that list came from the 6-month window (older records are added on request)
+function photoRetailRows_(){ return PHOTO_WIN.retail ? oldRows_('retail').concat(clampWin_(PHOTO_RETAIL_DATA)) : PHOTO_RETAIL_DATA; }
+function photoDbRows_(){ return PHOTO_WIN.db ? oldRows_('db').concat(clampWin_(PHOTO_DB_DATA)) : PHOTO_DB_DATA; }
 let PHOTOS_LOADED = false;
 let PHOTOS_LOADING_PROMISE = null; // guards against overlapping calls (tab-switch + sync button clicked close together) stepping on each other's progress bar
 function photosCacheKey(){ return 'fieldaudit_photos_cache_v1_' + (SESSION && SESSION.role || ''); }
@@ -3156,6 +3336,7 @@ async function loadPhotosData(){
       if(cached && (cached.retail || cached.db)){
         PHOTO_RETAIL_DATA = cached.retail || [];
         PHOTO_DB_DATA = cached.db || [];
+        PHOTO_WIN = cached.win || {retail:false, db:false};
         PHOTOS_LOADED = true;
       }
     }catch(_e){}
@@ -3204,8 +3385,9 @@ async function loadPhotosData(){
       ]);
       PHOTO_RETAIL_DATA = retailR.rows || [];
       PHOTO_DB_DATA = (dbR.rows || []).concat((extRes && extRes.success && extRes.rows) ? extRes.rows : []);
+      PHOTO_WIN = {retail: retailR.src === 'sb', db: dbR.src === 'sb'};
       PHOTOS_LOADED = true;
-      IDB.set(photosCacheKey(), {retail: PHOTO_RETAIL_DATA, db: PHOTO_DB_DATA, savedAt: Date.now()});
+      IDB.set(photosCacheKey(), {retail: PHOTO_RETAIL_DATA, db: PHOTO_DB_DATA, win: PHOTO_WIN, savedAt: Date.now()});
       renderPhotos(); // re-render with the fresh data even if cache already rendered something slightly stale above
     }catch(e){
       if(!PHOTOS_LOADED){ PHOTO_RETAIL_DATA = []; PHOTO_DB_DATA = []; }
@@ -3277,6 +3459,7 @@ async function exportAnalyticsPPT(){
   const btn = document.getElementById('pptExportBtn');
   const orig = btn.innerHTML;
   if(!LAST_ANALYTICS_SNAPSHOT){ toast('Analytics not loaded yet — open the Dashboard tab first', true); return; }
+  if(olderLoadingNow_()){ toast('Older records are still loading from Google Sheets — please try again in a moment.', true); return; }
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Building presentation…';
   try{
     const snap = LAST_ANALYTICS_SNAPSHOT;
@@ -3371,7 +3554,13 @@ function mapLinkHtml(url, label){
   return (url && /^https?:\/\//i.test(url)) ? `<a href="${url}" target="_blank">${label||'Map ↗'}</a>` : '—';
 }
 
+let DASH_DEFAULTED_ = false;
 function renderDashboard(){
+  if(!DASH_DEFAULTED_){
+    DASH_DEFAULTED_ = true;
+    const pre = document.getElementById('dashPreset'), fr = document.getElementById('dashFrom');
+    if(pre && fr && pre.value === '6m' && !fr.value) fr.value = RETAINED_SINCE;
+  }
   if(MODULE==='betaverse') renderBetaverseDashboard();
   else if(MODULE==='db') renderDBDashboard();
   else renderRetailDashboard();
@@ -3440,6 +3629,7 @@ function applyDashPreset(){
   const preset = document.getElementById('dashPreset').value;
   const fromEl = document.getElementById('dashFrom'), toEl = document.getElementById('dashTo');
   if(preset === 'all'){ fromEl.value = ''; toEl.value = ''; }
+  else if(preset === '6m'){ fromEl.value = RETAINED_SINCE; toEl.value = ''; }
   else if(preset){
     const to = new Date();
     const from = new Date(); from.setDate(from.getDate() - Number(preset));
@@ -3483,6 +3673,7 @@ function dateToYMD(d){
 function getDashFilteredData(){
   const from = document.getElementById('dashFrom').value;
   const to = document.getElementById('dashTo').value;
+  guardOlderModule_(from);
   let rows = ALL_DATA;
   if(from || to){
     rows = rows.filter(r=>{
@@ -3786,6 +3977,8 @@ function switchAdAuditTab(tab){  document.querySelectorAll('#adAuditSection .mod
 
 let NO_PRODUCT_ROLE_ALLOWED = false;
 let NO_PRODUCT_DATA = [];
+let NPA_WIN = false;
+function npaRows_(){ return NPA_WIN ? oldRows_('npa').concat(NO_PRODUCT_DATA.filter(r=> !r.date || String(r.date).slice(0,10) >= RETAINED_SINCE)) : NO_PRODUCT_DATA; }
 /* No-Product (NPD gate "No") reports live in their own sheet entirely —
    loaded on-demand only when this tab is actually opened, not as part
    of the main Retail loadData() call, since it's a separate, much
@@ -3795,12 +3988,12 @@ async function loadNoProductReport(){
   try{
     let done = false;
     if(SB_ACTIVE()){
-      try{ NO_PRODUCT_DATA = await sbFetchRows_('npa', {}); done = true; }
+      try{ NO_PRODUCT_DATA = await sbFetchRows_('npa', {}); NPA_WIN = true; done = true; }
       catch(e){ sbNoteFailure_(e); }              // fall back to the main server below
     }
     if(!done){
       const res = await callApi({action:'getNoProductReport', token:SESSION.token});
-      NO_PRODUCT_DATA = res.rows || [];
+      NO_PRODUCT_DATA = res.rows || []; NPA_WIN = false;
     }
   }catch(e){
     NO_PRODUCT_DATA = [];
@@ -3809,8 +4002,10 @@ async function loadNoProductReport(){
 }
 function renderNoProductReport(){
   const search = (document.getElementById('noProductSearch').value||'').toLowerCase();
+  defaultFromOnce_('noProductFrom');
   const from = document.getElementById('noProductFrom').value, to = document.getElementById('noProductTo').value;
-  let rows = NO_PRODUCT_DATA.filter(r=>{
+  if(NPA_WIN) triggerOlder_('npa', from, renderNoProductReport);
+  let rows = npaRows_().filter(r=>{
     if(from && r.date < from) return false;
     if(to && r.date > to) return false;
     if(search){
@@ -3840,7 +4035,11 @@ function renderNoProductReport(){
 async function exportNoProductReport(){
   const search = (document.getElementById('noProductSearch').value||'').toLowerCase();
   const from = document.getElementById('noProductFrom').value, to = document.getElementById('noProductTo').value;
-  const rows = NO_PRODUCT_DATA.filter(r=>{
+  if(NPA_WIN && beforeWindow_(from)){
+    try{ await ensureOlder_('npa', from); }
+    catch(e){ toast('Could not load records older than 6 months from Google Sheets: ' + describeLoadProblem_(null, e), true); return; }
+  }
+  const rows = npaRows_().filter(r=>{
     if(from && r.date < from) return false;
     if(to && r.date > to) return false;
     if(search){
@@ -3925,7 +4124,8 @@ function setAaRangePreset(preset){
 async function preloadAdAuditAllTimeInBackground(){
   try{
     const cacheKey = 'fieldaudit_aa_cache__'; // matches loadAdAuditData()'s own key format for from='' to=''
-    if(!useSb_('aaudit') && !betaverseConfigured()) return;
+    if(useSb_('aaudit')) return;      // from the data service this range is already quick; "All Time" reads the older part from Google Sheets only when somebody asks
+    if(!betaverseConfigured()) return;
     const audits = await fetchAdAudits_('', '');
     if(audits && audits.length) IDB.set(cacheKey, {rows: audits, savedAt: Date.now()});
   }catch(_e){} // best-effort only — the visible "This Week" view already loaded fine on its own either way
@@ -4470,6 +4670,7 @@ async function loadAdChangeLog(){
     const j = await fetchChangeLog_();
     const entries = j.entries || [];
     if(!entries.length){ tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No changes logged yet.</div></td></tr>`; return; }
+    const clNote = useSb_('changelog') ? `<tr><td colspan="8" style="font-size:12px; color:var(--slate); padding:10px 8px;">Showing the last 6 months. Older entries stay in the Google Sheet (ChangeLog tab).</td></tr>` : '';
     tbody.innerHTML = entries.map(e=>`<tr>
       <td class="mono" style="font-size:11px;">${e.timestamp||''}</td>
       <td>${e.action||''}</td>
@@ -4479,7 +4680,7 @@ async function loadAdChangeLog(){
       <td style="font-weight:700;">${e.newValue||'—'}</td>
       <td>${e.changedBy||''}</td>
       <td>${e.changedByRole||''}</td>
-    </tr>`).join('');
+    </tr>`).join('') + clNote;
   }catch(e){
     tbody.innerHTML = `<tr><td colspan="8"><div class="empty">Internet is slower than expected — please wait a moment and try again.</div></td></tr>`;
   }
@@ -5182,8 +5383,10 @@ function renderRetailHistory(){
   if(citySel.options.length<=1){ cities.forEach(c=>{const o=document.createElement('option'); o.value=c; o.textContent=c; citySel.appendChild(o);}); }
   const q = document.getElementById('histSearch').value.toLowerCase();
   const cf = citySel.value;
+  defaultFromOnce_('histFrom');
   const histFrom = document.getElementById('histFrom').value;
   const histTo = document.getElementById('histTo').value;
+  guardOlderModule_(histFrom);
   const rows = ALL_DATA.filter(r=>{
     const hit = !q || [r.outletName,r.city,r.distributor,r.auditor].join(' ').toLowerCase().includes(q);
     const dOk = parseDateFlexible(r.date); const dYmd = dOk ? dateToYMD(dOk) : '';
@@ -5211,8 +5414,10 @@ function renderDBHistory(){
   if(citySel.options.length<=1){ cities.forEach(c=>{const o=document.createElement('option'); o.value=c; o.textContent=c; citySel.appendChild(o);}); }
   const q = document.getElementById('histSearch').value.toLowerCase();
   const cf = citySel.value;
+  defaultFromOnce_('histFrom');
   const histFrom = document.getElementById('histFrom').value;
   const histTo = document.getElementById('histTo').value;
+  guardOlderModule_(histFrom);
   const rows = ALL_DATA.filter(r=>{
     const hit = !q || [r.dbName,r.dbCode,r.dbCity,r.soName].join(' ').toLowerCase().includes(q);
     const dOk = parseDateFlexible(r.date); const dYmd = dOk ? dateToYMD(dOk) : '';
@@ -5372,6 +5577,12 @@ async function exportReportLocal(){
   updateExportProgress(2, 'Checking local data…');
   const hadToLoad = !DATA_COMPLETE;
   if(!(await ensureLocalDataForExport())) return false; // the full history could not be loaded
+  if(DATA_SOURCE === 'sb' && beforeWindow_(from)){
+    // the range reaches back past 6 months: that part comes from Google Sheets (an error here falls back to the server export, which reads the Sheet anyway)
+    updateExportProgress(8, 'Loading records older than 6 months from Google Sheets…');
+    await ensureOlder_(MODULE, from, (d,t)=> updateExportProgress(8 + (t ? (d/t)*50 : 0), `Loading older records from Google Sheets… ${d} of ${t}`));
+    composeAllData();
+  }
   if(MODULE === 'db' && EXTERNAL_DB_PROMISE) await EXTERNAL_DB_PROMISE; // so Sales/Admin exports include the external sheet's rows too
   const rows = ALL_DATA.filter(r=>{
     if(!from && !to) return true;
@@ -5481,7 +5692,7 @@ function exportBetaverseAuditorReport(){
 function updateSelectedCountLabel(){
   const n = CURRENT_PHOTO_LIST.filter(p=>SELECTED_PHOTO_KEYS.has(photoKey(p))).length;
   document.getElementById('photoSelectedCount').textContent = n + ' selected';
-  document.getElementById('zipScopeLabel').textContent = n ? `(${n} selected)` : '(by date range)';
+  document.getElementById('zipScopeLabel').textContent = n ? `(${n} selected)` : (CURRENT_PHOTO_LIST.length ? `(all ${CURRENT_PHOTO_LIST.length} shown)` : '(nothing shown)');
   const allBox = document.getElementById('photoSelectAll');
   if(allBox) allBox.checked = CURRENT_PHOTO_LIST.length > 0 && n === CURRENT_PHOTO_LIST.length;
 }
@@ -5490,81 +5701,74 @@ function togglePhotoSelectAll(box){
   else CURRENT_PHOTO_LIST.forEach(p=>SELECTED_PHOTO_KEYS.delete(photoKey(p)));
   renderPhotos();
 }
-const PHOTO_EXPORT_BATCH_SIZE = 250; // must match the backend's own PHOTO_EXPORT_BATCH_SIZE constant
+const PHOTO_ZIP_MAX_ITEMS = 3000; // above this many files in one go, ask the user to narrow the filter (browser memory / time)
+/* Turns photo cards into one zip item per actual file (a card can hold 2 images, or one PDF). */
+function photoZipItems_(cards){
+  const items = [];
+  const safe = s => String(s||'').replace(/[^a-z0-9]/gi,'_').replace(/_+/g,'_').slice(0,40) || 'unknown';
+  cards.forEach(p=>{
+    const row = [p.date, p.type, p.name, p.source, ...(p.details||[]).map(d=>String(d[1]).replace(/<[^>]*>/g,''))];
+    if(p.isPdf){
+      items.push({url:p.url, filename:`${p.date}_${safe(p.name)}_Bills.pdf`, row});
+    } else {
+      (p.urls||[]).forEach((u,i)=>{
+        items.push({url:u, filename:`${p.date}_${safe(p.name)}_${safe(p.type)}${p.urls.length>1?'_'+(i+1):''}.jpg`, row});
+      });
+    }
+  });
+  return items;
+}
+/* Exports exactly what the Photos tab is showing: the ticked photos if any are ticked, otherwise EVERY
+   photo that matches the current filters (type, source, search, dates). The server packs as many photos as
+   fit safely into each ZIP and says how many it used; this keeps asking for the rest, so a big set simply
+   arrives as several ZIP parts — no size limit error, nothing to split by hand. */
 async function exportPhotosZip(){
   if(!PHOTOS_LOADED){ toast('Photos are still loading — try again in a moment', true); return; }
   const btn = event.currentTarget;
   const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Preparing…';
-  startExportProgress();
-  const selected = CURRENT_PHOTO_LIST.filter(p=>SELECTED_PHOTO_KEYS.has(photoKey(p)));
   try{
     if(!configured()) throw new Error('__NOCFG__');
-    if(selected.length){
-      // Selected-photos mode — export exactly what's checked, regardless of
-      // date range. A card can now represent MULTIPLE images (the 2-photo
-      // outlet gallery) or a single PDF, so this expands each selected
-      // card into one zip item per actual file, not one item per card.
-      const items = [];
-      const safe = s => String(s||'').replace(/[^a-z0-9]/gi,'_').replace(/_+/g,'_').slice(0,40) || 'unknown';
-      selected.forEach(p=>{
-        const row = [p.date, p.type, p.name, p.source, ...(p.details||[]).map(d=>d[1])];
-        if(p.isPdf){
-          items.push({url:p.url, filename:`${p.date}_${safe(p.name)}_Bills.pdf`, row});
-        } else {
-          (p.urls||[]).forEach((u,i)=>{
-            items.push({url:u, filename:`${p.date}_${safe(p.name)}_${safe(p.type)}${p.urls.length>1?'_'+(i+1):''}.jpg`, row});
-          });
-        }
-      });
-      const manifestHeader = ['Filename','Date','Type','Name','Source', ...(selected[0].details||[]).map(d=>d[0])];
-      // A large selection is sliced into batches HERE (client-side),
-      // since this list came from checkboxes, not a server-side date
-      // query the backend can re-slice itself — same automatic-batching
-      // idea as the date-range path below, just driven from this end.
-      const totalBatches = Math.ceil(items.length / PHOTO_EXPORT_BATCH_SIZE) || 1;
-      for(let b=0; b<totalBatches; b++){
-        if(totalBatches > 1){
-          const pct = Math.round((b/totalBatches)*100);
-          updateExportProgress(pct, `Preparing batch ${b+1} of ${totalBatches}…`);
-        }
-        const batchItems = items.slice(b*PHOTO_EXPORT_BATCH_SIZE, (b+1)*PHOTO_EXPORT_BATCH_SIZE);
-        const res = await callApi({action:'exportSelectedPhotosZip', token:SESSION.token, items: batchItems, manifestHeader}, true);
-        if(!res.success) throw new Error(res.message || 'Could not create the ZIP');
-        downloadBase64File(res.base64, res.filename, 'application/zip');
-        toast(`Batch ${b+1} of ${totalBatches}: ${res.count} photo${res.count===1?'':'s'} downloaded`);
-        if(b < totalBatches-1) await new Promise(r=>setTimeout(r, 600)); // small gap so the browser doesn't drop a download that lands right on top of the previous one
-      }
-      finishExportProgress();
-    } else {
-      const fromDate = document.getElementById('photoFrom').value;
-      const toDate = document.getElementById('photoTo').value;
-      if(!fromDate && !toDate){
-        finishExportProgress();
-        toast('Select some photos, or pick a From/To date first — zipping every photo ever taken would be huge', true);
-        btn.disabled = false; btn.innerHTML = orig;
-        return;
-      }
-      // First call always fetches batch 0 — its response tells us
-      // totalBatches, so a date range that happens to be small still
-      // completes in exactly one round trip, same as before this existed.
-      let batchIndex = 0, totalBatches = 1;
-      do{
-        if(totalBatches > 1){
-          const pct = Math.round((batchIndex/totalBatches)*100);
-          updateExportProgress(pct, `Preparing batch ${batchIndex+1} of ${totalBatches}…`);
-        }
-        const res = await callApi({action:'exportPhotosZip', token:SESSION.token, module:MODULE, fromDate, toDate, batchIndex});
-        if(!res.success) throw new Error(res.message || 'Could not create the ZIP');
-        totalBatches = res.totalBatches || 1;
-        downloadBase64File(res.base64, res.filename, 'application/zip');
-        toast(totalBatches > 1
-          ? `Batch ${batchIndex+1} of ${totalBatches}: ${res.count} photo${res.count===1?'':'s'} downloaded`
-          : `${res.count} photo${res.count===1?'':'s'} downloaded, with a Manifest.csv listing the details`);
-        batchIndex++;
-        if(batchIndex < totalBatches) await new Promise(r=>setTimeout(r, 600));
-      } while(batchIndex < totalBatches);
-      finishExportProgress();
+    const ticked = CURRENT_PHOTO_LIST.filter(p=>SELECTED_PHOTO_KEYS.has(photoKey(p)));
+    const cards = ticked.length ? ticked : CURRENT_PHOTO_LIST;
+    if(!cards.length){ toast('No photos match the current filters', true); return; }
+    const items = photoZipItems_(cards);
+    if(!items.length){ toast('These entries have no downloadable photo files', true); return; }
+    if(items.length > PHOTO_ZIP_MAX_ITEMS){
+      toast(`${items.length} files match — that is too many for one export. Narrow the From/To dates (or the filters) to ${PHOTO_ZIP_MAX_ITEMS} or fewer.`, true);
+      return;
     }
+    const manifestHeader = ['Filename','Date','Type','Name','Source', ...(cards[0].details||[]).map(d=>d[0])];
+    startExportProgress();
+    let pos = 0, part = 0, got = 0, failedRuns = 0;
+    while(pos < items.length){
+      updateExportProgress(Math.round(pos/items.length*100), `Preparing ZIP part ${part+1} — ${pos} of ${items.length} files done…`);
+      // send only the remaining items, in slices small enough for one request body
+      const slice = items.slice(pos, pos + 250);
+      let res;
+      try{
+        // long timeout and NO automatic re-send: a part can legitimately take a minute or more on the server,
+        // and a silent retry would just do the same heavy work twice
+        const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body: JSON.stringify({action:'exportSelectedPhotosZip', token:SESSION.token, items: slice, manifestHeader})}, 170000, 0);
+        res = noteIfSessionExpired_(await safeJson(r));
+      }catch(e){ res = {success:false, message:e.message}; }
+      if(!res || !res.success){
+        // one automatic retry of the same slice; a second failure stops with a clear message
+        if(++failedRuns > 2) throw new Error((res && res.message) || 'Could not create the ZIP');
+        await new Promise(r=>setTimeout(r, 1500));
+        continue;
+      }
+      failedRuns = 0;
+      const used = Math.max(1, Number(res.consumed) || slice.length);
+      if(res.base64){
+        part++; got += res.count || 0;
+        downloadBase64File(res.base64, res.filename.replace('.zip', `_part${part}.zip`), 'application/zip');
+      }
+      pos += used;
+      await new Promise(r=>setTimeout(r, 700)); // small gap so the browser does not drop back-to-back downloads
+    }
+    finishExportProgress();
+    if(!got) toast('None of these photos could be fetched from Drive', true);
+    else toast(`${got} file${got===1?'':'s'} downloaded in ${part} ZIP part${part===1?'':'s'}, each with a Manifest.csv` + (got < items.length ? ` (${items.length-got} could not be read from Drive)` : '') + (part>1 ? ' — if your browser asks, allow multiple downloads' : ''));
   }catch(e){
     finishExportProgress();
     toast(e.message==='__NOCFG__' ? 'Backend not connected' : (e.message || 'Could not create the ZIP'), true);
@@ -5611,7 +5815,7 @@ function exportPlainFallback(){
    evidence without opening every individual audit row. */
 function buildPhotoList(){
   const list = [];
-  PHOTO_RETAIL_DATA.forEach(r=>{
+  photoRetailRows_().forEach(r=>{
     const details = [
       r.ownerName?['Owner', r.ownerName]:null,
       r.retailerPhone?['Phone', r.retailerPhone]:null,
@@ -5642,7 +5846,7 @@ function buildPhotoList(){
       name:r.outletName||'—', source:'FieldAudit App', details
     });
   });
-  PHOTO_DB_DATA.forEach(r=>{
+  photoDbRows_().forEach(r=>{
     const src = r.source || 'FieldAudit App';
     const details = [
       r.dbCode?['DB Code', r.dbCode]:null,
@@ -5745,8 +5949,10 @@ function renderPhotos(){
   const q = document.getElementById('photoSearch').value.toLowerCase();
   const typeFilter = document.getElementById('photoTypeFilter').value;
   const sourceFilter = document.getElementById('photoSourceFilter').value;
+  defaultFromOnce_('photoFrom');
   const photoFrom = document.getElementById('photoFrom').value;
   const photoTo = document.getElementById('photoTo').value;
+  triggerOlder_([PHOTO_WIN.retail ? 'retail' : null, PHOTO_WIN.db ? 'db' : null].filter(Boolean), photoFrom, renderPhotos);
   let list = buildPhotoList();
   list = list.filter(p=>{
     const searchable = (p.name + ' ' + (p.details||[]).map(d=>d[1]).join(' ')).toLowerCase();
