@@ -15,6 +15,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <style>
 :root{
@@ -309,6 +310,7 @@ table.data tr:hover td{background:var(--paper-2);}
 .journey-filters input[type=date]{padding:8px 10px; border:1.5px solid var(--border-2); border-radius:3px; font-size:13px;}
 .map-placeholder{background:var(--paper-2); border:1.5px dashed var(--border-2); border-radius:6px; padding:30px 20px; text-align:center; color:var(--slate); font-size:13px;}
 .map-dot{display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle;}
+body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], body.no-export #pptExportBtn, body.no-export [data-export]{display:none !important;}
 </style>
 </head>
 <body>
@@ -354,7 +356,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.13.1 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.16.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -391,6 +393,7 @@ table.data tr:hover td{background:var(--paper-2);}
     <button data-tab="history" onclick="showTab('history')">History</button>
     <button data-tab="photos" onclick="showTab('photos')">Photos</button>
     <button data-tab="master" id="masterTabBtn" onclick="showTab('master')" style="display:none;">Master Data</button>
+    <button data-tab="users" id="usersTabBtn" onclick="showTab('users')" style="display:none;">👥 Users</button>
     <button data-tab="team" id="teamTabBtn" onclick="showTab('team')" style="display:none;">Team</button>
     <button data-tab="auditorwise" id="auditorWiseTabBtn" onclick="showTab('auditorwise')" style="display:none;">👤 Auditor-wise</button>
     <button data-tab="noproduct" id="noProductTabBtn" onclick="showTab('noproduct')" style="display:none;">🚫 NPA</button>
@@ -487,6 +490,22 @@ table.data tr:hover td{background:var(--paper-2);}
       <div id="photosContent"><div class="empty photos-loading"><div class="mini-progress-track"><div class="mini-progress-fill" id="photosProgressFill"></div></div><div class="mini-progress-label" id="photosProgressLabel">Fetching photo records… 0%</div></div></div>
     </section>
 
+    <section id="tab-users" style="display:none;">
+      <div class="card">
+        <h2>👥 Users &amp; Logins</h2>
+        <div class="hint">Create a dashboard login, change a role, reset a password or delete a login. Roles: <b>Admin</b> (everything), <b>Sales</b>, <b>Marketing</b> (sees data, cannot export or verify), <b>BTL Head</b> (Ad Audit + Marketing Expense only, can verify Ad Audits), <b>Viewer</b> (view only, no export). A changed password or role signs that person out once.</div>
+        <div class="filters" style="margin-top:14px; align-items:flex-end;">
+          <div><label class="hint" style="display:block">User ID</label><input type="text" id="usrId" placeholder="e.g. Nitesh Pandey" autocomplete="off"></div>
+          <div><label class="hint" style="display:block">Name</label><input type="text" id="usrName" placeholder="Full name" autocomplete="off"></div>
+          <div><label class="hint" style="display:block">Password</label><input type="text" id="usrPass" placeholder="min 6 characters" autocomplete="off"></div>
+          <div><label class="hint" style="display:block">Role</label><select id="usrRole"></select></div>
+          <button class="btn btn-dark" id="usrSaveBtn" onclick="saveUserForm()">＋ Create login</button>
+          <button class="btn btn-outline" id="usrCancelBtn" onclick="resetUserForm()" style="display:none;">Cancel edit</button>
+        </div>
+        <div class="table-wrap" style="margin-top:16px;"><table class="data" id="usersTable"><thead><tr><th>User ID</th><th>Name</th><th>Role</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
     <section id="tab-master" style="display:none;">
       <div class="card" id="dbMasterCard">
         <h2>DB Master — DB Code, DB Name, DB City</h2>
@@ -550,6 +569,7 @@ table.data tr:hover td{background:var(--paper-2);}
           <button class="btn btn-outline" onclick="setAuditorRangePreset('','AM')">All Time</button>
           <span>From <input type="date" id="auditorFromAM" onchange="renderAuditorWise('AM')"></span>
           <span>To <input type="date" id="auditorToAM" onchange="renderAuditorWise('AM')"></span>
+          <button class="btn btn-dark" onclick="exportAuditorJourney('AM')" data-export>⬇ Export Journey (coloured)</button>
         </div>
         <div class="table-wrap" style="margin-top:14px;"><table class="data" id="auditorWiseTableAM"><thead></thead><tbody></tbody></table></div>
       </div>
@@ -728,6 +748,7 @@ table.data tr:hover td{background:var(--paper-2);}
         <button class="btn btn-outline" onclick="setAuditorRangePreset('','')">All Time</button>
         <span>From <input type="date" id="auditorFrom" onchange="renderAuditorWise('')"></span>
         <span>To <input type="date" id="auditorTo" onchange="renderAuditorWise('')"></span>
+        <button class="btn btn-dark" onclick="exportAuditorJourney('')" data-export>⬇ Export Journey (coloured)</button>
       </div>
       <div class="table-wrap" style="margin-top:14px;"><table class="data" id="auditorWiseTable"><thead></thead><tbody></tbody></table></div>
     </div>
@@ -814,6 +835,18 @@ function betaverseConfigured(){ return BETAVERSE_SCRIPT_URL && BETAVERSE_SCRIPT_
 const GOOGLE_MAPS_JS_KEY = "AIzaSyBTrdfFw6LNdlTbytFC6o1bLnr5PJDk0E0";
 
 let SESSION = null;
+/* ---- Role rules (v7.16.0) ----
+   Marketing and Viewer can SEE their data but can never export / download anything.
+   BTL Head sees only Ad Audit and Marketing Expense.
+   Only Admin and BTL Head can verify Ad Audits. The server enforces the same rules. */
+const NO_EXPORT_ROLES_JS = ['Marketing','Viewer'];
+function CAN_EXPORT(){ return !(SESSION && NO_EXPORT_ROLES_JS.indexOf(SESSION.role) !== -1); }
+function IS_BTL_HEAD(){ return !!(SESSION && SESSION.role === 'BTL Head'); }
+function exportAllowed_(){
+  if(CAN_EXPORT()) return true;
+  try{ toast('Your role (' + SESSION.role + ') can view data but cannot export or download it.', true); }catch(_e){}
+  return false;
+}
 let LAST_ANALYTICS_SNAPSHOT = null; // set by renderRetailDashboard/renderDBDashboard, read by exportAnalyticsPPT
 let BETAVERSE_STATUS_CHECKS = []; // "is it still running" spot-check records, loaded alongside Ad Manager submissions
 let ALL_DATA = [];
@@ -851,6 +884,7 @@ let SB_FAIL_UNTIL = 0;     // after a transport failure the data service is skip
    nothing requires the viewer's own Google account to have any Sheet
    sharing permission at all. */
 function downloadBase64File(base64, filename, mime){
+  if(!exportAllowed_()) return;
   const byteChars = atob(base64);
   const byteNumbers = new Array(byteChars.length);
   for(let i=0;i<byteChars.length;i++) byteNumbers[i] = byteChars.charCodeAt(i);
@@ -1097,6 +1131,7 @@ function loadExcelJS(){
   return EXCELJS_PROMISE;
 }
 function downloadBlobFile(blob, filename){
+  if(!exportAllowed_()) return;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename;
@@ -1154,6 +1189,7 @@ function applyProReportStyling(ws, headers, dataRowCount){
   ws['!rows'][0] = {hpt: 22}; // slightly taller header row
 }
 function downloadWorkbook(wb, filename){
+  if(!exportAllowed_()) return;
   // cellStyles: true is required for the free (Community Edition) build
   // of this library to actually write any cell.s styling (fills, fonts,
   // borders) into the .xlsx it produces — without it, style objects set
@@ -1597,9 +1633,21 @@ function enterApp(){
     document.getElementById('whoName').textContent = SESSION.name;
     document.getElementById('whoRole').textContent = SESSION.role || '';
     document.getElementById('masterTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
-    document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
-    document.getElementById('mktExpenseModuleBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing') ? 'inline-block' : 'none';
-    NO_PRODUCT_ROLE_ALLOWED = (SESSION.role === 'Admin' || SESSION.role === 'Marketing');
+    document.getElementById('usersTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
+    document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing' || SESSION.role === 'Viewer') ? 'inline-block' : 'none';
+    document.getElementById('mktExpenseModuleBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing' || SESSION.role === 'BTL Head' || SESSION.role === 'Viewer') ? 'inline-block' : 'none';
+    NO_PRODUCT_ROLE_ALLOWED = (SESSION.role === 'Admin' || SESSION.role === 'Marketing' || SESSION.role === 'Viewer');
+    // Marketing / Viewer: view only, no exports anywhere (buttons hidden; the download code itself also refuses).
+    document.body.classList.toggle('no-export', !CAN_EXPORT());
+    // BTL Head: ONLY Ad Audit and Marketing Expense are visible.
+    if(IS_BTL_HEAD()){
+      document.querySelectorAll('#moduleToggle button').forEach(b=>{
+        const keep = b.dataset.mod === 'adaudit' || b.dataset.mod === 'mktexpense';
+        b.style.display = keep ? '' : 'none';
+      });
+      document.getElementById('masterTabBtn').style.display = 'none';
+      document.getElementById('teamTabBtn').style.display = 'none';
+    }
     // Retail is the DEFAULT module — its nav button already has
     // class="active" hardcoded in the HTML, so switchModule('retail')
     // never actually runs on a normal page load (only clicking AWAY and
@@ -1618,7 +1666,7 @@ function enterApp(){
     dbBtn.innerHTML = '📦 DB Stock Audit';
     document.getElementById('sourceToggle').style.display = SESSION.role === 'Admin' ? 'flex' : 'none';
     const isSalesOnly = SESSION.role === 'Sales';
-    if(!isSalesOnly){
+    if(!isSalesOnly && !IS_BTL_HEAD()){
       SOURCE_FILTER = 'FieldAudit App';
       document.getElementById('moduleToggle').style.display = 'flex';
     }
@@ -1644,7 +1692,11 @@ function enterApp(){
     }
     showLoadProgress(75, 'Fetching latest audit data…');
     const finish = ()=>{ showLoadProgress(100, 'Ready!'); setTimeout(hideLoadProgress, 350); };
-    if(isSalesOnly){
+    if(IS_BTL_HEAD()){
+      document.getElementById('moduleToggle').style.display = 'flex';
+      switchModule('adaudit');
+      setTimeout(finish, 400);
+    } else if(isSalesOnly){
       // Sales is scoped to ONLY "GCPL Stock Audit" — this sets MODULE='db',
       // SOURCE_FILTER to external, hides the Retail/DB toggle, and does its
       // own loadData()+render internally; just give it a moment to land
@@ -1706,7 +1758,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.13.1';
+const FRONTEND_VERSION = 'v7.16.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1951,7 +2003,7 @@ function switchSourceTab(tab){
 }
 
 function showTab(name){
-  ['dash','approvals','map','history','photos','master','team','auditorwise','noproduct'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
+  ['dash','approvals','map','history','photos','master','users','team','auditorwise','noproduct'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   if(name==='dash') renderDashboard();
   if(name==='approvals') renderApprovals();
@@ -1959,6 +2011,7 @@ function showTab(name){
   if(name==='history') renderHistory();
   if(name==='photos') loadPhotosData().then(renderPhotos);
   if(name==='master') loadMasterData();
+  if(name==='users') loadUsersAdmin();
   if(name==='team'){
     document.getElementById('teamGridView').style.display='block';
     document.getElementById('teamJourneyView').style.display='none';
@@ -2427,6 +2480,7 @@ async function initJourneyMap(audits){
   if(pts.length > 1) map.fitBounds(bounds); else map.setZoom(15);
 }
 async function exportJourney(){
+  if(!exportAllowed_()) return;
   const btn = event.currentTarget;
   const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Preparing…';
   startExportProgress();
@@ -2582,6 +2636,73 @@ function parseMasterRows(text, expectedCols){
     while(row.length < expectedCols) row.push('');
     return row.slice(0, expectedCols);
   });
+}
+
+/* ---------- Admin: Users tab ---------- */
+let USERS_ADMIN = [], USR_EDITING = '';
+async function loadUsersAdmin(){
+  const tb = document.querySelector('#usersTable tbody');
+  tb.innerHTML = '<tr><td colspan="4"><div class="empty"><span class="spin"></span> Loading users…</div></td></tr>';
+  try{
+    if(!configured()) throw new Error('Backend not connected');
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=getUsers&token=${encodeURIComponent(SESSION.token)}&_t=${Date.now()}`, {cache:'no-store'}, 20000);
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message || 'Could not load users');
+    USERS_ADMIN = res.users;
+    const sel = document.getElementById('usrRole');
+    if(!sel.options.length) sel.innerHTML = '<option value="">Choose role…</option>' + res.roles.map(x=>`<option>${esc_(x)}</option>`).join('');
+    tb.innerHTML = USERS_ADMIN.map((u,i)=>`<tr>
+      <td class="mono">${esc_(u.userId)}</td><td>${esc_(u.name)}</td><td><span class="tag">${esc_(u.role)}</span></td>
+      <td style="white-space:nowrap;"><button class="btn btn-outline" style="padding:4px 10px;font-size:11px;" onclick="editUserRow(${i})">Edit / reset password</button>
+      <button class="btn btn-outline" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:var(--red);" onclick="deleteUserRow(${i})">Delete</button></td></tr>`).join('') || '<tr><td colspan="4"><div class="empty">No users.</div></td></tr>';
+  }catch(e){
+    tb.innerHTML = `<tr><td colspan="4"><div class="empty">${esc_(e.message || 'Could not load users')}</div></td></tr>`;
+  }
+}
+function esc_(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function resetUserForm(){
+  USR_EDITING = '';
+  ['usrId','usrName','usrPass'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('usrId').disabled = false; document.getElementById('usrRole').value = '';
+  document.getElementById('usrSaveBtn').textContent = '＋ Create login';
+  document.getElementById('usrCancelBtn').style.display = 'none';
+  document.getElementById('usrPass').placeholder = 'min 6 characters';
+}
+function editUserRow(i){
+  const u = USERS_ADMIN[i]; if(!u) return;
+  USR_EDITING = u.userId;
+  document.getElementById('usrId').value = u.userId; document.getElementById('usrId').disabled = true;
+  document.getElementById('usrName').value = u.name; document.getElementById('usrPass').value = '';
+  document.getElementById('usrPass').placeholder = 'leave empty to keep the old password';
+  document.getElementById('usrRole').value = u.role;
+  document.getElementById('usrSaveBtn').textContent = '✔ Save changes';
+  document.getElementById('usrCancelBtn').style.display = '';
+  document.getElementById('usrId').scrollIntoView({behavior:'smooth', block:'center'});
+}
+async function userCall_(payload){
+  const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body:JSON.stringify(Object.assign({action:'manageUser', token:SESSION.token}, payload))}, 60000);
+  const res = await r.json();
+  if(!res.success) throw new Error(res.message || 'Could not save');
+  return res;
+}
+async function saveUserForm(){
+  const btn = document.getElementById('usrSaveBtn'); const orig = btn.textContent;
+  const payload = {mode: USR_EDITING ? 'update' : 'create', userId: document.getElementById('usrId').value.trim(), name: document.getElementById('usrName').value.trim(), password: document.getElementById('usrPass').value, role: document.getElementById('usrRole').value};
+  if(!payload.userId){ toast('Enter a User ID', true); return; }
+  if(!payload.role){ toast('Choose a role', true); return; }
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const res = await userCall_(payload);
+    toast(res.message + (res.synced===false ? ' — the fast data copy will pick this login up at the next sync' : ''));
+    resetUserForm(); await loadUsersAdmin();
+  }catch(e){ toast(e.message || 'Could not save', true); }
+  finally{ btn.disabled = false; btn.textContent = USR_EDITING ? '✔ Save changes' : '＋ Create login'; }
+}
+async function deleteUserRow(i){
+  const u = USERS_ADMIN[i]; if(!u) return;
+  if(!confirm('Delete the login "' + u.userId + '"? They will no longer be able to sign in.')) return;
+  try{ const res = await userCall_({mode:'delete', userId:u.userId}); toast(res.message); await loadUsersAdmin(); }
+  catch(e){ toast(e.message || 'Could not delete', true); }
 }
 
 async function saveMasterData(type){
@@ -3437,6 +3558,7 @@ function userPerformanceTableHtml(allRows, keyField, nameLabel, extraCols){
    works identically for every role, since it's just reading the SAME data
    already rendered in front of the person, not a separate backend call. */
 function exportUserPerformanceTable(){
+  if(!exportAllowed_()) return;
   if(!LAST_PERF_TABLE || !LAST_PERF_TABLE.rows.length){ toast('No performance data to export yet', true); return; }
   const { headers, rows } = LAST_PERF_TABLE;
   const aoa = [headers, ...rows];
@@ -3456,6 +3578,7 @@ function exportUserPerformanceTable(){
  *  already sees (Marketing's PPT only ever has Marketing's own data, same
  *  as everywhere else in the app). */
 async function exportAnalyticsPPT(){
+  if(!exportAllowed_()) return;
   const btn = document.getElementById('pptExportBtn');
   const orig = btn.innerHTML;
   if(!LAST_ANALYTICS_SNAPSHOT){ toast('Analytics not loaded yet — open the Dashboard tab first', true); return; }
@@ -4033,6 +4156,7 @@ function renderNoProductReport(){
   `).join('');
 }
 async function exportNoProductReport(){
+  if(!exportAllowed_()) return;
   const search = (document.getElementById('noProductSearch').value||'').toLowerCase();
   const from = document.getElementById('noProductFrom').value, to = document.getElementById('noProductTo').value;
   if(NPA_WIN && beforeWindow_(from)){
@@ -4224,7 +4348,7 @@ function renderAdAuditKpis(){
       <div style="font-size:12px; color:var(--slate); margin-top:4px; text-transform:uppercase; letter-spacing:.5px;">${label}</div>
     </div>`).join('');
 }
-const AD_VERIFIER_ROLES_JS = ['Admin','Marketing','Marketing Head'];
+const AD_VERIFIER_ROLES_JS = ['Admin','BTL Head'];   // only these two can verify Ad Audits
 function canVerifyAds(){ return AD_VERIFIER_ROLES_JS.indexOf(SESSION.role) !== -1; }
 let AA_SELECTED = new Set();
 
@@ -4622,6 +4746,145 @@ function renderAuditorWise(suffix){
     <td><button class="btn btn-outline" style="padding:4px 10px; font-size:11px;" onclick="openAuditorJourney('${x.mobile}')">View Journey →</button></td>
   </tr>`).join('');
 }
+/* Auditor-wise Journey — coloured Excel report.
+   Uses the same date range + search that is on screen. Sheets:
+     Summary          one row per auditor (unique ads, total audits, running %, verified %, first/last visit)
+     All Journeys     every visit, grouped by auditor, each auditor in their OWN colour
+     <one sheet per auditor> that auditor's full visit history
+   Every visit shows its position in that ad's journey ("Visit 2 of 3") and who else audited the same ad. */
+async function exportAuditorJourney(suffix){
+  if(!exportAllowed_()) return;
+  suffix = suffix || '';
+  if(!AA_DATA.length){ toast('No Ad Audit data loaded yet — open the Ad Audit Report first', true); return; }
+  const search = ((document.getElementById('auditorSearch'+suffix)||{}).value || '').toLowerCase();
+  const from = (document.getElementById('auditorFrom'+suffix)||{}).value || '', to = (document.getElementById('auditorTo'+suffix)||{}).value || '';
+  const inRange = AA_DATA.filter(a=> !(from && a.date < from) && !(to && a.date > to));
+  const byAud = {};
+  inRange.forEach(a=>{
+    const key = a.auditorMobile || a.auditorName || 'unknown';
+    (byAud[key] = byAud[key] || {name:a.auditorName||'Unknown', mobile:a.auditorMobile||'', rows:[]}).rows.push(a);
+  });
+  let auditors = Object.values(byAud);
+  if(search) auditors = auditors.filter(x=> (x.name||'').toLowerCase().includes(search) || (x.mobile||'').toLowerCase().includes(search));
+  auditors.sort((x,y)=> y.rows.length - x.rows.length);
+  if(!auditors.length){ toast('No audits in this range to export', true); return; }
+  startExportProgress();
+  try{
+    updateExportProgress(10, 'Loading Excel engine…');
+    await loadExcelJS();
+    const ExcelJS = window.ExcelJS;
+    // each ad's whole journey (all auditors, all time) so "Visit 2 of 3" and "Also audited by" are always complete
+    const journey = {};
+    AA_DATA.slice().sort((a,b)=> String(a.date+a.time).localeCompare(String(b.date+b.time))).forEach(a=>{ (journey[a.adId] = journey[a.adId] || []).push(a); });
+    const solid = argb => ({type:'pattern', pattern:'solid', fgColor:{argb}});
+    const NAVY='FF12172B', LINE='FFD8D2C4', GREY='FF6B7280';
+    const thin = {style:'thin', color:{argb:LINE}}, BORDER = {top:thin,left:thin,bottom:thin,right:thin};
+    const PALETTE = ['FFE3F0FF','FFFFF0D6','FFE5F6E8','FFFBE4EE','FFEDE7FB','FFDFF5F5','FFFFE8DC','FFEFF3D5','FFE8E8F5','FFFDEBD0'];
+    const GREEN = {fill:solid('FFD5F0DD'), font:{name:'Calibri', size:10, bold:true, color:{argb:'FF1B7A43'}}};
+    const RED   = {fill:solid('FFFADBD8'), font:{name:'Calibri', size:10, bold:true, color:{argb:'FFC0392B'}}};
+    const AMBER = {fill:solid('FFFFF1C9'), font:{name:'Calibri', size:10, bold:true, color:{argb:'FF9A6700'}}};
+    const FONT = {name:'Calibri', size:10};
+    const place = a => a.isMovable ? ((a.routeFrom||a.routeTo) ? `${a.routeFrom||'?'} → ${a.routeTo||'?'}` : '') : (a.locationName||'');
+    const idTxt = a => a.isMovable ? (a.vehicleNumber||'') : (a.locationId||'');
+    const wb = new ExcelJS.Workbook(); wb.creator = 'FieldAudit'; wb.created = new Date();
+
+    const COLS = [
+      ['Auditor',20],['Mobile',13],['Date',11],['Time',8],['Ad ID',18],['Ad Type',14],['Location ID / Vehicle',20],['Address / Route',38],
+      ['Visit in this ad\'s journey',16],['Also audited by',26],['Running',12],['Verification',14],['Verified by',16],['Photo',12],['Map',10],['Remarks',26]
+    ];
+    const rowValues = a=>{
+      const j = journey[a.adId] || [a];
+      const idx = j.findIndex(x=>x.auditId===a.auditId) + 1;
+      const others = Array.from(new Set(j.map(x=>x.auditorName||'').filter(n=>n && n !== (a.auditorName||''))));
+      return {
+        v:[a.auditorName||'', a.auditorMobile||'', a.date||'', a.time||'', a.adId||'', a.adType||'', idTxt(a), place(a), `Visit ${idx} of ${j.length}`, others.join(', '), a.runningStatus==='Yes'?'Running':'Not Running', a.verificationStatus==='Verified'?'Verified':'Unverified', a.verifiedBy||'', '', '', a.remarks||''],
+        others: others.length>0
+      };
+    };
+    const styleHeader = ws=>{
+      const hr = ws.getRow(ws.lastRow ? ws.lastRow.number : 1);
+      hr.eachCell(c=>{ c.fill = solid(NAVY); c.font = {name:'Calibri', size:10, bold:true, color:{argb:'FFFFFFFF'}}; c.alignment = {vertical:'middle', horizontal:'center', wrapText:true}; c.border = BORDER; });
+      hr.height = 24;
+    };
+    const writeVisit = (ws, a, fillArgb)=>{
+      const rv = rowValues(a);
+      const row = ws.addRow(rv.v);
+      row.eachCell({includeEmpty:true}, (c, n)=>{ if(n>COLS.length) return; c.font = FONT; c.border = BORDER; c.alignment = {vertical:'middle', wrapText:true}; if(fillArgb) c.fill = solid(fillArgb); });
+      const run = row.getCell(11), ver = row.getCell(12), also = row.getCell(10), vis = row.getCell(9);
+      Object.assign(run, a.runningStatus==='Yes' ? GREEN : RED); run.alignment = {horizontal:'center', vertical:'middle'}; run.border = BORDER;
+      Object.assign(ver, a.verificationStatus==='Verified' ? GREEN : AMBER); ver.alignment = {horizontal:'center', vertical:'middle'}; ver.border = BORDER;
+      if(rv.others){ also.font = {name:'Calibri', size:10, bold:true, color:{argb:'FFB45309'}}; vis.font = {name:'Calibri', size:10, bold:true, color:{argb:'FFB45309'}}; }
+      if(a.photoUrl){ const c = row.getCell(14); c.value = {text:'📷 View', hyperlink:a.photoUrl}; c.font = {name:'Calibri', size:10, color:{argb:'FF0563C1'}, underline:true}; }
+      if(a.lat && a.lng){ const c = row.getCell(15); c.value = {text:'📍 Map', hyperlink:`https://www.google.com/maps?q=${a.lat},${a.lng}`}; c.font = {name:'Calibri', size:10, color:{argb:'FF0563C1'}, underline:true}; }
+      return row;
+    };
+
+    /* ---- Summary ---- */
+    updateExportProgress(25, 'Building summary…');
+    const sm = wb.addWorksheet('Summary', {properties:{tabColor:{argb:'FF5B5FEF'}}, views:[{showGridLines:false}]});
+    sm.mergeCells(1,1,1,9); sm.getCell(1,1).value = 'FieldAudit — Auditor-wise Journey';
+    for(let c=1;c<=9;c++) sm.getCell(1,c).fill = solid(NAVY);
+    sm.getCell(1,1).font = {name:'Calibri', size:18, bold:true, color:{argb:'FFFFFFFF'}}; sm.getCell(1,1).alignment = {vertical:'middle', indent:1}; sm.getRow(1).height = 38;
+    sm.getCell(2,1).value = 'Generated: ' + new Date().toLocaleString('en-IN', {timeZone:'Asia/Kolkata'}) + ' IST   |   ' + (from||to ? ('Range: ' + (from||'start') + ' to ' + (to||'today')) : 'All time') + '   |   ' + auditors.length + ' auditor(s)';
+    sm.getCell(2,1).font = {name:'Calibri', size:10, color:{argb:GREY}};
+    const sh = ['Auditor','Mobile','Unique Ads','Total Audits','Running %','Verified %','First Audit','Last Audit','Ads shared with other auditors'];
+    [20,14,12,12,12,12,13,13,22].forEach((w,i)=> sm.getColumn(i+1).width = w);
+    sm.addRow([]); sm.addRow(sh); styleHeader(sm);
+    auditors.forEach((x,i)=>{
+      const rows = x.rows.slice().sort((a,b)=> String(a.date+a.time).localeCompare(String(b.date+b.time)));
+      const run = rows.filter(a=>a.runningStatus==='Yes').length, ver = rows.filter(a=>a.verificationStatus==='Verified').length;
+      const ads = new Set(rows.map(a=>a.adId));
+      const shared = Array.from(ads).filter(id=> new Set((journey[id]||[]).map(v=>v.auditorName)).size > 1).length;
+      const r = sm.addRow([x.name, x.mobile, ads.size, rows.length, run/rows.length, ver/rows.length, rows[0].date, rows[rows.length-1].date, shared]);
+      r.eachCell(c=>{ c.font = FONT; c.border = BORDER; c.fill = solid(PALETTE[i % PALETTE.length]); c.alignment = {vertical:'middle', horizontal:'center'}; });
+      r.getCell(1).alignment = {vertical:'middle', horizontal:'left'}; r.getCell(1).font = {name:'Calibri', size:10, bold:true};
+      r.getCell(5).numFmt = '0%'; r.getCell(6).numFmt = '0%';
+      const rc = r.getCell(5), vc = r.getCell(6);
+      Object.assign(rc, run/rows.length >= 0.8 ? GREEN : run/rows.length >= 0.5 ? AMBER : RED); rc.numFmt='0%'; rc.alignment={horizontal:'center'}; rc.border=BORDER;
+      Object.assign(vc, ver/rows.length >= 0.8 ? GREEN : ver/rows.length >= 0.5 ? AMBER : RED); vc.numFmt='0%'; vc.alignment={horizontal:'center'}; vc.border=BORDER;
+    });
+    sm.addRow([]);
+    sm.getCell(sm.lastRow.number+1,1).value = 'Colour guide: each auditor has their own colour on the sheets. Green = running / verified, red = not running, amber = not yet verified. Orange text = this ad was also audited by someone else.';
+    sm.getCell(sm.lastRow.number,1).font = {name:'Calibri', size:9, italic:true, color:{argb:GREY}};
+
+    /* ---- All Journeys (grouped by auditor, each in own colour) ---- */
+    updateExportProgress(45, 'Writing all journeys…');
+    const all = wb.addWorksheet('All Journeys', {views:[{state:'frozen', ySplit:1}]});
+    COLS.forEach((c,i)=> all.getColumn(i+1).width = c[1]);
+    all.addRow(COLS.map(c=>c[0])); styleHeader(all);
+    auditors.forEach((x,i)=>{
+      const rows = x.rows.slice().sort((a,b)=> String(a.date+a.time).localeCompare(String(b.date+b.time)));
+      rows.forEach(a=> writeVisit(all, a, PALETTE[i % PALETTE.length]));
+    });
+    all.autoFilter = {from:{row:1,column:1}, to:{row:1,column:COLS.length}};
+
+    /* ---- one sheet per auditor ---- */
+    const used = new Set(['Summary','All Journeys']);
+    const maxSheets = 40;
+    for(let i=0;i<auditors.length && i<maxSheets;i++){
+      const x = auditors[i];
+      updateExportProgress(50 + Math.round(40*i/Math.min(auditors.length,maxSheets)), 'Auditor ' + (i+1) + ' of ' + auditors.length + '…');
+      await new Promise(r=>setTimeout(r,0));
+      let nm = String(x.name||'Unknown').replace(/[\\\/\?\*\[\]:]/g,' ').trim().slice(0,28) || 'Auditor';
+      let k = nm, n = 2; while(used.has(k.toLowerCase())){ k = nm.slice(0,26) + ' ' + (n++); } used.add(k.toLowerCase());
+      const ws = wb.addWorksheet(k, {properties:{tabColor:{argb:PALETTE[i % PALETTE.length]}}, views:[{state:'frozen', ySplit:1}]});
+      COLS.forEach((c,ci)=> ws.getColumn(ci+1).width = c[1]);
+      ws.addRow(COLS.map(c=>c[0])); styleHeader(ws);
+      x.rows.slice().sort((a,b)=> String(a.date+a.time).localeCompare(String(b.date+b.time))).forEach(a=> writeVisit(ws, a, PALETTE[i % PALETTE.length]));
+      ws.autoFilter = {from:{row:1,column:1}, to:{row:1,column:COLS.length}};
+    }
+    updateExportProgress(94, 'Saving file…');
+    const buf = await wb.xlsx.writeBuffer();
+    updateExportProgress(100, 'Done');
+    downloadBlobFile(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), 'Auditor_Journey_' + localDateStr() + '.xlsx');
+    finishExportProgress();
+    toast(`Journey report downloaded — ${auditors.length} auditor${auditors.length===1?'':'s'}, ${inRange.length} audit${inRange.length===1?'':'s'}` + (auditors.length>maxSheets ? ` (individual sheets for the top ${maxSheets}; all are in "All Journeys")` : ''));
+  }catch(e){
+    finishExportProgress();
+    console.warn('Auditor journey export failed:', e);
+    toast('Could not build the journey report: ' + (e.message || 'unknown error'), true);
+  }
+}
 /* Reuses the exact same modal as openAdJourney() above — this time
    filtered to one auditor's own visits across every Ad/Location they've
    ever touched, newest first, with the same photo thumbnails. Each row
@@ -4750,6 +5013,7 @@ async function uploadAdMasterExcel(){
 /* Ad Audit export — built locally with real colours (the plain XLSX.js build this used to rely on
    silently drops all cell styling); the old basic export remains below as a last-resort fallback. */
 async function exportAdAuditReport(){
+  if(!exportAllowed_()) return;
   if(!AA_DATA.length){ toast('No data loaded to export', true); return; }
   startExportProgress();
   try{
@@ -4794,6 +5058,7 @@ async function exportAdAuditReport(){
   }
 }
 function exportAdAuditReportBasic(){
+  if(!exportAllowed_()) return;
   if(!AA_DATA.length){ toast('No data loaded to export', true); return; }
   const headers = ['Ad ID','Ad Type','Location ID / Vehicle No.','Address / Route','Route From','Route To','Size','Auditor Name','Auditor Mobile','Audit Date','Audit Time','Latitude','Longitude','Running Status','Photo','Map','Verification Status','Verified By','Verified Role','Verification Date','Remarks'];
   const body = AA_DATA.map(a=>[
@@ -5147,6 +5412,7 @@ async function uploadMktExpenseExcel(){
 /* Built right here from the expense data already on screen — real colours and a summary sheet, no server limit. The
    old server-built export (below) is only the fallback. */
 async function exportMktExpenseReport(){
+  if(!exportAllowed_()) return;
   startExportProgress();
   try{
     updateExportProgress(4, 'Loading expense data…');
@@ -5183,6 +5449,7 @@ async function exportMktExpenseReport(){
   }
 }
 async function exportMktExpenseReportServer_(){
+  if(!exportAllowed_()) return;
   startExportProgress();
   const attempt = async () => {
     const r = await fetchWithTimeout(`${SCRIPT_URL}?action=exportReport&token=${encodeURIComponent(SESSION.token)}&module=mktexpense&_t=${Date.now()}`, {cache:'no-store'}, 60000);
@@ -5199,6 +5466,7 @@ async function exportMktExpenseReportServer_(){
     for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
     const blob = new Blob([arr], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url = URL.createObjectURL(blob);
+    if(!exportAllowed_()) throw new Error('Export not allowed for this role');
     const a = document.createElement('a'); a.href=url; a.download=res.filename||'MarketingExpenseReport.xlsx'; a.click();
     URL.revokeObjectURL(url);
     finishExportProgress();
@@ -5216,6 +5484,7 @@ async function exportMktExpenseReportServer_(){
    which is checked up front with a clear message instead of a silent
    half-built file. */
 async function exportMktExpensePPT(){
+  if(!exportAllowed_()) return;
   if(!MEX_DATA || !MEX_DATA.rows){ toast('Data is still loading — please wait a moment and try again', true); return; }
   startExportProgress();
   try{
@@ -5572,6 +5841,7 @@ async function ensureLocalDataForExport(){
   return DATA_COMPLETE;
 }
 async function exportReportLocal(){
+  if(!exportAllowed_()) return;
   const from = document.getElementById('histFrom').value;
   const to = document.getElementById('histTo').value;
   updateExportProgress(2, 'Checking local data…');
@@ -5595,6 +5865,7 @@ async function exportReportLocal(){
   return true;
 }
 async function exportReport(){
+  if(!exportAllowed_()) return;
   if(MODULE==='betaverse'){ exportBetaverseAuditorReport(); return; }
   if(!ALL_DATA.length){ toast('No data to export yet', true); return; }
   const btn = event.currentTarget;
@@ -5639,6 +5910,7 @@ async function exportReport(){
    for anyone who needs to trace a specific site back to its exact
    location, plus the latest field spot-check result for authenticity. */
 function exportBetaverseAuditorReport(){
+  if(!exportAllowed_()) return;
   if(!ALL_DATA.length){ toast('No data to export yet', true); return; }
   const latestCheckBySubmission = {};
   BETAVERSE_STATUS_CHECKS.forEach(c=>{
@@ -5718,14 +5990,19 @@ function photoZipItems_(cards){
   });
   return items;
 }
-/* Exports exactly what the Photos tab is showing: the ticked photos if any are ticked, otherwise EVERY
-   photo that matches the current filters (type, source, search, dates). The server packs as many photos as
-   fit safely into each ZIP and says how many it used; this keeps asking for the rest, so a big set simply
-   arrives as several ZIP parts — no size limit error, nothing to split by hand. */
+/* Exports exactly what the Photos tab is showing: the ticked photos if any are ticked, otherwise EVERY photo that
+   matches the current filters (type, source, search, dates). The server returns the photo files in size-limited
+   batches (fetched in parallel); this page puts them into ZIP files itself and saves a new ZIP each time about
+   PHOTO_ZIP_PART_MB of photos have been collected — so a big export is a handful of large ZIP parts, never one
+   that is too big to send, and every part carries its own Manifest.csv. */
+const PHOTO_ZIP_PART_MB = 250;
 async function exportPhotosZip(){
+  if(!exportAllowed_()) return;
   if(!PHOTOS_LOADED){ toast('Photos are still loading — try again in a moment', true); return; }
+  if(typeof JSZip === 'undefined'){ toast('The ZIP library did not load — refresh the page and try again', true); return; }
   const btn = event.currentTarget;
   const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Preparing…';
+  let started = false;
   try{
     if(!configured()) throw new Error('__NOCFG__');
     const ticked = CURRENT_PHOTO_LIST.filter(p=>SELECTED_PHOTO_KEYS.has(photoKey(p)));
@@ -5737,46 +6014,64 @@ async function exportPhotosZip(){
       toast(`${items.length} files match — that is too many for one export. Narrow the From/To dates (or the filters) to ${PHOTO_ZIP_MAX_ITEMS} or fewer.`, true);
       return;
     }
-    const manifestHeader = ['Filename','Date','Type','Name','Source', ...(cards[0].details||[]).map(d=>d[0])];
-    startExportProgress();
-    let pos = 0, part = 0, got = 0, failedRuns = 0;
+    const header = ['Filename','Date','Type','Name','Source', ...(cards[0].details||[]).map(d=>d[0])];
+    const csvCell = v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"';
+    startExportProgress(); started = true;
+    let zip = new JSZip(), partRows = [header], partBytes = 0, partFiles = 0, parts = 0, got = 0, pos = 0, failedRuns = 0, skippedTotal = 0;
+    const usedNames = new Set();
+    const flush = async ()=>{
+      if(!partFiles) return;
+      zip.file('Manifest.csv', partRows.map(r=>r.map(csvCell).join(',')).join('\r\n'));
+      const blob = await zip.generateAsync({type:'blob', compression:'STORE'});   // photos are already compressed — storing is fast and just as small
+      parts++;
+      if(!exportAllowed_()) return;
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `FieldAudit_Photos_${localDateStr()}_part${parts}.zip`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(a.href), 8000);
+      zip = new JSZip(); partRows = [header]; partBytes = 0; partFiles = 0;
+      await new Promise(r=>setTimeout(r, 800));   // small gap so the browser does not drop back-to-back downloads
+    };
     while(pos < items.length){
-      updateExportProgress(Math.round(pos/items.length*100), `Preparing ZIP part ${part+1} — ${pos} of ${items.length} files done…`);
-      // send only the remaining items, in slices small enough for one request body
-      const slice = items.slice(pos, pos + 250);
+      updateExportProgress(Math.round(pos/items.length*100), `Collecting photos — ${pos} of ${items.length} done…`);
+      const slice = items.slice(pos, pos + 60);
       let res;
       try{
-        // long timeout and NO automatic re-send: a part can legitimately take a minute or more on the server,
-        // and a silent retry would just do the same heavy work twice
-        const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body: JSON.stringify({action:'exportSelectedPhotosZip', token:SESSION.token, items: slice, manifestHeader})}, 170000, 0);
+        const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body: JSON.stringify({action:'fetchPhotoChunk', token:SESSION.token, items: slice})}, 170000, 0);
         res = noteIfSessionExpired_(await safeJson(r));
       }catch(e){ res = {success:false, message:e.message}; }
       if(!res || !res.success){
-        // one automatic retry of the same slice; a second failure stops with a clear message
-        if(++failedRuns > 2) throw new Error((res && res.message) || 'Could not create the ZIP');
+        if(++failedRuns > 2) throw new Error((res && res.message && !/unknown action/i.test(res.message)) ? res.message : 'Could not fetch the photos — make sure the latest Main Code (v6.78.0 or newer) is deployed');
         await new Promise(r=>setTimeout(r, 1500));
         continue;
       }
       failedRuns = 0;
-      const used = Math.max(1, Number(res.consumed) || slice.length);
-      if(res.base64){
-        part++; got += res.count || 0;
-        downloadBase64File(res.base64, res.filename.replace('.zip', `_part${part}.zip`), 'application/zip');
-      }
-      pos += used;
-      await new Promise(r=>setTimeout(r, 700)); // small gap so the browser does not drop back-to-back downloads
+      (res.files||[]).forEach(f=>{
+        let name = f.name, n = 1;
+        while(usedNames.has(name)){ n++; name = f.name.replace(/(\.[a-z0-9]+)$/i, `_${n}$1`); }   // two shops with the same name on the same day must not overwrite each other
+        usedNames.add(name);
+        zip.file(name, f.b64, {base64:true});
+        partRows.push([name, ...(f.row||[])]);
+        partBytes += f.b64.length * 0.75; partFiles++; got++;
+      });
+      skippedTotal += res.skipped || 0;
+      pos += Math.max(1, Number(res.consumed) || slice.length);
+      if(partBytes >= PHOTO_ZIP_PART_MB * 1048576){ updateExportProgress(Math.round(pos/items.length*100), 'Saving ZIP part…'); await flush(); }
     }
+    updateExportProgress(99, 'Saving ZIP…');
+    await flush();
     finishExportProgress();
     if(!got) toast('None of these photos could be fetched from Drive', true);
-    else toast(`${got} file${got===1?'':'s'} downloaded in ${part} ZIP part${part===1?'':'s'}, each with a Manifest.csv` + (got < items.length ? ` (${items.length-got} could not be read from Drive)` : '') + (part>1 ? ' — if your browser asks, allow multiple downloads' : ''));
+    else toast(`${got} file${got===1?'':'s'} saved in ${parts} ZIP part${parts===1?'':'s'}, each with a Manifest.csv` + (skippedTotal ? ` (${skippedTotal} could not be read from Drive)` : '') + (parts>1 ? ' — if your browser asks, allow multiple downloads' : ''));
   }catch(e){
-    finishExportProgress();
+    if(started) finishExportProgress();
     toast(e.message==='__NOCFG__' ? 'Backend not connected' : (e.message || 'Could not create the ZIP'), true);
   }finally{
     btn.disabled = false; btn.innerHTML = orig;
   }
 }
 function exportPlainFallback(){
+  if(!exportAllowed_()) return;
   if(MODULE==='db'){
     const headers = ['Date','DB Code','DB Name','DB City','SO Name','ASM Name','Address',
       'ATTA (Bags)','MAIDA (Bags)','SOOJI (Bags)','SATTU (Bags)','BESAN (Bags)','DALIA (Bags)','OTHERS (Bags)','Spices Total (Bags)',
