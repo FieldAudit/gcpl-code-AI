@@ -356,7 +356,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.16.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.18.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -378,6 +378,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
     <button data-mod="betaverse" onclick="switchModule('betaverse')">📐 Ad Manager <span id="pendingApprovalBadge" style="display:none; background:var(--red); color:#fff; border-radius:10px; padding:1px 7px; font-size:10px; font-weight:700; margin-left:4px;">0</span></button>
     <button data-mod="mktexpense" id="mktExpenseModuleBtn" onclick="switchModule('mktexpense')" style="display:none;">💰 Marketing Expense</button>
     <button data-mod="adaudit" id="adAuditModuleBtn" onclick="switchModule('adaudit')">🎯 Ad Audit</button>
+    <button data-mod="bills" id="billsModuleBtn" onclick="switchModule('bills')" style="display:none;">🧾 Bills Organizer</button>
   </div>
   <div class="module-toggle" id="betaverseApprovalToggle" style="display:none;">
     <button class="active" data-appr="" onclick="switchApprovalFilter('')">All</button>
@@ -493,7 +494,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
     <section id="tab-users" style="display:none;">
       <div class="card">
         <h2>👥 Users &amp; Logins</h2>
-        <div class="hint">Create a dashboard login, change a role, reset a password or delete a login. Roles: <b>Admin</b> (everything), <b>Sales</b>, <b>Marketing</b> (sees data, cannot export or verify), <b>BTL Head</b> (Ad Audit + Marketing Expense only, can verify Ad Audits), <b>Viewer</b> (view only, no export). A changed password or role signs that person out once.</div>
+        <div class="hint">Create a dashboard login, change a role, reset a password or delete a login. Roles: <b>Admin</b> (everything), <b>Sales</b>, <b>Marketing</b> (sees and exports data, cannot verify Ad Audits), <b>BTL Head</b> (Ad Audit + Marketing Expense only, can verify Ad Audits), <b>Viewer</b> (view only, no export). A changed password or role signs that person out once.</div>
         <div class="filters" style="margin-top:14px; align-items:flex-end;">
           <div><label class="hint" style="display:block">User ID</label><input type="text" id="usrId" placeholder="e.g. Nitesh Pandey" autocomplete="off"></div>
           <div><label class="hint" style="display:block">Name</label><input type="text" id="usrName" placeholder="Full name" autocomplete="off"></div>
@@ -664,6 +665,823 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
   </div>
 </div>
 
+<div id="billsSection" style="display:none; padding:0 24px 24px;">
+  <div style="background:var(--card,#fff); border:1px solid var(--line,#DDE0EA); border-radius:12px; overflow:hidden;">
+    <iframe id="billsFrame" title="Bills Organizer" style="width:100%; height:calc(100vh - 150px); min-height:640px; border:0; display:block;"></iframe>
+  </div>
+</div>
+<script type="text/plain" id="billsToolSrc"><!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bills PDF Organizer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>
+<style>
+:root{
+  --ink:#12172B; --slate:#5B6275; --line:#DDE0EA; --bg:#F3F4F8; --card:#fff;
+  --accent:#4B4BC8; --accent-d:#3838A8; --ok:#1E8A4C; --ok-bg:#E6F4EC; --warn:#B26A00; --warn-bg:#FFF3DC; --err:#C0392B; --err-bg:#FCE9E6;
+}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--ink);color:#fff;padding:18px 24px}
+header h1{margin:0;font-size:20px;letter-spacing:.2px}
+header p{margin:4px 0 0;color:#B9BEDA;font-size:13px}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+.card h2{margin:0 0 4px;font-size:16px;display:flex;align-items:center;gap:10px}
+.card h2 .n{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px}
+.card.done h2 .n{background:var(--ok)}
+.card.locked{opacity:.55;pointer-events:none}
+.hint{color:var(--slate);font-size:13px;margin:2px 0 12px}
+label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px}
+input[type=text],input[type=password],select,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff}
+textarea{min-height:110px;resize:vertical}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row>*{flex:1 1 220px}
+button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:10px 16px;cursor:pointer;background:var(--accent);color:#fff}
+button:hover{background:var(--accent-d)}
+button.sec{background:#fff;color:var(--ink);border:1px solid var(--line)}
+button.sec:hover{background:#F3F4F8}
+button:disabled{opacity:.5;cursor:not-allowed}
+.msg{margin-top:10px;padding:9px 12px;border-radius:8px;font-size:13px}
+.msg.ok{background:var(--ok-bg);color:var(--ok)} .msg.err{background:var(--err-bg);color:var(--err)} .msg.warn{background:var(--warn-bg);color:var(--warn)}
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:#F7F8FB;font-weight:700}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:14px;background:#E8EAF2;border-radius:7px;overflow:hidden;margin:10px 0 6px}
+.bar>div{height:100%;width:0;background:var(--accent);transition:width .3s}
+.stats{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--slate)}
+.stats b{color:var(--ink)}
+.files{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--slate);word-break:break-all}
+.pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600}
+.pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.err{background:var(--err-bg);color:var(--err)} .pill.wait{background:#EEF0F7;color:var(--slate)}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+small{color:var(--slate)}
+.hide{display:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips label{display:inline-flex;gap:6px;align-items:center;margin:0;padding:5px 10px;border:1px solid var(--line,#d0d5dd);border-radius:999px;font-weight:500;font-size:13px;cursor:pointer;background:#fff}
+.chips label.yel{background:#fff9c4;border-color:#e6d84a}
+.chips input{margin:0}
+
+.drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;background:#FAFBFE;color:var(--ink)} .drop.over{border-color:var(--accent);background:#EEF0FF}
+.tabs{display:flex;gap:8px;margin:0 0 16px;border-bottom:2px solid var(--line)}
+.tabs button{background:none;color:var(--slate);border-radius:8px 8px 0 0;padding:10px 18px;border:0;border-bottom:3px solid transparent;margin-bottom:-2px}
+.tabs button:hover{background:#EEF0F7}
+.tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Bills PDF Organizer</h1>
+  <p>Upload the Excel report. The bills (PDF or photo) are saved into folders on this computer, one by one.</p>
+</header>
+<main>
+<div class="tabs"><button class="on" id="tabBtnA">📁 Bills Organizer</button><button id="tabBtnB">🚩 Incorrect Bills Report</button></div>
+<div id="tabA">
+
+<div class="msg warn hide" id="browserWarn">This tool needs Google Chrome or Microsoft Edge on a computer (it cannot save folders from a phone or other browsers).</div>
+
+<!-- 1 -->
+<section class="card done" id="c1">
+  <h2><span class="n">&#10003;</span>No login, no key, no script change</h2>
+  <p class="hint">The tool opens each bill link from your Excel, exactly like clicking "View photo", and saves the file in your folder. Just go to the next step. <i>(Advanced, only if downloads fail: a Google API key can be added below.)</i></p>
+  <details><summary style="cursor:pointer;font-weight:600">Advanced: add a Google API key</summary>
+  <label for="apikey">Google API key</label>
+  <input type="text" id="apikey" placeholder="AIza..." autocomplete="off" spellcheck="false">
+  <div class="actions"><button id="btnKey">Save key</button><button class="sec hide" id="btnKeyClear">Remove key</button></div>
+  <div id="keyMsg"></div>
+  <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600">How to get the key (about 5 minutes, free)</summary>
+    <ol style="line-height:1.8;margin:8px 0 0 18px">
+      <li>Open <b>console.cloud.google.com</b> and sign in with the same Google account that owns the Drive files.</li>
+      <li>Top bar: click the project name &rarr; <b>New project</b> &rarr; name it <i>Bills tool</i> &rarr; <b>Create</b>, then make sure that project is selected.</li>
+      <li>Left menu: <b>APIs &amp; Services</b> &rarr; <b>Library</b> &rarr; search <b>Google Drive API</b> &rarr; <b>Enable</b>.</li>
+      <li><b>APIs &amp; Services</b> &rarr; <b>Credentials</b> &rarr; <b>Create credentials</b> &rarr; <b>API key</b>. Copy the key shown (it starts with <i>AIza</i>).</li>
+      <li>Optional but safer: click the key &rarr; <b>API restrictions</b> &rarr; <b>Restrict key</b> &rarr; choose <b>Google Drive API</b> &rarr; Save.</li>
+      <li>Paste the key above and click <b>Save key</b>.</li>
+    </ol>
+    <p class="hint" style="margin-top:8px">This reads files that are already shared with "anyone with the link" (the bill PDFs are). It cannot change or delete anything.</p>
+  </details>
+  </details>
+</section>
+
+<!-- 2 -->
+<section class="card" id="c2">
+  <h2><span class="n">2</span>Upload the Excel report</h2>
+  <p class="hint">Works with both report formats: the Retail Audit report ("Bills PDF" column) and the Rate Ledger over-invoicing report ("Bill Copy" column). Columns with a yellow heading are picked for the file name automatically — you can tick or untick any column.</p>
+  <input type="file" id="xlsFile" accept=".xlsx,.xls">
+  <div id="mapBox" class="hide">
+    <div class="row" style="margin-top:6px">
+      <div><label>Bill link column (PDF / photo)</label><select id="colPdf"></select></div>
+      <div><label>Group bills by (for equal split)</label><select id="colAuditor"></select></div>
+      <div><label>Date column (for "by date" split)</label><select id="colDate"></select></div>
+      <div><label>Distributor column (to skip test entries)</label><select id="colDist"></select></div>
+    </div>
+    <label style="margin-top:14px">File name is made from these columns (in this order, joined with " - ")</label>
+    <p class="hint" id="nameHint" style="margin:2px 0 8px"></p>
+    <div id="nameCols" class="chips"></div>
+    <label style="display:flex;gap:8px;align-items:center;font-weight:500;margin-top:12px"><input type="checkbox" id="skipTest" checked> Skip test entries (Distributor = "Test App")</label>
+    <div class="actions"><button id="btnRead">Read the file</button></div>
+  </div>
+  <div id="fileMsg"></div>
+</section>
+
+<!-- 3 -->
+<section class="card locked" id="c3">
+  <h2><span class="n">3</span>Where should the bills go?</h2>
+  <label for="dest">Save destination</label>
+  <select id="dest">
+    <option value="split">All reviewer folders — divided equally</option>
+    <option value="one">Only one reviewer's folder</option>
+    <option value="new">One new folder (I type the name)</option>
+    <option value="root">Straight into the folder I choose (no sub-folder)</option>
+  </select>
+  <div id="destOne" class="hide" style="margin-top:10px"><label for="oneName">Which reviewer folder?</label><select id="oneName"></select></div>
+  <div id="destNew" class="hide" style="margin-top:10px"><label for="newName">New folder name</label><input type="text" id="newName" value="Bills" autocomplete="off"></div>
+  <p class="hint" id="splitHint" style="margin-top:12px">Bills are divided equally. Any leftover goes only to the people listed under "Extra bills go to".</p>
+  <div class="row" id="splitBox">
+    <div><label for="names">Reviewer folders (one name per line)</label><textarea id="names">Soumita
+Lija
+Satabdi
+Arghya
+Pratap</textarea></div>
+    <div>
+      <label for="extras">Extra bills go to (comma separated)</label><input type="text" id="extras" value="Lija, Satabdi">
+      <label for="mode">How to divide</label>
+      <select id="mode">
+        <option value="auditor">Keep each field auditor's bills together (recommended)</option>
+        <option value="date">By audit date</option>
+        <option value="mix">Mixed, one by one</option>
+      </select>
+    </div>
+  </div>
+  <div class="actions"><button id="btnPlan">Show the plan</button></div>
+  <div id="planBox"></div>
+</section>
+
+<!-- 4 -->
+<section class="card locked" id="c4">
+  <h2><span class="n">4</span>Choose the folder and start</h2>
+  <p class="hint">Pick a folder on your Desktop (for example, make a new folder called "Bills"). The folders chosen in step 3 are created inside it. Files that are already saved are skipped, so you can stop and continue any time.</p>
+  <div class="actions">
+    <button class="sec" id="btnFolder">Choose folder…</button>
+    <button id="btnStart" disabled>Start saving</button>
+    <button class="sec" id="btnStop" disabled>Pause</button>
+    <button class="sec hide" id="btnRetry">Retry failed ones</button>
+  </div>
+  <div id="folderMsg"></div>
+  <div class="bar"><div id="barFill"></div></div>
+  <div class="stats">
+    <span>Saved: <b id="sDone">0</b></span>
+    <span>Already there: <b id="sSkip">0</b></span>
+    <span>Failed: <b id="sFail">0</b></span>
+    <span>Total: <b id="sTotal">0</b></span>
+    <span id="sEta"></span>
+  </div>
+  <div class="files" id="curFile" style="margin-top:8px"></div>
+  <div id="runMsg"></div>
+  <div id="failList"></div>
+  <table id="resultTbl" class="hide"><thead><tr><th>Folder</th><th class="num">Planned</th><th class="num">Saved</th><th class="num">Failed</th></tr></thead><tbody></tbody></table>
+</section>
+
+
+
+</div><!-- /tabA -->
+
+<div id="tabB" class="hide">
+<section class="card" id="d1">
+  <h2><span class="n">1</span>Upload the Excel report</h2>
+  <p class="hint">The same FieldAudit Retail Audit report (Excel). Rows of the incorrect bills will be marked in it.</p>
+  <input type="file" id="incXls" accept=".xlsx">
+  <div id="incXlsMsg"></div>
+</section>
+<section class="card locked" id="d2">
+  <h2><span class="n">2</span>Add the incorrect-bills folders (verifier-wise)</h2>
+  <p class="hint">Drop all verifier folders together, or add them one by one, for example <b>Verifier - Shatabdi Banerjee - incorrect 3PA bills</b>. The tool opens <b>the first page of every bill PDF</b>, reads Auditor, Distributor, Outlet Name and Retailer Phone from it, and finds the same row in the Excel. The verifier name is taken from the folder name. Nothing is deleted or moved.</p>
+  <div id="incDrop" class="drop">⬇ Drag and drop <b>several verifier folders</b> here together<br><small>or click “Add a folder…” and choose the folder that contains all the verifier folders (or one verifier folder at a time)</small></div>
+  <div class="actions">
+    <button class="sec" id="btnIncAdd">Add a folder…</button>
+    <button class="sec hide" id="btnIncClear">Start again</button>
+    <button id="btnIncXls" disabled>Download updated Excel</button>
+  </div>
+  <div class="bar"><div id="incBar"></div></div>
+  <div id="incMsg"></div>
+  <div id="incTbl"></div>
+</section>
+</div>
+</main>
+
+<script>
+"use strict";
+const PAUSE_MS = 700;           // gap between two downloads — keeps the load on Google gentle
+const REQUEST_TIMEOUT = 120000;
+const MAX_ATTEMPTS = 3;
+
+const $ = id => document.getElementById(id);
+const S = { key:null, sheetRows:null, header:null, headerIdx:0, items:[], plan:null, root:null, rootName:'', running:false, stop:false, dirCache:{} };
+
+function show(id, kind, text){ const el=$(id); el.innerHTML = text ? `<div class="msg ${kind}">${esc(text)}</div>` : ''; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+function unlock(id){ $(id).classList.remove('locked'); }
+function markDone(id){ $(id).classList.add('done'); }
+
+if(!window.showDirectoryPicker){ $('browserWarn').classList.remove('hide'); }
+
+/* ---------- 1. Drive access key ---------- */
+async function fetchT(url, opts, ms){
+  const ctl = new AbortController(); const t = setTimeout(()=>ctl.abort(), ms||30000);
+  try{ return await fetch(url, Object.assign({}, opts, {signal:ctl.signal})); } finally{ clearTimeout(t); }
+}
+const KEY_STORE = 'bills_tool_drive_key_v1';
+function keyReady(){
+  $('btnKeyClear').classList.remove('hide'); $('btnKey').classList.add('hide');
+  $('apikey').value = S.key.slice(0,6)+'…'+S.key.slice(-4); $('apikey').disabled = true;
+  show('keyMsg','ok','Key saved on this computer. It will be tried first; the bill link is the fallback.');
+}
+$('btnKey').onclick = ()=>{
+  const k = $('apikey').value.trim();
+  if(!/^AIza[0-9A-Za-z_\-]{30,}$/.test(k)){ show('keyMsg','err','This does not look like a Google API key. It starts with "AIza" and has about 39 characters.'); return; }
+  S.key = k; try{ localStorage.setItem(KEY_STORE, k); }catch(_e){}
+  keyReady();
+};
+$('btnKeyClear').onclick = ()=>{
+  S.key = null; try{ localStorage.removeItem(KEY_STORE); }catch(_e){}
+  $('c1').classList.remove('done'); $('apikey').disabled = false; $('apikey').value = ''; $('btnKey').classList.remove('hide'); $('btnKeyClear').classList.add('hide'); show('keyMsg','','');
+};
+try{ const k = localStorage.getItem(KEY_STORE); if(k){ S.key = k; keyReady(); } }catch(_e){}
+
+/* ---------- 2. read the Excel report ---------- */
+const COLS = { colPdf:/bills?\s*pdf|bill\s*copy/i, colAuditor:/^(field\s*)?auditor(\s*name)?$|^collected\s*by$/i, colDate:/^date$|^submission\s*date$|^audit\s*date$/i, colDist:/^(distributor|db\s*name|distributor\s*name)$/i };
+const OLD_NAME = [/^(distributor|db\s*name|distributor\s*name)$/i, /^(outlet\s*name|retailer(\s*name)?)$/i, /^(field\s*)?auditor(\s*name)?$/i, /^date$/i];
+$('xlsFile').onchange = async e=>{
+  const f = e.target.files[0]; if(!f) return;
+  show('fileMsg','warn','Reading the file…'); $('mapBox').classList.add('hide');
+  try{
+    S.xlsBuf = await f.arrayBuffer(); S.xlsName = f.name;
+    const wb = XLSX.read(new Uint8Array(S.xlsBuf), {type:'array', cellStyles:true});
+    let pick = null;
+    for(const name of wb.SheetNames){
+      const ws = wb.Sheets[name]; if(!ws['!ref']) continue;
+      const rng = XLSX.utils.decode_range(ws['!ref']);
+      for(let r=rng.s.r; r<=Math.min(rng.e.r, rng.s.r+9); r++){
+        for(let c=rng.s.c; c<=rng.e.c; c++){
+          const cell = ws[XLSX.utils.encode_cell({r,c})];
+          if(cell && COLS.colPdf.test(String(cell.v||''))){ pick = {ws, name, headerRow:r, rng}; break; }
+        }
+        if(pick) break;
+      }
+      if(pick) break;
+    }
+    if(!pick) throw new Error('Could not find a "Bills PDF" or "Bill Copy" column in this file. Please upload the Retail Audit or Rate Ledger report.');
+    S.pick = pick;
+    const header = [];
+    for(let c=pick.rng.s.c; c<=pick.rng.e.c; c++){
+      const cell = pick.ws[XLSX.utils.encode_cell({r:pick.headerRow, c})];
+      header.push({c, name: cell ? String(cell.v).trim() : '', yellow: isYellow(cell)});
+    }
+    S.header = header;
+    Object.keys(COLS).forEach(id=>{
+      const sel = $(id); sel.innerHTML = '<option value="">— not found —</option>' + header.filter(h=>h.name).map(h=>`<option value="${h.c}">${esc(h.name)}</option>`).join('');
+      const hit = header.find(h=>COLS[id].test(h.name)); if(hit) sel.value = String(hit.c);
+    });
+    // file-name columns: yellow headings first; if none, fall back to distributor / retailer / auditor / date
+    const pdfHit = header.find(h=>COLS.colPdf.test(h.name));
+    let chosen = header.filter(h=>h.name && h.yellow && !(pdfHit && h.c===pdfHit.c)).map(h=>h.c);
+    const byYellow = chosen.length>0;
+    if(!byYellow) chosen = OLD_NAME.map(rx=>{ const h = header.find(x=>rx.test(x.name)); return h ? h.c : null; }).filter(x=>x!=null);
+    $('nameHint').textContent = byYellow ? 'Yellow-heading columns were picked automatically.' : 'No yellow headings found, so Distributor, Retailer, Auditor and Date were picked.';
+    $('nameCols').innerHTML = header.filter(h=>h.name && !(pdfHit && h.c===pdfHit.c)).map(h=>`<label class="${h.yellow?'yel':''}"><input type="checkbox" value="${h.c}" ${chosen.includes(h.c)?'checked':''}>${esc(h.name)}</label>`).join('');
+    $('mapBox').classList.remove('hide');
+    show('fileMsg','ok','File loaded: sheet "'+pick.name+'". Check the columns below, then click "Read the file".');
+  }catch(err){ show('fileMsg','err', err.message || 'Could not read this file.'); }
+};
+function isYellow(cell){
+  try{ const f = cell && cell.s; if(!f) return false; const rgb = String((f.fgColor&&f.fgColor.rgb)||'').toUpperCase().slice(-6); if(!rgb) return false;
+    const R=parseInt(rgb.slice(0,2),16), G=parseInt(rgb.slice(2,4),16), B=parseInt(rgb.slice(4,6),16);
+    return R>=220 && G>=200 && B<=140; }catch(_e){ return false; }
+}
+function cellText(ws, r, c){ const x = ws[XLSX.utils.encode_cell({r,c})]; if(!x) return ''; if(x.v instanceof Date) return ymd(x.v); return String(x.v==null?'':x.v).trim(); }
+function ymd(d){ const z=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate()); }
+function linkOf(ws, r, c){
+  const x = ws[XLSX.utils.encode_cell({r,c})]; if(!x) return '';
+  if(x.l && x.l.Target) return x.l.Target;
+  const m = String(x.f||'').match(/HYPERLINK\(\s*"([^"]+)"/i); if(m) return m[1];
+  if(/^https?:\/\//i.test(String(x.v||''))) return String(x.v);
+  return '';
+}
+function cleanUrl(u){ return String(u||'').replace(/&amp;/g,'&').trim(); }
+function driveId(url){ url = cleanUrl(url); const m = url.match(/\/d\/([^/?#]+)/) || url.match(/[?&](?:file)?id=([^&#]+)/i); return m ? m[1] : ''; }
+$('btnRead').onclick = ()=>{
+  const sel = id => $(id).value === '' ? null : Number($(id).value);
+  const cD=sel('colDate'), cA=sel('colAuditor'), cB=sel('colDist'), cP=sel('colPdf');
+  if(cP==null){ show('fileMsg','err','Select the column that holds the bill links.'); return; }
+  const nameCols = Array.from($('nameCols').querySelectorAll('input:checked')).map(i=>Number(i.value)).sort((a,b)=>a-b);
+  if(!nameCols.length){ show('fileMsg','err','Tick at least one column for the file name.'); return; }
+  S.nameCols = nameCols;
+  const ws = S.pick.ws, rng = S.pick.rng, skipTest = $('skipTest').checked;
+  const items = []; const seen = new Set(); let noLink = 0, dup = 0, tests = 0;
+  for(let r=S.pick.headerRow+1; r<=rng.e.r; r++){
+    const link = linkOf(ws, r, cP);
+    const date = cD==null ? '' : cellText(ws, r, cD), aud = cA==null ? '' : cellText(ws, r, cA), dist = cB==null ? '' : cellText(ws, r, cB);
+    const parts = nameCols.map(c=>cellText(ws, r, c));
+    if(!date && !aud && !dist && !link && !parts.some(Boolean)) continue;           // empty row
+    if(skipTest && /^test app$/i.test(dist)){ tests++; continue; }
+    const id = driveId(link);
+    if(!id){ noLink++; continue; }
+    if(seen.has(id)){ dup++; continue; }
+    seen.add(id);
+    items.push({ date, auditor:aud, distributor:dist, parts, url:cleanUrl(link), id, status:'wait' });
+  }
+  if(!items.length){ show('fileMsg','err','No bill links were found in the selected column.'); return; }
+  S.items = items;
+  let t = (items.length+dup+noLink)+' rows in the file = '+items.length+' different bills.';
+  if(noLink) t += ' '+noLink+' rows have no bill link and are left out.';
+  if(dup) t += ' ('+dup+' rows point to a bill that is already counted — the same bill photo appears on several product lines, so it is saved once.)';
+  if(tests) t += ' '+tests+' test entries were skipped.';
+  show('fileMsg','ok',t); markDone('c2'); unlock('c3');
+  $('planBox').innerHTML = ''; $('c4').classList.add('locked');
+  fillOne();
+};
+
+/* ---------- 3. destination + split ---------- */
+function fillOne(){
+  const names = $('names').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const cur = $('oneName').value;
+  $('oneName').innerHTML = names.map(n=>`<option>${esc(n)}</option>`).join(''); if(names.includes(cur)) $('oneName').value = cur;
+}
+function destUI(){
+  const d = $('dest').value;
+  $('destOne').classList.toggle('hide', d!=='one'); $('destNew').classList.toggle('hide', d!=='new');
+  $('splitBox').classList.toggle('hide', d!=='split'); $('splitHint').classList.toggle('hide', d!=='split');
+  $('planBox').innerHTML=''; $('c4').classList.add('locked');
+}
+$('dest').onchange = destUI; $('names').oninput = fillOne; fillOne(); destUI();
+function safe(s, max){
+  let t = String(s==null?'':s).replace(/[\\/:*?"<>|\r\n\t]+/g,'-').replace(/\s+/g,' ').replace(/-{2,}/g,'-').trim().replace(/[. ]+$/,'');
+  if(max && t.length>max) t = t.slice(0,max).trim();
+  return t;
+}
+function buildPlan(){
+  const dest = $('dest').value;
+  let names = $('names').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(dest==='split' && names.length<1) throw new Error('Add at least one reviewer name.');
+  if(dest==='one'){ const o = $('oneName').value; if(!o) throw new Error('Choose the reviewer folder.'); names = [o]; }
+  if(dest==='new'){ const o = safe($('newName').value,60); if(!o) throw new Error('Type a name for the new folder.'); names = [o]; }
+  if(dest==='root') names = ['(chosen folder)'];
+  const extras = $('extras').value.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+  const extraIdx = names.map((n,i)=>extras.includes(n.toLowerCase())?i:-1).filter(i=>i>=0);
+  const N = S.items.length, k = names.length, base = Math.floor(N/k);
+  let rem = N - base*k;
+  const counts = names.map(()=>base);
+  const getters = extraIdx.length ? extraIdx : names.map((_,i)=>i);   // no extra-list match → spread the leftover from the first name onward
+  for(let j=0; rem>0; j++, rem--) counts[getters[j % getters.length]]++;
+  const mode = $('mode').value;
+  const list = S.items.slice();
+  const cmp = (a,b)=> String(a).localeCompare(String(b), undefined, {sensitivity:'base'});
+  if(mode==='auditor') list.sort((a,b)=> cmp(a.auditor,b.auditor) || cmp(a.date,b.date) || cmp(a.distributor,b.distributor));
+  else if(mode==='date') list.sort((a,b)=> cmp(a.date,b.date) || cmp(a.auditor,b.auditor));
+  const assign = new Array(list.length);
+  if(mode==='mix'){
+    // deal one by one, skipping a person once their share is full
+    const left = counts.slice(); let p = 0;
+    for(let i=0;i<list.length;i++){ let guard=0; while(left[p]===0 && guard++<k) p=(p+1)%k; assign[i]=p; left[p]--; p=(p+1)%k; }
+  } else {
+    let i = 0; counts.forEach((cnt,pi)=>{ for(let j=0;j<cnt;j++) assign[i++]=pi; });
+  }
+  const used = {};
+  list.forEach((it,i)=>{
+    it.reviewer = dest==='root' ? '' : safe(names[assign[i]], 60);
+    it.folderLabel = dest==='root' ? '(chosen folder)' : it.reviewer;
+    const parts = (it.parts||[]).map(x=>safe(x,45)).filter(Boolean);
+    let base = parts.join(' - ') || 'Bill'; if(base.length>170) base = base.slice(0,170).trim();
+    const key = it.reviewer.toLowerCase()+'/';
+    let name = base, n = 1;
+    while(used[key+name.toLowerCase()]){ n++; name = base+' ('+n+')'; }
+    used[key+name.toLowerCase()] = 1;
+    it.baseName = name; it.fileName = name + '.pdf'; it.status = 'wait'; it.error = '';
+  });
+  S.items = list; S.names = dest==='root' ? names : names.map(n=>safe(n,60));
+  return { names: S.names, counts };
+}
+$('btnPlan').onclick = ()=>{
+  try{
+    const plan = buildPlan(); S.plan = plan;
+    const rows = plan.names.map((n,i)=>{
+      const mine = S.items.filter(it=>it.folderLabel===n);
+      const auds = {}; mine.forEach(it=>{ const a = it.auditor||'—'; auds[a]=(auds[a]||0)+1; });
+      const top = Object.entries(auds).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([a,c])=>esc(a)+' ('+c+')').join(', ') + (Object.keys(auds).length>4 ? ' …' : '');
+      return `<tr><td><b>${esc(n)}</b></td><td class="num">${mine.length}</td><td><small>${top}</small></td></tr>`;
+    }).join('');
+    const sample = S.items.slice(0,3).map(it=>`<div class="files">${esc(it.folderLabel)} / ${esc(it.baseName)}.pdf</div>`).join('');
+    $('planBox').innerHTML = `<table><thead><tr><th>Folder</th><th class="num">Bills</th><th>Mostly from</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="hint" style="margin-top:12px"><b>File name:</b> ${esc(S.nameCols.map(c=>(S.header.find(h=>h.c===c)||{}).name).join(' - '))} (.pdf or .jpg, depending on the bill)</p>${sample}`;
+    markDone('c3'); unlock('c4');
+    $('sTotal').textContent = S.items.length;
+    renderResult();
+  }catch(e){ $('planBox').innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
+};
+
+/* ---------- 4. folder + download ---------- */
+$('btnFolder').onclick = async ()=>{
+  try{
+    S.root = await window.showDirectoryPicker({mode:'readwrite', startIn:'desktop'});
+    S.rootName = S.root.name || 'chosen folder'; S.dirCache = {};
+    show('folderMsg','ok','Folder selected: '+S.rootName); $('btnStart').disabled = false;
+  }catch(e){ if(e.name!=='AbortError') show('folderMsg','err','Could not open that folder: '+(e.message||e.name)); }
+};
+async function dirFor(name){
+  if(!name) return S.root;
+  if(!S.dirCache[name]) S.dirCache[name] = await S.root.getDirectoryHandle(name, {create:true});
+  return S.dirCache[name];
+}
+async function existsAlready(it){
+  const d = await dirFor(it.reviewer);
+  for(const ext of EXTS){
+    try{ const fh = await d.getFileHandle(it.baseName+ext); const f = await fh.getFile(); if(f.size>0){ it.fileName = it.baseName+ext; return true; } }catch(_e){}
+  }
+  return false;
+}
+const EXTS = ['.pdf','.jpg','.png','.webp','.gif','.heic'];
+function extOf(type){ type=String(type||'').toLowerCase(); return type.includes('pdf')?'.pdf': type.includes('png')?'.png': type.includes('webp')?'.webp': type.includes('gif')?'.gif': type.includes('heic')?'.heic': '.jpg'; }
+class Fatal extends Error{}       // stops the whole run (bad key, API off, Google limiting downloads)
+class FileProblem extends Error{} // only this one file failed
+function failReason(status, j){
+  const e = (j && j.error) || {}; const reason = (e.errors && e.errors[0] && e.errors[0].reason) || e.status || ''; const msg = e.message || '';
+  return {reason:String(reason), msg:String(msg), status};
+}
+function b64blob(b64, mime){ const bin = atob(b64.replace(/\s/g,'')); const u = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return new Blob([u], {type:mime}); }
+async function sniff(b){            // decide pdf / image from the first bytes when the server sends a vague type
+  const h = new Uint8Array(await b.slice(0,8).arrayBuffer());
+  if(h[0]===0x25&&h[1]===0x50&&h[2]===0x44&&h[3]===0x46) return 'application/pdf';
+  if(h[0]===0xFF&&h[1]===0xD8) return 'image/jpeg';
+  if(h[0]===0x89&&h[1]===0x50) return 'image/png';
+  if(h[0]===0x52&&h[1]===0x49) return 'image/webp';
+  if(h[0]===0x47&&h[1]===0x49) return 'image/gif';
+  return '';
+}
+async function asFile(b, type){
+  type = String(type||'').toLowerCase().split(';')[0].trim();
+  if(type.startsWith('image/') || type.includes('pdf')) return b.size ? (b.type===type ? b : new Blob([b],{type})) : null;
+  const t = await sniff(b); return (t && b.size) ? new Blob([b],{type:t}) : null;
+}
+async function viaPublic(it){          // second route: Google's public picture address (works when the file is shared with "anyone with the link")
+  for(const u of ['https://lh3.googleusercontent.com/d/'+encodeURIComponent(it.id)+'=s0','https://drive.google.com/thumbnail?id='+encodeURIComponent(it.id)+'&sz=w3000']){
+    try{ const r = await fetchT(u, {redirect:'follow'}, 60000); if(!r.ok) continue; const b = await r.blob(); const ok = await asFile(b, r.headers.get('content-type')); if(ok) return ok; }catch(_e){}
+  }
+  return null;
+}
+async function viaLink(it, primary){      // open the report's own link (the same link as "View photo") and read the file from the answer
+  let diag = '';
+  try{
+    let r = await fetchT(it.url, {redirect:'follow'}, 90000);
+    if(!r.ok){ if(primary) throw new FileProblem('The bill link answered with error '+r.status+' ('+(r.headers.get('content-type')||'')+').'); return null; }
+    const type = r.headers.get('content-type')||'';
+    const b = await r.blob();
+    const direct = await asFile(b, type); if(direct) return direct;
+    const text = await b.text(); diag = type.split(';')[0]+': '+text.replace(/\s+/g,' ').slice(0,90);
+    // 1) JSON with the file inside (base64) or a pointer to it
+    let j = null; try{ j = JSON.parse(text); }catch(_e){}
+    const hunt = (o, depth)=>{ if(!o||depth>3) return null;
+      if(typeof o==='string'){
+        const m = o.match(/^data:([\w\/.+-]+);base64,(.+)$/s); if(m) return {mime:m[1], b64:m[2]};
+        if(o.length>2000 && /^[A-Za-z0-9+\/=\s]+$/.test(o)) return {mime:'', b64:o};
+        if(/^https?:\/\//.test(o) && /(googleusercontent|drive\.google|googleapis)/.test(o)) return {url:o};
+        return null; }
+      if(typeof o==='object'){ for(const k of Object.keys(o)){ const v = hunt(o[k], depth+1); if(v){ if(v.b64 && !v.mime && typeof o.mimeType==='string') v.mime=o.mimeType; if(v.b64 && !v.mime && typeof o.mime==='string') v.mime=o.mime; return v; } } }
+      return null; };
+    let f = j ? hunt(j,0) : null;
+    // 2) HTML page with the picture embedded or linked
+    if(!f){ const m = text.match(/data:([\w\/.+-]+);base64,([A-Za-z0-9+\/=]+)/); if(m) f = {mime:m[1], b64:m[2]}; }
+    if(!f){ const m = text.match(/(?:src|href)=["'](https?:\/\/[^"']*(?:googleusercontent\.com|drive\.google\.com\/uc|googleapis\.com\/drive)[^"']*)["']/i); if(m) f = {url:m[1].replace(/&amp;/g,'&')}; }
+    if(f && f.b64){ const bb = b64blob(f.b64, f.mime||'application/octet-stream'); const ok = await asFile(bb, f.mime); if(ok) return ok; }
+    if(f && f.url){ const r2 = await fetchT(f.url, {redirect:'follow'}, 90000); if(r2.ok){ const b2 = await r2.blob(); const ok = await asFile(b2, r2.headers.get('content-type')); if(ok) return ok; } }
+  }catch(e){
+    if(e instanceof FileProblem) throw e;
+    if(primary) throw new FileProblem('Could not open the bill link ['+(e.name==='AbortError'?'timeout':(e.name+': '+(e.message||'')))+'] — the browser was not allowed to read the answer (Google blocked it), or the link needs a Google login.');
+    return null;
+  }
+  if(primary){ const err = new FileProblem('The bill link did not return a file. It returned: '+(diag||'nothing')); err.unexpected = true; throw err; }
+  return null;
+}
+async function driveFetch(it){
+  if(!S.key){
+    try{ return await viaLink(it, true); }
+    catch(e){
+      if(!(e instanceof FileProblem)) throw e;
+      const b = await viaPublic(it); if(b) return b;
+      throw e;
+    }
+  }
+  const url = 'https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(it.id)+'?alt=media&supportsAllDrives=true&key='+encodeURIComponent(S.key);
+  let last = null;
+  for(let a=1; a<=MAX_ATTEMPTS; a++){
+    try{
+      const r = await fetchT(url, {}, REQUEST_TIMEOUT);
+      if(r.ok){ const blob = await r.blob(); if(!blob.size) throw new FileProblem('Google Drive returned an empty file.'); return blob; }
+      let j = null; try{ j = await r.json(); }catch(_e){}
+      const f = failReason(r.status, j);
+      if(f.reason==='keyInvalid' || /api key not valid|API_KEY_INVALID/i.test(f.msg)) throw new Fatal('The API key is not valid. Remove it and paste the complete key again.');
+      if(f.reason==='accessNotConfigured' || /has not been used|is disabled|SERVICE_DISABLED/i.test(f.msg+f.reason)) throw new Fatal('Google Drive API is not enabled for this key. In Google Cloud Console, open the same project, enable "Google Drive API", wait a minute and try again.');
+      if(f.reason==='ipRefererBlocked' || /referer|restrictions/i.test(f.msg)) throw new Fatal('This key has website restrictions that block the tool. In Google Cloud Console, set the key\'s "Application restrictions" to None (keep API restriction = Google Drive API).');
+      if(/quota|rateLimit|limit exceeded/i.test(f.reason+f.msg) || r.status===429){
+        last = new Fatal('Google is limiting downloads right now. Click Pause, wait a few hours, then press Start saving again. Nothing already saved is repeated.');
+        if(a<MAX_ATTEMPTS){ await sleep(20000*a); continue; } throw last;
+      }
+      if(r.status===404 || r.status===403){
+        const b2 = await viaLink(it); if(b2) return b2;
+        throw new FileProblem('This bill is not shared with "anyone with the link", or it no longer exists in Google Drive.');
+      }
+      last = new Error('Google Drive answered with error '+r.status+'.');
+    }catch(e){
+      if(e instanceof Fatal || e instanceof FileProblem) throw e;
+      last = e.name==='AbortError' ? new Error('Google Drive took too long to answer.') : new Error('Network problem: '+(e.message||e.name));
+    }
+    if(S.stop) break;
+    await sleep(2500*a);
+  }
+  throw new FileProblem((last && last.message) || 'Download failed.');
+}
+async function saveBlob(it, blob){
+  const d = await dirFor(it.reviewer);
+  it.fileName = it.baseName + extOf(blob.type);
+  const fh = await d.getFileHandle(it.fileName, {create:true});
+  const w = await fh.createWritable(); await w.write(blob); await w.close();
+}
+function counts(){ const c={done:0,skip:0,fail:0,wait:0}; S.items.forEach(it=>{ c[it.status==='done'?'done':it.status==='skipped'?'skip':it.status==='failed'?'fail':'wait']++; }); return c; }
+function renderStats(){
+  const c = counts(); $('sDone').textContent=c.done; $('sSkip').textContent=c.skip; $('sFail').textContent=c.fail; $('sTotal').textContent=S.items.length;
+  const fin = c.done+c.skip+c.fail; $('barFill').style.width = (S.items.length ? Math.round(fin/S.items.length*100) : 0)+'%';
+  $('btnRetry').classList.toggle('hide', !(c.fail && !S.running));
+  renderResult();
+}
+function renderFails(){
+  const f = S.items.filter(it=>it.status==='failed'); const el = $('failList'); if(!el) return;
+  if(!f.length){ el.innerHTML=''; return; }
+  const reasons = {}; f.forEach(it=>{ reasons[it.error]=(reasons[it.error]||0)+1; });
+  el.innerHTML = '<div class="msg err" style="margin-top:10px"><b>Why the downloads failed (send this to Claude):</b><br>'+Object.entries(reasons).map(([r,c])=>c+' bills: '+esc(r)).join('<br>')+'</div>';
+}
+function renderResult(){
+  renderFails();
+  const t = $('resultTbl'); if(!S.plan) return; t.classList.remove('hide');
+  t.querySelector('tbody').innerHTML = S.plan.names.map(n=>{
+    const mine = S.items.filter(it=>it.folderLabel===n);
+    const ok = mine.filter(it=>it.status==='done'||it.status==='skipped').length, bad = mine.filter(it=>it.status==='failed').length;
+    return `<tr><td>${esc(n)}</td><td class="num">${mine.length}</td><td class="num">${ok}</td><td class="num">${bad ? '<span class="pill err">'+bad+'</span>' : 0}</td></tr>`;
+  }).join('');
+}
+function csvCell(v){ return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'; }
+async function writeLog(){
+  try{
+    const rows = [['Folder','File name','Status','Bill link']];
+    S.items.forEach(it=>rows.push([it.folderLabel, it.fileName, it.status==='done'?'Saved':it.status==='skipped'?'Already there':it.status==='failed'?('Failed: '+it.error):'Waiting', it.url]));
+    const fh = await S.root.getFileHandle('Download_Log.csv', {create:true});
+    const w = await fh.createWritable(); await w.write('﻿'+rows.map(r=>r.map(csvCell).join(',')).join('\r\n')); await w.close();
+  }catch(_e){}
+}
+let wake = null;
+async function run(retryOnly){
+  if(S.running) return;
+  if(!S.root){ show('folderMsg','err','Choose a folder first.'); return; }
+  S.items.forEach((it,i)=>{ it.idx = i; });
+  S.running = true; S.stop = false;
+  $('btnStart').disabled = true; $('btnStop').disabled = false; $('btnFolder').disabled = true; show('runMsg','','');
+  try{ if(navigator.wakeLock) wake = await navigator.wakeLock.request('screen'); }catch(_e){}
+  const t0 = Date.now(); let doneNow = 0, unexpectedRun = 0;
+  try{
+    // 1) skip what is already saved from an earlier run
+    for(const it of S.items){
+      if(retryOnly ? it.status==='failed' : it.status!=='done' && it.status!=='skipped'){
+        if(!retryOnly && await existsAlready(it)){ it.status='skipped'; } else it.status='wait';
+      }
+    }
+    renderStats();
+    const queue = S.items.filter(it=>it.status==='wait');
+    for(let pos=0; pos<queue.length && !S.stop; pos++){
+      const it = queue[pos];
+      $('curFile').textContent = 'Saving: '+it.folderLabel+' / '+it.baseName;
+      try{
+        const blob = await driveFetch(it);
+        await saveBlob(it, blob); it.status='done'; doneNow++;
+      }catch(e){
+        if(e instanceof Fatal) throw e;
+        if(doneNow===0 && !S.key && e instanceof FileProblem && ++unexpectedRun>=3){ queue.slice(0,pos+1).forEach(x=>{ if(x.status==='failed') x.status='wait'; }); throw new Fatal('The first 3 bills could not be downloaded. Reason: '+e.message+' — Please send this exact message to Claude.'); }
+        if(doneNow>0) unexpectedRun = 0;
+        it.status='failed'; it.error = (e instanceof FileProblem) ? e.message : ('Could not write the file to the folder: '+(e.message||e.name));
+      }
+      renderStats();
+      if((doneNow+counts().fail) % 25 === 0) writeLog();
+      const el = (Date.now()-t0)/1000, left = queue.length - pos - 1;
+      if(doneNow>3 && left>0) $('sEta').textContent = '≈ '+Math.max(1,Math.round(el/doneNow*left/60))+' min left';
+      await sleep(PAUSE_MS);
+    }
+    const c = counts();
+    if(S.stop) show('runMsg','warn','Paused. Click "Start saving" to continue — files already saved are skipped.');
+    else if(c.fail) show('runMsg','warn',c.fail+' files could not be saved. Click "Retry failed ones". The reason for each is written in Download_Log.csv.');
+    else show('runMsg','ok','All done. '+(c.done+c.skip)+' bills are saved inside "'+S.rootName+'". A list of every file is in Download_Log.csv.');
+  }catch(e){
+    show('runMsg','err', e.message||'Something went wrong.');
+  }finally{
+    S.running = false; $('sEta').textContent = '';
+    $('btnStart').disabled = false; $('btnStop').disabled = true; $('btnFolder').disabled = false; $('curFile').textContent = '';
+    try{ if(wake) wake.release(); }catch(_e){}
+    renderStats(); await writeLog();
+  }
+}
+$('btnStart').onclick = ()=>run(false);
+$('btnRetry').onclick = ()=>run(true);
+$('btnStop').onclick = ()=>{ S.stop = true; $('btnStop').disabled = true; };
+window.addEventListener('beforeunload', e=>{ if(S.running){ e.preventDefault(); e.returnValue=''; } });
+
+/* ---------- Incorrect Bills Report tab ---------- */
+$('tabBtnA').onclick = ()=>{ $('tabA').classList.remove('hide'); $('tabB').classList.add('hide'); $('tabBtnA').classList.add('on'); $('tabBtnB').classList.remove('on'); };
+$('tabBtnB').onclick = ()=>{ $('tabB').classList.remove('hide'); $('tabA').classList.add('hide'); $('tabBtnB').classList.add('on'); $('tabBtnA').classList.remove('on'); };
+
+const INC_RX = /incorrect|wrong|not\s*correct|galat|invalid|reject/i;
+const PDFJS_VER = '3.11.174', PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/'+PDFJS_VER+'/';
+const INC = { buf:null, name:'', sheetName:'', hdrRow:0, cols:{}, rows:[], idx1:{}, idx2:{}, idx3:{}, found:[], unread:[], nomatch:[], files:0, folders:[] };
+const nz = s => String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]+/g,'');
+const phone10 = s => { const d = String(s||'').replace(/\D+/g,''); return d.length>=10 ? d.slice(-10) : ''; };
+function loadScript_(src){ return new Promise((res,rej)=>{ const sc=document.createElement('script'); sc.src=src; sc.onload=res; sc.onerror=()=>rej(new Error('Could not load a helper from the internet ('+src.split('/').pop()+'). Check the internet connection and try again.')); document.head.appendChild(sc); }); }
+async function loadExcelJS_(){ if(!window.ExcelJS) await loadScript_('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'); }
+async function loadPdfJs_(){
+  if(window.pdfjsLib && window.__pdfReady) return;
+  if(!window.pdfjsLib) await loadScript_(PDFJS_BASE+'pdf.min.js');
+  // the reader runs in a small background worker; it is fetched once and started from memory so the browser does not block it
+  const code = await (await fetch(PDFJS_BASE+'pdf.worker.min.js')).text();
+  pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], {type:'text/javascript'}));
+  window.__pdfReady = true;
+}
+function cellStr(c){ try{ return String((c && (c.text!=null ? c.text : c.value)) || '').trim(); }catch(_e){ return ''; } }
+$('incXls').onchange = async e=>{
+  const f = e.target.files[0]; if(!f) return;
+  show('incXlsMsg','warn','Reading the Excel…'); $('d2').classList.add('locked');
+  try{
+    await loadExcelJS_();
+    INC.buf = await f.arrayBuffer(); INC.name = f.name;
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(INC.buf.slice(0));
+    let found = null;
+    wb.eachSheet(ws=>{
+      if(found) return;
+      for(let r=1; r<=Math.min(ws.rowCount, 10) && !found; r++){
+        const cols = {}; ws.getRow(r).eachCell({includeEmpty:false}, (cell, c)=>{
+          const t = cellStr(cell);
+          if(/^outlet\s*name$|^retailer(\s*name)?$/i.test(t)) cols.outlet = c;
+          else if(/^(field\s*)?auditor(\s*name)?$/i.test(t)) cols.auditor = c;
+          else if(/^(distributor|db\s*name|distributor\s*name)$/i.test(t)) cols.dist = c;
+          else if(/phone|mobile/i.test(t) && !cols.phone) cols.phone = c;
+          else if(/^date$|^audit\s*date$|^submission\s*date$/i.test(t)) cols.date = c;
+          else if(/^bill\s*type$/i.test(t)) cols.billType = c;
+          else if(/^verifier$/i.test(t)) cols.verifier = c;
+        });
+        if(cols.outlet && cols.auditor) found = {ws, r, cols};
+      }
+    });
+    if(!found) throw new Error('Could not find the "Outlet Name" and "Auditor" columns in this file. Please upload the FieldAudit Retail Audit report.');
+    INC.sheetName = found.ws.name; INC.hdrRow = found.r; INC.cols = found.cols; INC.rows = [];
+    INC.idx1 = {}; INC.idx2 = {}; INC.idx3 = {};
+    const C = found.cols;
+    for(let r=found.r+1; r<=found.ws.rowCount; r++){
+      const row = found.ws.getRow(r); const outlet = cellStr(row.getCell(C.outlet)); if(!outlet) continue;
+      const o = { r, outlet:nz(outlet), auditor:nz(cellStr(row.getCell(C.auditor))), dist: C.dist ? nz(cellStr(row.getCell(C.dist))) : '', phone: C.phone ? phone10(cellStr(row.getCell(C.phone))) : '',
+        date: C.date ? cellStr(row.getCell(C.date)).slice(0,10) : '', claimed:null };
+      INC.rows.push(o);
+      if(o.phone) (INC.idx1[o.phone+'|'+o.outlet] = INC.idx1[o.phone+'|'+o.outlet] || []).push(o);
+      (INC.idx2[o.outlet+'|'+o.auditor+'|'+o.dist] = INC.idx2[o.outlet+'|'+o.auditor+'|'+o.dist] || []).push(o);
+      (INC.idx3[o.outlet+'|'+o.auditor] = INC.idx3[o.outlet+'|'+o.auditor] || []).push(o);
+    }
+    incReset_(); $('d2').classList.remove('locked'); $('d1').classList.add('done');
+    show('incXlsMsg','ok','File loaded: sheet "'+INC.sheetName+'", '+INC.rows.length+' rows. Now add the incorrect-bills folders below.');
+  }catch(err){ show('incXlsMsg','err', err.message || 'Could not read this file.'); }
+};
+function incReset_(){ INC.found = []; INC.unread = []; INC.nomatch = []; INC.files = 0; INC.folders = []; INC.rows.forEach(o=>o.claimed=null); show('incMsg','',''); incRender_(); }
+$('btnIncClear').onclick = incReset_;
+function cleanVerifier_(t){
+  // "Incorrect Bill - Arghya Ghosh", "Verifier - Arghya Ghosh- incorrect 3PA bills"  →  Arghya Ghosh
+  return String(t||'').replace(/verifier/ig,' ').replace(/not\s*correct|incorrect|wrong|galat|invalid|rejected|reject/ig,' ').replace(/\b(3pa|bills?|invoices?|folders?|pdfs?|copy|copies)\b/ig,' ')
+    .replace(/[-–—_:,.]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function verifierOf_(path){
+  const i = path.findIndex(seg=>INC_RX.test(seg));
+  const own = cleanVerifier_(path[i]);                               // the name is written in the "incorrect" folder itself
+  if(own) return own;
+  const next = cleanVerifier_(path[i+1]); if(next) return next;     // Incorrect / <verifier> / file
+  const prev = i>0 ? cleanVerifier_(path[i-1]) : ''; return prev || 'Unknown';   // <verifier> / Incorrect / file
+}
+async function walkPdfs_(dir, path, out){
+  for await (const [name, h] of dir.entries()){
+    if(h.kind === 'directory') await walkPdfs_(h, path.concat(name), out);
+    else if(/\.(pdf|jpe?g|png|webp|gif|heic)$/i.test(name)) out.push({name, path, handle:h});
+  }
+}
+/* first page of a bill PDF → { auditor, dist, outlet, phone, date } */
+async function readFirstPage_(file){
+  const doc = await pdfjsLib.getDocument({data: new Uint8Array(await file.arrayBuffer())}).promise;
+  try{
+    const page = await doc.getPage(1); const tc = await page.getTextContent();
+    const lines = []; let cur = null;
+    tc.items.forEach(it=>{ const y = Math.round(it.transform[5]); if(!cur || Math.abs(cur.y - y) > 2){ cur = {y, t:''}; lines.push(cur); } cur.t += (cur.t ? ' ' : '') + it.str; });
+    const text = lines.map(l=>l.t.replace(/\s+/g,' ').trim()).filter(Boolean);
+    const get = rx => { for(const l of text){ const m = l.match(rx); if(m && m[1].trim()) return m[1].trim(); } return ''; };
+    return { auditor:get(/^Auditor:\s*(.+)$/i), dist:get(/^Distributor:\s*(.+)$/i), outlet:get(/^Outlet Name:\s*(.+)$/i), phone:get(/^Retailer Phone:\s*(.+)$/i), date:get(/^Date of Visit:\s*(.+)$/i) };
+  } finally { try{ doc.destroy(); }catch(_e){} }
+}
+function dayDiff_(a, b){ const x = Date.parse(a), y = Date.parse(b); return (isNaN(x)||isNaN(y)) ? 999 : Math.abs(x-y)/864e5; }
+function pickRow_(info){
+  const o = nz(info.outlet), a = nz(info.auditor), d = nz(info.dist), p = phone10(info.phone);
+  const lists = [p && INC.idx1[p+'|'+o], INC.idx2[o+'|'+a+'|'+d], INC.idx3[o+'|'+a]];
+  for(const list of lists){
+    if(!list || !list.length) continue;
+    const free = list.filter(r=>!r.claimed); const pool = free.length ? free : list;
+    return pool.slice().sort((x,y)=> dayDiff_(x.date, info.date) - dayDiff_(y.date, info.date))[0];   // the audit nearest to the visit date
+  }
+  return null;
+}
+async function addRoots_(roots){
+  try{
+    if(!INC.rows.length){ show('incMsg','err','First upload the Excel report.'); return; }
+    const all = []; for(const root of roots){ const fl = []; await walkPdfs_(root, [root.name], fl); fl.forEach(f=>all.push(f)); }
+    // only bills that sit inside a folder whose name says "incorrect" are used — correct bills in the same folder are never touched
+    const pdfs = all.filter(f=>f.path.some(seg=>INC_RX.test(seg)));
+    const ign = all.length - pdfs.length;
+    if(!pdfs.length){ show('incMsg','err','No bills were found inside a folder whose name contains "incorrect" ('+all.length+' file(s) were ignored). Choose the verifier folders, for example "Verifier - Name - incorrect bills".'); return; }
+    show('incMsg','warn','Loading the PDF reader…'); await loadPdfJs_();
+    $('btnIncAdd').disabled = true; let n = 0, ok = 0;
+    for(const f of pdfs){
+      n++; $('incBar').style.width = Math.round(100*n/pdfs.length)+'%'; show('incMsg','warn','Reading bill '+n+' of '+pdfs.length+'…');
+      INC.files++;
+      const ver = verifierOf_(f.path), label = f.path.join(' / ')+' / '+f.name;
+      if(!/\.pdf$/i.test(f.name)){ INC.unread.push(label+' — this is a photo, not a PDF'); continue; }
+      let info; try{ info = await readFirstPage_(await f.handle.getFile()); }catch(e){ INC.unread.push(label+' — could not open this PDF'); continue; }
+      if(!info.outlet){ INC.unread.push(label+' — the first page has no "Outlet Name" (not a FieldAudit summary page)'); continue; }
+      const row = pickRow_(info);
+      if(!row){ INC.nomatch.push(label+' — '+info.outlet+' / '+info.auditor+' not found in the Excel'); continue; }
+      row.claimed = ver; ok++;
+      INC.found.push({ ver, file:f.name, row:row.r, outlet:info.outlet, auditor:info.auditor, dist:info.dist, date:info.date });
+    }
+    roots.forEach(r=>INC.folders.push(r.name)); $('incBar').style.width = '0';
+    $('btnIncAdd').disabled = false; incRender_();
+    show('incMsg', ok ? 'ok' : 'err', ok+' of '+pdfs.length+' incorrect bills matched with the Excel rows.'+(ign? ' '+ign+' other file(s) outside the incorrect folders were ignored.':'')+' Add more folders, or click "Download updated Excel".');
+  }catch(e){ $('btnIncAdd').disabled = false; if(e.name!=='AbortError') show('incMsg','err','Could not read the folder: '+(e.message||e.name)); }
+}
+$('btnIncAdd').onclick = async ()=>{
+  try{ const root = await window.showDirectoryPicker({mode:'read', startIn:'desktop'}); await addRoots_([root]); }
+  catch(e){ if(e.name!=='AbortError') show('incMsg','err','Could not open the folder: '+(e.message||e.name)); }
+};
+/* drag and drop: several verifier folders can be dropped together */
+const dz = $('incDrop');
+['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev, e=>{ e.preventDefault(); dz.classList.add('over'); }));
+['dragleave','drop'].forEach(ev=>dz.addEventListener(ev, e=>{ e.preventDefault(); dz.classList.remove('over'); }));
+dz.addEventListener('drop', async e=>{
+  const pend = Array.from(e.dataTransfer.items || []).filter(i=>i.kind==='file').map(i=> i.getAsFileSystemHandle ? i.getAsFileSystemHandle() : null);   // all asked at once, before the event ends
+  const hs = (await Promise.all(pend)).filter(h=>h && h.kind==='directory');
+  if(!hs.length){ show('incMsg','err','Drop folders here (not files). This works in Google Chrome or Microsoft Edge.'); return; }
+  await addRoots_(hs);
+});
+function incRender_(){
+  const per = {}; INC.found.forEach(x=>{ per[x.ver] = (per[x.ver]||0)+1; });
+  const rows = Object.entries(per).sort((a,b)=>b[1]-a[1]).map(([v,c])=>`<tr><td><b>${esc(v)}</b></td><td class="num">${c}</td></tr>`).join('');
+  const list = (title, arr)=> arr.length ? `<p class="hint" style="margin-top:12px"><b>${arr.length} file(s) ${title}</b></p><div class="files">${arr.slice(0,12).map(esc).join('<br>')}${arr.length>12?'<br>…':''}</div>` : '';
+  $('incTbl').innerHTML = (rows ? `<table><thead><tr><th>Verifier</th><th class="num">Incorrect bills marked</th></tr></thead><tbody>${rows}<tr><td><b>Total</b></td><td class="num"><b>${INC.found.length}</b></td></tr></tbody></table>` : '')
+    + list('could not be found in the Excel', INC.nomatch) + list('could not be read', INC.unread);
+  $('btnIncXls').disabled = !INC.found.length; $('btnIncClear').classList.toggle('hide', !INC.folders.length);
+}
+$('btnIncXls').onclick = async ()=>{
+  try{
+    if(!INC.found.length) return;
+    show('incMsg','warn','Preparing the Excel…'); await loadExcelJS_();
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(INC.buf.slice(0));
+    const ws = wb.getWorksheet(INC.sheetName); if(!ws) throw new Error('The sheet "'+INC.sheetName+'" was not found again in the file.');
+    const hdr = ws.getRow(INC.hdrRow); let last = 0; hdr.eachCell({includeEmpty:false}, (c, i)=>{ last = Math.max(last, i); });
+    const addCol = title=>{ last++; const c = hdr.getCell(last); const ref = hdr.getCell(Math.max(1,last-1)); c.value = title; c.style = JSON.parse(JSON.stringify(ref.style||{})); ws.getColumn(last).width = 20; return last; };
+    const btCol = INC.cols.billType || addCol('Bill Type'), vCol = INC.cols.verifier || addCol('Verifier');
+    const fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFBEAE8'}};
+    let n = 0;
+    INC.rows.forEach(o=>{ if(!o.claimed) return; const row = ws.getRow(o.r);
+      // the whole row turns red. Each cell gets its OWN copy of the style (cells that look alike share one style object in the file — changing it in place would colour every such cell)
+      const paint = (cell, value, extra)=>{ const st = JSON.parse(JSON.stringify(cell.style || {})); st.fill = fill; st.font = Object.assign({}, st.font || {}, {color:{argb:'FFC0392B'}}, extra||{}); if(value !== undefined) cell.value = value; cell.style = st; };
+      for(let c=1; c<=last; c++){ if(c===btCol || c===vCol) continue; paint(row.getCell(c), undefined); }
+      paint(row.getCell(btCol), 'Incorrect Bill', {bold:true});
+      paint(row.getCell(vCol), o.claimed, {bold:true}); n++; });
+    // a second sheet that lists every incorrect bill on its own
+    const old = wb.getWorksheet('Incorrect Bills'); if(old) wb.removeWorksheet(old.id);
+    const s2 = wb.addWorksheet('Incorrect Bills');
+    s2.columns = [{header:'Verifier',width:24},{header:'Auditor',width:24},{header:'Distributor',width:28},{header:'Outlet Name',width:34},{header:'Date of Visit',width:14},{header:'Row in Details sheet',width:12},{header:'Bill file',width:60}];
+    s2.getRow(1).font = {bold:true, color:{argb:'FFFFFFFF'}}; s2.getRow(1).fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF12172B'}};
+    INC.found.slice().sort((a,b)=>a.ver.localeCompare(b.ver)||a.auditor.localeCompare(b.auditor)).forEach(x=>s2.addRow([x.ver, x.auditor, x.dist, x.outlet, x.date, x.row, x.file]));
+    s2.views = [{state:'frozen', ySplit:1}]; s2.autoFilter = {from:'A1', to:'G1'};
+    const buf = await wb.xlsx.writeBuffer();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    a.download = String(INC.name||'Report').replace(/\.xlsx?$/i,'') + ' - incorrect bills marked.xlsx'; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    show('incMsg','ok', n+' row(s) marked as "Incorrect Bill" with the verifier name, and a new sheet "Incorrect Bills" was added. The file was downloaded.');
+  }catch(e){ show('incMsg','err', e.message || 'Could not make the Excel.'); }
+};
+
+<\/script>
+</body>
+</html>
+</script>
 <div id="adAuditSection" style="display:none; padding:0 24px 24px; position:relative;">
   <!-- Full-cover loading overlay — deliberately hides EVERYTHING below
        (module-toggle row included) until the Ad Audit report has fully
@@ -835,11 +1653,11 @@ function betaverseConfigured(){ return BETAVERSE_SCRIPT_URL && BETAVERSE_SCRIPT_
 const GOOGLE_MAPS_JS_KEY = "AIzaSyBTrdfFw6LNdlTbytFC6o1bLnr5PJDk0E0";
 
 let SESSION = null;
-/* ---- Role rules (v7.16.0) ----
-   Marketing and Viewer can SEE their data but can never export / download anything.
+/* ---- Role rules (v7.18.0) ----
+   Viewer can SEE data but can never export / download anything. Marketing sees and exports as before.
    BTL Head sees only Ad Audit and Marketing Expense.
    Only Admin and BTL Head can verify Ad Audits. The server enforces the same rules. */
-const NO_EXPORT_ROLES_JS = ['Marketing','Viewer'];
+const NO_EXPORT_ROLES_JS = ['Viewer'];   // Marketing CAN export; only Viewer cannot
 function CAN_EXPORT(){ return !(SESSION && NO_EXPORT_ROLES_JS.indexOf(SESSION.role) !== -1); }
 function IS_BTL_HEAD(){ return !!(SESSION && SESSION.role === 'BTL Head'); }
 function exportAllowed_(){
@@ -1636,8 +2454,9 @@ function enterApp(){
     document.getElementById('usersTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
     document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing' || SESSION.role === 'Viewer') ? 'inline-block' : 'none';
     document.getElementById('mktExpenseModuleBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing' || SESSION.role === 'BTL Head' || SESSION.role === 'Viewer') ? 'inline-block' : 'none';
+    document.getElementById('billsModuleBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
     NO_PRODUCT_ROLE_ALLOWED = (SESSION.role === 'Admin' || SESSION.role === 'Marketing' || SESSION.role === 'Viewer');
-    // Marketing / Viewer: view only, no exports anywhere (buttons hidden; the download code itself also refuses).
+    // Viewer: view only, no exports anywhere (buttons hidden; the download code itself also refuses).
     document.body.classList.toggle('no-export', !CAN_EXPORT());
     // BTL Head: ONLY Ad Audit and Marketing Expense are visible.
     if(IS_BTL_HEAD()){
@@ -1758,7 +2577,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.16.0';
+const FRONTEND_VERSION = 'v7.18.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -1828,8 +2647,25 @@ document.addEventListener('click', (e)=>{
 
 let APPROVAL_FILTER = '';
 function switchModule(mod){
+  if(mod === 'bills' && SESSION.role !== 'Admin') mod = 'retail';   // Bills Organizer is for Admin only
   MODULE = mod;
+  { const bs = document.getElementById('billsSection'); if(bs) bs.style.display = 'none'; }
   document.querySelectorAll('#moduleToggle button').forEach(b=>b.classList.toggle('active', b.dataset.mod===mod));
+  if(mod === 'bills'){
+    // Admin-only tool (reads Excel + bill PDFs on this computer; nothing is sent to any server). It runs in its own frame so it cannot clash with the dashboard.
+    document.getElementById('betaverseApprovalToggle').style.display = 'none';
+    document.querySelector('nav.tabs').style.display = 'none';
+    document.querySelector('main').style.display = 'none';
+    document.getElementById('screen-app').style.minHeight = 'auto';
+    document.getElementById('mktExpenseSection').style.display = 'none';
+    document.getElementById('adAuditSection').style.display = 'none';
+    document.querySelectorAll('.tabs + section, section[id^="tab-"]').forEach(s=>s.style.display='none');
+    document.getElementById('billsSection').style.display = 'block';
+    const fr = document.getElementById('billsFrame');
+    if(!fr.dataset.ready){ fr.dataset.ready = '1'; fr.srcdoc = document.getElementById('billsToolSrc').textContent.replace(/<\\\/script/g, '</script'); }
+    window.scrollTo(0,0);
+    return;
+  }
   if(mod === 'mktexpense'){
     // A completely different kind of data (no photos, no GPS, no field
     // submissions) — doesn't fit the Dashboard/History/Photos/Map tab
@@ -4540,7 +5376,7 @@ function renderAdAuditTable(){
     return `<tr>
       ${canVerify?`<td>${(isUnverified && !isOwnSubmission) ? `<input type="checkbox" class="aa-select-cb" data-audit-id="${a.auditId}" ${AA_SELECTED.has(a.auditId)?'checked':''} onchange="aaToggleOne('${a.auditId}', this.checked)">` : ''}</td>`:''}
       <td class="mono" style="font-size:11px;"><a href="javascript:void(0)" onclick="openAdJourney('${a.adId}')" title="View this ad's full audit history">${a.adId}</a></td>
-      <td>${a.adType||''}</td>
+      <td>${a.adType||''}${SESSION.role==='Admin' ? ` <a href="javascript:void(0)" onclick="aaEditType('${a.adId}')" title="Change Ad Type" style="font-size:10px;">✏️</a>` : ''}</td>
       <td class="mono" style="font-size:11px;">${locId}${editLink}</td>
       <td>${addrDetail}</td>
       <td class="mono" style="font-size:11px;">${size}</td>
@@ -4563,6 +5399,37 @@ function renderAdAuditTable(){
    empty. Deliberately asks for ONLY the Location ID — Address always
    comes from GPS capture at audit time and is never hand-editable from
    here, so there's no second prompt for it. */
+/* Admin only: change an ad's Type from a dropdown (fixes an auditor's wrong pick). */
+function aaEditType(adId){
+  if(SESSION.role !== 'Admin') return;
+  const a = AA_DATA.find(x=>x.adId===adId); if(!a) return;
+  const group = a.isMovable ? MOVABLE_AD_TYPES_JS : FIXED_AD_TYPES_JS;
+  const old = document.getElementById('aaTypeEditBox'); if(old) old.remove();
+  const box = document.createElement('div');
+  box.id = 'aaTypeEditBox';
+  box.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  box.innerHTML = `<div style="background:#fff;border-radius:12px;padding:20px;max-width:360px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.3);">
+    <div style="font-weight:800;font-size:16px;margin-bottom:4px;">Change Ad Type</div>
+    <div class="mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">${esc_(adId)} — now: ${esc_(a.adType||'—')}</div>
+    <select id="aaTypeEditSel" style="width:100%;padding:10px;font-size:14px;">${group.map(t=>`<option ${t===a.adType?'selected':''}>${esc_(t)}</option>`).join('')}</select>
+    <div style="font-size:11px;color:var(--slate);margin-top:8px;">This changes the ad itself, so every audit of this Ad ID shows the new type.</div>
+    <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="document.getElementById('aaTypeEditBox').remove()">Cancel</button>
+      <button class="btn btn-dark" id="aaTypeEditSave">Save</button></div></div>`;
+  document.body.appendChild(box);
+  document.getElementById('aaTypeEditSave').onclick = async ()=>{
+    const adType = document.getElementById('aaTypeEditSel').value;
+    if(adType === a.adType){ box.remove(); return; }
+    const btn = document.getElementById('aaTypeEditSave'); btn.disabled = true; btn.textContent = 'Saving…';
+    try{
+      const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'updateAdType', adId, adType, role:SESSION.role, userName:SESSION.name})}, 15000).then(r=>r.json());
+      if(!res.success) throw new Error(res.message || 'Could not save');
+      AA_DATA.forEach(x=>{ if(x.adId===adId) x.adType = adType; });
+      box.remove(); toast('✅ Ad Type changed to ' + adType);
+      renderAdAuditKpis(); renderAdAuditTable();
+    }catch(e){ toast(e.message || 'Could not save', true); btn.disabled = false; btn.textContent = 'Save'; }
+  };
+}
 async function aaEditLocation(adId){
   const a = AA_DATA.find(x=>x.adId===adId);
   const entered = prompt('Location ID for '+adId+':', a ? a.locationId||'' : '');
