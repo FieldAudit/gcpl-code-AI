@@ -169,6 +169,33 @@ main{max-width:1080px; margin:0 auto; padding:22px 18px 70px;}
 .kpi .l{font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:#9BA1C4; margin-top:4px;}
 .chart-card canvas{max-height:280px;}
 
+
+/* ---- Ad Audit report table: sticky header with sort + filter, clean rows ---- */
+#aaTable{border-collapse:separate; border-spacing:0;}
+#aaTable thead th{background:linear-gradient(180deg,#141A33,#0B0F1F); color:#fff; padding:11px 12px; font-size:11px; letter-spacing:.06em; z-index:3; white-space:nowrap; border-bottom:2px solid var(--amber);}
+#aaTable thead th:first-child{border-top-left-radius:8px;} #aaTable thead th:last-child{border-top-right-radius:8px;}
+#aaTable tbody td{padding:11px 12px; vertical-align:middle;}
+#aaTable tbody tr:nth-child(even) td{background:rgba(11,15,31,.022);}
+#aaTable tbody tr:hover td{background:rgba(91,95,239,.07);}
+#aaTable + *{}
+.cf-h{display:flex; align-items:center; justify-content:space-between; gap:8px;}
+.cf-lab{cursor:pointer; user-select:none; display:inline-flex; align-items:center; gap:5px;}
+.cf-lab:hover{color:var(--amber);}
+.cf-arrow{font-size:9px; opacity:.4; letter-spacing:-1px;} .cf-th.sorted .cf-arrow{opacity:1; color:var(--amber);}
+.cf-fn{background:rgba(255,255,255,.1); border:0; color:#D9DDF3; border-radius:6px; width:24px; height:24px; cursor:pointer; font-size:11px; line-height:1; transition:.15s;}
+.cf-fn:hover{background:rgba(255,255,255,.25); color:#fff;} .cf-fn.on{background:var(--amber); color:#0B0F1F; box-shadow:0 0 0 3px rgba(245,166,35,.25);}
+.cf-bar{display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:0 0 10px; font-size:12.5px; color:var(--slate);}
+.cf-bar b{color:var(--ink);} .cf-chip{display:inline-flex; align-items:center; gap:6px; background:var(--paper-2); border:1px solid var(--border); border-radius:999px; padding:3px 6px 3px 11px; font-size:12px; color:var(--ink);}
+.cf-chip button{border:0; background:rgba(11,15,31,.12); color:var(--ink); border-radius:50%; width:18px; height:18px; cursor:pointer; font-size:11px; line-height:1;} .cf-chip button:hover{background:var(--red); color:#fff;}
+.cf-clear{border:1px solid var(--border-2); background:var(--card); color:var(--ink); border-radius:8px; padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer;} .cf-clear:hover{border-color:var(--red); color:var(--red);}
+#aa-report .table-wrap{max-height:calc(100vh - 330px); min-height:420px; border-radius:10px; box-shadow:0 1px 3px rgba(11,15,31,.08);}
+#cfPop{position:fixed; z-index:10050; width:270px; background:var(--card); color:var(--ink); border:1px solid var(--border-2); border-radius:12px; box-shadow:0 18px 50px rgba(11,15,31,.28); padding:12px; font-size:13px; display:none;}
+#cfPop .cf-sort{display:flex; gap:6px; margin-bottom:10px;} #cfPop .cf-sort button{flex:1; border:1px solid var(--border-2); background:var(--paper); border-radius:8px; padding:7px 4px; font-size:12px; font-weight:600; cursor:pointer; color:var(--ink);} #cfPop .cf-sort button:hover{border-color:var(--amber); color:var(--amber-dark);}
+#cfPop input[type=text]{width:100%; box-sizing:border-box; padding:8px 10px; border:1.5px solid var(--border-2); border-radius:8px; font-size:13px; margin-bottom:8px;}
+#cfPop .cf-list{max-height:220px; overflow:auto; border:1px solid var(--border); border-radius:8px; padding:4px;}
+#cfPop label.cf-row{display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:6px; cursor:pointer; font-size:12.5px;} #cfPop label.cf-row:hover{background:var(--paper-2);}
+#cfPop .cf-row span.n{margin-left:auto; color:var(--slate); font-size:11px;} #cfPop .cf-row span.t{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:170px;}
+#cfPop .cf-foot{display:flex; gap:8px; margin-top:10px;} #cfPop .cf-foot button{flex:1; border-radius:8px; padding:8px; font-weight:700; cursor:pointer; font-size:12.5px; border:1px solid var(--border-2); background:var(--card); color:var(--ink);} #cfPop .cf-foot .go{background:var(--ink); color:#fff; border-color:var(--ink);}
 table.data{width:100%; border-collapse:collapse; font-size:13px;}
 table.data th{background:var(--ink); color:var(--paper); text-align:left; padding:9px 10px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; position:sticky; top:0;}
 table.data td{padding:9px 10px; border-bottom:1px solid var(--border);}
@@ -391,7 +418,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
     <button class="active" data-tab="dash" onclick="showTab('dash')">Dashboard</button>
     <button data-tab="approvals" id="approvalsTabBtn" onclick="showTab('approvals')" style="display:none;">🔔 Approvals</button>
     <button data-tab="map" id="mapTabBtn" onclick="showTab('map')" style="display:none;">🗺️ Map</button>
-    <button data-tab="history" onclick="showTab('history')">History</button>
+    <button data-tab="history" onclick="showTab('history')">Report</button>
     <button data-tab="photos" onclick="showTab('photos')">Photos</button>
     <button data-tab="master" id="masterTabBtn" onclick="showTab('master')" style="display:none;">Master Data</button>
     <button data-tab="users" id="usersTabBtn" onclick="showTab('users')" style="display:none;">👥 Users</button>
@@ -440,7 +467,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
 
     <section id="tab-history" style="display:none;">
       <div class="card" id="adJourneyCard" style="display:none;">
-        <h2>🔍 Ad Journey — full history of one site</h2>
+        <h2>🔍 Ad Journey — full report of one site</h2>
         <p style="font-size:12px; color:var(--slate); margin-top:4px;">Works for any Submission ID or uploaded Ad ID — every status-check ever logged against it, oldest to newest.</p>
         <div class="filters" style="margin-top:10px;">
           <input type="text" id="adJourneyInput" placeholder="Ad ID or Submission ID…" onkeydown="if(event.key==='Enter') loadAdJourney();">
@@ -561,7 +588,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
     <section id="tab-auditorwise" style="display:none;">
       <div class="card">
         <h2>👤 Auditor-wise Journey</h2>
-        <div class="hint">How many different Ads/Locations each auditor has visited, and how many times — click any auditor to see their full visit history with photos. Same Ad ID audited by more than one person shows every one of them, clearly labelled, in that ad's own journey (click any Ad ID in the Ad Audit Report).</div>
+        <div class="hint">How many different Ads/Locations each auditor has visited, and how many times — click any auditor to see their full visit report with photos. Same Ad ID audited by more than one person shows every one of them, clearly labelled, in that ad's own journey (click any Ad ID in the Ad Audit Report).</div>
         <div class="filters" style="margin-top:14px;">
           <input type="text" id="auditorSearchAM" placeholder="Search auditor name or mobile…" oninput="renderAuditorWise('AM')">
           <button class="btn btn-outline" onclick="setAuditorRangePreset('week','AM')">This Week</button>
@@ -612,9 +639,13 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
       </div>
       <div class="card">
         <div class="filters">
-          <input type="text" id="mexSearch" placeholder="Search description, agency, PO…" oninput="renderMktExpenseTable()">
+          <input type="text" id="mexSearch" placeholder="Search description, agency, PO…" oninput="mexSearchDebounced_()">
           <select id="mexBrandFilter" onchange="renderMktExpenseTable()"><option value="">All Product Categories</option></select>
           <select id="mexActFilter" onchange="renderMktExpenseTable()"><option value="">All activities</option></select>
+          <select id="mexCatFilter" onchange="renderMktExpenseTable()"><option value="">All Activity Categories</option><option value="ATL">ATL</option><option value="BTL">BTL</option><option value="DIGITAL">Digital</option></select>
+          <select id="mexAgencyFilter" onchange="renderMktExpenseTable()"><option value="">All agencies</option></select>
+          <select id="mexMonthFilter" onchange="renderMktExpenseTable()"><option value="">All months</option></select>
+          <button class="btn btn-outline" onclick="mexResetFilters()">Reset filters</button>
           <button class="btn btn-dark" onclick="exportMktExpenseReport()">⬇ Excel report</button>
           <button class="btn btn-outline" onclick="exportMktExpensePPT()">📊 PPT report</button>
         </div>
@@ -1527,6 +1558,7 @@ $('btnIncXls').onclick = async ()=>{
         <button class="btn btn-primary" style="padding:6px 14px; font-size:12px;" onclick="aaVerifySelected()">✓ Verify Selected</button>
         <button class="btn btn-outline" style="padding:6px 14px; font-size:12px;" onclick="aaClearSelection()">Clear</button>
       </div>
+      <div id="aaCfBar" class="cf-bar"></div>
       <div class="table-wrap"><table class="data" id="aaTable"><thead></thead><tbody></tbody></table></div>
     </div>
   </div>
@@ -1557,7 +1589,7 @@ $('btnIncXls').onclick = async ()=>{
   <div id="aa-auditors" style="display:none;">
     <div class="card">
       <h2>👤 Auditor-wise Journey</h2>
-      <div class="hint">How many different Ads/Locations each auditor has visited, and how many times — click any auditor to see their full visit history with photos. Same Ad ID audited by more than one person shows every one of them, clearly labelled, in that ad's own journey (open it from the Ad Audit Report tab).</div>
+      <div class="hint">How many different Ads/Locations each auditor has visited, and how many times — click any auditor to see their full visit report with photos. Same Ad ID audited by more than one person shows every one of them, clearly labelled, in that ad's own journey (open it from the Ad Audit Report tab).</div>
       <div class="filters" style="margin-top:14px;">
         <input type="text" id="auditorSearch" placeholder="Search auditor name or mobile…" oninput="renderAuditorWise('')">
         <button class="btn btn-outline" onclick="setAuditorRangePreset('week','')">This Week</button>
@@ -2866,7 +2898,7 @@ function showTab(name){
 /* Clear, single-purpose approval screen — a big card per pending site
    with the decision buttons right there, no horizontal scrolling or
    hunting through a wide table required. This is the ONLY place
-   approve/reject lives now; the History table stays a read-only record. */
+   approve/reject lives now; the Report table stays a read-only record. */
 function renderApprovals(){
   const el = document.getElementById('approvalsList');
   const pending = (MODULE==='betaverse' ? ALL_DATA : []).filter(r => r.status==='Pending Approval' || r.status==='Pending Installation');
@@ -3047,7 +3079,7 @@ async function renderMap(){
         <div style="font-size:12px; margin-top:6px;"><b>Method:</b> ${r.preMeasureMethod||'—'}</div>
         <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
           ${(r.status==='Pending Approval'||r.status==='Pending Installation') && CAN_APPROVE() ? `<button onclick="smApproveSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #1B7A43; color:#1B7A43; background:#fff; cursor:pointer;">✓ Approve</button><button onclick="smRejectSubmission('${r.submissionId}')" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #C0392B; color:#C0392B; background:#fff; cursor:pointer;">✕ Reject</button>` : ''}
-          <button onclick="showTab('history'); document.getElementById('histSearch').value='${r.submissionId}'; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in History</button>
+          <button onclick="showTab('history'); document.getElementById('histSearch').value='${r.submissionId}'; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in Report</button>
         </div>
       </div>`;
   } else if(MODULE === 'retail'){
@@ -3062,7 +3094,7 @@ async function renderMap(){
         <div style="font-size:11px; color:#666; margin:4px 0;">${r.address||''}${r.city?', '+r.city:''}</div>
         <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; color:#fff; background:${colorFn(r)};">${r.q1_distribution==='Yes'?'Distributing GCPL':'Not distributing'}</div>
         <div style="font-size:12px; margin-top:6px;"><b>Auditor:</b> ${r.auditor||'—'} · <b>Date:</b> ${r.date||''}</div>
-        <div style="margin-top:8px;"><button onclick="showTab('history'); document.getElementById('histSearch').value=${JSON.stringify(r.outletName||'')}; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in History</button></div>
+        <div style="margin-top:8px;"><button onclick="showTab('history'); document.getElementById('histSearch').value=${JSON.stringify(r.outletName||'')}; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in Report</button></div>
       </div>`;
   } else if(MODULE === 'db'){
     rows = ALL_DATA.filter(r => r.lat && r.lng && (!f.dbName || r.dbName===f.dbName) && (!f.city || r.dbCity===f.city));
@@ -3076,7 +3108,7 @@ async function renderMap(){
         <div style="font-size:11px; color:#666; margin:4px 0;">${r.address||''}${r.dbCity?', '+r.dbCity:''}</div>
         <div style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; color:#fff; background:${colorFn(r)};">${r.auditType||'—'}</div>
         <div style="font-size:12px; margin-top:6px;"><b>SO:</b> ${r.soName||'—'} · <b>Date:</b> ${r.date||''}</div>
-        <div style="margin-top:8px;"><button onclick="showTab('history'); document.getElementById('histSearch').value=${JSON.stringify(r.dbCode||r.dbName||'')}; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in History</button></div>
+        <div style="margin-top:8px;"><button onclick="showTab('history'); document.getElementById('histSearch').value=${JSON.stringify(r.dbCode||r.dbName||'')}; renderHistory();" style="font-size:11px; padding:4px 8px; border-radius:6px; border:1px solid #ccc; color:#333; background:#fff; cursor:pointer;">View in Report</button></div>
       </div>`;
   } else {
     return;
@@ -4552,7 +4584,7 @@ function renderBetaverseDashboard(){
   const shrunk = verified.filter(r=>(Number(r.preArea)||0)>0 && (Number(r.postArea)||0) < (Number(r.preArea)||0)*0.9);
   if(shrunk.length) insights.push({icon:'📉', text:`<b>${shrunk.length}</b> site${shrunk.length===1?'':'s'} installed less area than originally measured (under 90%).`});
   const manualEntries = data.filter(r=>String(r.preMeasureMethod||'').includes('Manual'));
-  if(manualEntries.length) insights.push({icon:'🚩', text:`<b>${manualEntries.length}</b> submission${manualEntries.length===1?'':'s'} used an UNVERIFIED manual measurement, not photo/distance evidence — flagged in History for extra review before approval.`});
+  if(manualEntries.length) insights.push({icon:'🚩', text:`<b>${manualEntries.length}</b> submission${manualEntries.length===1?'':'s'} used an UNVERIFIED manual measurement, not photo/distance evidence — flagged in Report for extra review before approval.`});
   // Independent field spot-checks: flags any site whose MOST RECENT
   // running-status check came back "No" — the actual authenticity signal
   // this whole feature exists for, since a vendor's own claim that an ad
@@ -4563,7 +4595,7 @@ function renderBetaverseDashboard(){
     if(!existing || String(c.date) > String(existing.date)) latestCheckBySubmission[c.submissionId] = c;
   });
   const notRunning = Object.values(latestCheckBySubmission).filter(c=>c.isRunning==='No');
-  if(notRunning.length) insights.push({icon:'🚨', text:`<b>${notRunning.length}</b> site${notRunning.length===1?'':'s'} FLAGGED — most recent field spot-check found the ad NOT actually displayed. Check the site's status-check history before paying the vendor.`});
+  if(notRunning.length) insights.push({icon:'🚨', text:`<b>${notRunning.length}</b> site${notRunning.length===1?'':'s'} FLAGGED — most recent field spot-check found the ad NOT actually displayed. Check the site's status-check report before paying the vendor.`});
   el.innerHTML = `
     <div class="kpis">
       <div class="kpi kpi-click" onclick="switchApprovalFilter('')"><div class="v">${n}</div><div class="l">Total Submissions</div></div>
@@ -4622,6 +4654,7 @@ function adTime_(t){ const m = String(t||'').match(/^(\d{1,2}):(\d{2})/); if(!m)
 function aaDT_(a, inline){ const d = adDMY_(a.date), t = a.time ? adTime_(a.time)+' IST' : '';
   return inline ? `<b style="white-space:nowrap;">${d}</b> <span style="color:var(--slate); white-space:nowrap;">${t}</span>`
                 : `<div style="font-weight:700; white-space:nowrap;">${d}</div>${t?`<div style="font-size:10.5px; color:var(--slate); white-space:nowrap;">${t}</div>`:''}`; }
+function adDT_(ts){ const m = String(ts||'').match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2})/); return m ? adDMY_(m[1])+' '+adTime_(m[2])+' IST' : adDMY_(ts); }
 function todayIST_(){ return new Date(Date.now() + 5.5*3600*1000).toISOString().slice(0,10); }
 function parseDateFlexible(v){
   if(!v) return null;
@@ -4690,7 +4723,7 @@ function renderRetailDashboard(){
     </div>
     <div class="grid2">
       <div class="card chart-card"><h2>Question-wise Yes / No <span class="info-i" title="Count of Yes vs No answers for each key question, across every audit in range.">ⓘ</span></h2><canvas id="chartYN"></canvas></div>
-      <div class="card chart-card"><h2>Audits by City <span class="info-i" title="Number of audits submitted in each city in range. Click a slice to filter History to that city.">ⓘ</span></h2><canvas id="chartCity"></canvas></div>
+      <div class="card chart-card"><h2>Audits by City <span class="info-i" title="Number of audits submitted in each city in range. Click a slice to filter the Report to that city.">ⓘ</span></h2><canvas id="chartCity"></canvas></div>
       <div class="card chart-card"><h2>Shelf Visibility Distribution <span class="info-i" title="How many audits gave each 1-5 star shelf-visibility rating.">ⓘ</span></h2><canvas id="chartStars"></canvas></div>
       <div class="card chart-card"><h2>Audits Over Time <span class="info-i" title="Number of audits submitted each day in range.">ⓘ</span></h2><canvas id="chartTrend"></canvas></div>
     </div>
@@ -4760,7 +4793,7 @@ function renderDBDashboard(){
     </div>
     <div class="grid2">
       <div class="card chart-card"><h2>Bag Quantities by Product <span class="info-i" title="Total quantity (bags) counted for each product, summed across every audit in range.">ⓘ</span></h2><canvas id="chartBags"></canvas></div>
-      <div class="card chart-card"><h2>Top 8 Distributors by Audit Count <span class="info-i" title="The 8 distributors with the most stock-audit visits in range. Click a bar to see just that distributor's rows in History.">ⓘ</span></h2><canvas id="chartDist"></canvas></div>
+      <div class="card chart-card"><h2>Top 8 Distributors by Audit Count <span class="info-i" title="The 8 distributors with the most stock-audit visits in range. Click a bar to see just that distributor's rows in Report.">ⓘ</span></h2><canvas id="chartDist"></canvas></div>
       <div class="card chart-card"><h2>Audits Over Time <span class="info-i" title="Number of stock audits submitted each day in range — shows activity trend and any gaps.">ⓘ</span></h2><canvas id="chartDBTrend"></canvas></div>
       ${showAuditTypeChart
         ? `<div class="card chart-card"><h2>Audits: GCPL Sales Officer vs 3PA <span class="info-i" title="Split of audits by who conducted them — only shown when your role can see both types.">ⓘ</span></h2><canvas id="chartAuditType"></canvas></div>`
@@ -5314,21 +5347,106 @@ async function aaVerifySelected(){
   }catch(e){ toast(e.message||'Could not verify', true); }
 }
 
+/* ---- Ad Audit report: Excel-style sort + filter on every column header ---- */
+const AA_COLS = [
+  {k:'adId',    h:'Ad ID',                    val:a=>a.adId||''},
+  {k:'adType',  h:'Ad Type',                  val:a=>a.adType||'—'},
+  {k:'loc',     h:'Location ID / Vehicle No.',val:a=>String(a.isMovable ? (a.vehicleNumber||'') : (a.locationId||'')) || '—'},
+  {k:'addr',    h:'Address / Route',          val:a=> a.isMovable ? ((a.routeFrom||a.routeTo) ? `${a.routeFrom||'?'} → ${a.routeTo||'?'}` : '—') : (a.locationName||'—')},
+  {k:'size',    h:'Size',                     val:a=> (!a.isMovable && a.height && a.width) ? `${a.height}×${a.width} ${a.measurementUnit||''}`.trim() : '—'},
+  {k:'auditor', h:'Auditor',                  val:a=>a.auditorName||'—'},
+  {k:'date',    h:'Date',                     val:a=>a.date||'', sort:a=>(a.date||'')+' '+(a.time||''), label:v=>adDMY_(v), newestFirst:true},
+  {k:'run',     h:'Running',                  val:a=>a.runningStatus==='Yes' ? 'Running' : 'Not running'},
+  {k:'photo',   h:'Photo', nofilter:true, val:()=>''},
+  {k:'map',     h:'Map',   nofilter:true, val:()=>''},
+  {k:'ver',     h:'Verification',             val:a=>a.verificationStatus==='Verified' ? 'Verified' : 'Unverified'}
+];
+let AA_CFX = {};              // column key -> Set of values the person has switched OFF
+let AA_SORT = {k:'', dir:1};  // clicked column + direction (1 = A→Z / oldest, -1 = Z→A / newest)
+let AA_BASE_ = [];
+function aaApplyCols_(rows, exceptKey){
+  const act = AA_COLS.filter(c=>c.k!==exceptKey && AA_CFX[c.k] && AA_CFX[c.k].size);
+  return act.length ? rows.filter(a=> act.every(c=> !AA_CFX[c.k].has(c.val(a)))) : rows.slice();
+}
+function aaSortCol(k){
+  if(AA_SORT.k !== k) AA_SORT = {k, dir:1};
+  else if(AA_SORT.dir === 1) AA_SORT.dir = -1;
+  else AA_SORT = {k:'', dir:1};
+  renderAdAuditTable();
+}
+function aaClearCf(k){ if(k){ delete AA_CFX[k]; } else { AA_CFX = {}; AA_SORT = {k:'', dir:1}; } cfClose_(); renderAdAuditTable(); }
+function aaRenderCfBar_(shown, total){
+  const bar = document.getElementById('aaCfBar'); if(!bar) return;
+  const chips = AA_COLS.filter(c=>AA_CFX[c.k] && AA_CFX[c.k].size).map(c=>{
+    const all = new Set(aaApplyCols_(AA_BASE_, c.k).map(c.val)); const left = [...all].filter(v=>!AA_CFX[c.k].has(v)).length;
+    return `<span class="cf-chip">${c.h}: ${left} of ${all.size}<button onclick="aaClearCf('${c.k}')" title="Remove this filter">✕</button></span>`; }).join('');
+  const sortTxt = AA_SORT.k ? `<span class="cf-chip">Sorted by ${AA_COLS.find(c=>c.k===AA_SORT.k).h} ${AA_SORT.dir>0?'▲':'▼'}<button onclick="AA_SORT={k:'',dir:1};renderAdAuditTable()" title="Remove sorting">✕</button></span>` : '';
+  const any = chips || sortTxt;
+  bar.innerHTML = `<span>Showing <b>${shown}</b> of <b>${total}</b> audits</span>${chips}${sortTxt}${any?`<button class="cf-clear" onclick="aaClearCf()">Clear all filters</button>`:''}`;
+}
+let CF_OPEN = null;
+function cfClose_(){ const p = document.getElementById('cfPop'); if(p) p.style.display = 'none'; CF_OPEN = null; }
+document.addEventListener('mousedown', e=>{ const p = document.getElementById('cfPop'); if(p && p.style.display==='block' && !p.contains(e.target) && !e.target.closest('.cf-fn')) cfClose_(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') cfClose_(); });
+function aaOpenFilter(ev, k){
+  ev.stopPropagation();
+  if(CF_OPEN === k){ cfClose_(); return; }
+  const col = AA_COLS.find(c=>c.k===k); if(!col) return;
+  const counts = {}; aaApplyCols_(AA_BASE_, k).forEach(a=>{ const v = col.val(a); counts[v] = (counts[v]||0)+1; });
+  let vals = Object.keys(counts).sort((x,y)=> x.localeCompare(y, undefined, {numeric:true, sensitivity:'base'}));
+  if(col.newestFirst) vals.reverse();
+  const off = new Set(AA_CFX[k] ? [...AA_CFX[k]] : []);
+  let pop = document.getElementById('cfPop'); if(!pop){ pop = document.createElement('div'); pop.id = 'cfPop'; document.body.appendChild(pop); }
+  const lab = v => (col.label ? col.label(v) : v);
+  const isDate = !!col.newestFirst;
+  const render = (term)=>{
+    const t = (term||'').toLowerCase(); const shown = vals.filter(v=> !t || lab(v).toLowerCase().includes(t));
+    const allOn = shown.length && shown.every(v=>!off.has(v));
+    pop.querySelector('.cf-list').innerHTML = `<label class="cf-row"><input type="checkbox" id="cfAll" ${allOn?'checked':''}> <b>(Select all${t?' shown':''})</b></label>` +
+      shown.map((v,i)=>`<label class="cf-row"><input type="checkbox" data-i="${i}" ${off.has(v)?'':'checked'}> <span class="t" title="${lab(v).replace(/"/g,'&quot;')}">${lab(v)}</span><span class="n">${counts[v]}</span></label>`).join('') || '<div style="padding:10px; color:var(--slate);">No values</div>';
+    pop.querySelector('#cfAll').onchange = e=>{ shown.forEach(v=>{ if(e.target.checked) off.delete(v); else off.add(v); }); render(term); };
+    pop.querySelectorAll('input[data-i]').forEach(cb=> cb.onchange = ()=>{ const v = shown[+cb.dataset.i]; if(cb.checked) off.delete(v); else off.add(v); const all = pop.querySelector('#cfAll'); all.checked = shown.every(x=>!off.has(x)); });
+  };
+  pop.innerHTML = `<div class="cf-sort"><button id="cfAsc">${isDate?'Oldest first':'Sort A → Z'}</button><button id="cfDesc">${isDate?'Newest first':'Sort Z → A'}</button></div>
+    <input type="text" id="cfSearch" placeholder="Search ${col.h}…" autocomplete="off"><div class="cf-list"></div>
+    <div class="cf-foot"><button id="cfClr">Clear</button><button class="go" id="cfOk">Apply</button></div>`;
+  render('');
+  pop.querySelector('#cfSearch').oninput = e=> render(e.target.value);
+  pop.querySelector('#cfAsc').onclick = ()=>{ AA_SORT = {k, dir:1}; cfClose_(); renderAdAuditTable(); };
+  pop.querySelector('#cfDesc').onclick = ()=>{ AA_SORT = {k, dir:-1}; cfClose_(); renderAdAuditTable(); };
+  pop.querySelector('#cfClr').onclick = ()=> aaClearCf(k);
+  pop.querySelector('#cfOk').onclick = ()=>{ if(off.size) AA_CFX[k] = off; else delete AA_CFX[k]; cfClose_(); renderAdAuditTable(); };
+  const r = ev.currentTarget.getBoundingClientRect();
+  pop.style.display = 'block';
+  pop.style.left = Math.max(8, Math.min(r.right - 270, window.innerWidth - 280)) + 'px';
+  pop.style.top = Math.min(r.bottom + 6, window.innerHeight - pop.offsetHeight - 8) + 'px';
+  CF_OPEN = k;
+  setTimeout(()=>{ const sIn = pop.querySelector('#cfSearch'); if(sIn) sIn.focus(); }, 30);
+}
 function renderAdAuditTable(){
   const q = (document.getElementById('aaSearch').value||'').toLowerCase();
   const typeF = document.getElementById('aaTypeFilter').value;
   const runF = document.getElementById('aaRunningFilter').value;
   const verF = document.getElementById('aaVerifyFilter').value;
-  const rows = AA_DATA.filter(a=>{
+  const baseRows = AA_DATA.filter(a=>{
     if(typeF && a.adType!==typeF) return false;
     if(runF && a.runningStatus!==runF) return false;
     if(verF && a.verificationStatus!==verF) return false;
     if(q && !([a.adId,a.locationId,a.locationName,a.vehicleNumber,a.routeFrom,a.routeTo].join(' ').toLowerCase().includes(q))) return false;
     return true;
   });
+  AA_BASE_ = baseRows;
+  const rows = aaApplyCols_(baseRows, null);
+  if(AA_SORT.k){
+    const col = AA_COLS.find(c=>c.k===AA_SORT.k);
+    if(col){ const sv = col.sort || col.val; rows.sort((x,y)=> AA_SORT.dir * String(sv(x)).localeCompare(String(sv(y)), undefined, {numeric:true, sensitivity:'base'})); }
+  }
   const canVerify = canVerifyAds();
   const thead = document.querySelector('#aaTable thead'), tbody = document.querySelector('#aaTable tbody');
-  thead.innerHTML = `<tr>${canVerify?`<th><input type="checkbox" onchange="aaToggleSelectAll(this)" title="Select all unverified shown"></th>`:''}<th>Ad ID</th><th>Ad Type</th><th>Location ID / Vehicle No.</th><th>Address / Route</th><th>Size</th><th>Auditor</th><th>Date</th><th>Running</th><th>Photo</th><th>Map</th><th>Verification</th></tr>`;
+  thead.innerHTML = `<tr>${canVerify?`<th><input type="checkbox" onchange="aaToggleSelectAll(this)" title="Select all unverified shown"></th>`:''}${AA_COLS.map(c=>{
+    const sorted = AA_SORT.k===c.k, fOn = AA_CFX[c.k] && AA_CFX[c.k].size;
+    return `<th class="cf-th${sorted?' sorted':''}"><div class="cf-h"><span class="cf-lab"${c.nofilter?'':` onclick="aaSortCol('${c.k}')" title="Click to sort"`}>${c.h}${c.nofilter?'':`<span class="cf-arrow">${sorted ? (AA_SORT.dir>0?'▲':'▼') : '▲▼'}</span>`}</span>${c.nofilter?'':`<button class="cf-fn${fOn?' on':''}" onclick="aaOpenFilter(event,'${c.k}')" title="Filter ${c.h}">${fOn?'●':'▾'}</button>`}</div></th>`; }).join('')}</tr>`;
+  aaRenderCfBar_(rows.length, AA_DATA.length);
   if(!rows.length){ tbody.innerHTML = `<tr><td colspan="${canVerify?12:11}"><div class="empty">No audits match this filter.</div></td></tr>`; return; }
   tbody.innerHTML = rows.map(a=>{
     // Location ID and Address are two different things — ID is the
@@ -5384,7 +5502,7 @@ function renderAdAuditTable(){
           : `<span class="tag tag-no">Unverified</span>`);
     return `<tr>
       ${canVerify?`<td>${(isUnverified && !isOwnSubmission) ? `<input type="checkbox" class="aa-select-cb" data-audit-id="${a.auditId}" ${AA_SELECTED.has(a.auditId)?'checked':''} onchange="aaToggleOne('${a.auditId}', this.checked)">` : ''}</td>`:''}
-      <td class="mono" style="font-size:11px;"><a href="javascript:void(0)" onclick="openAdJourney('${a.adId}')" title="View this ad's full audit history">${a.adId}</a></td>
+      <td class="mono" style="font-size:11px;"><a href="javascript:void(0)" onclick="openAdJourney('${a.adId}')" title="View this ad's full audit report">${a.adId}</a></td>
       <td>${a.adType||''}${SESSION.role==='Admin' ? ` <a href="javascript:void(0)" onclick="aaEditType('${a.adId}')" title="Change Ad Type" style="font-size:10px;">✏️</a>` : ''}</td>
       <td class="mono" style="font-size:11px;">${locId}${editLink}</td>
       <td>${addrDetail}</td>
@@ -5811,7 +5929,7 @@ async function loadAdChangeLog(){
     if(!entries.length){ tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No changes logged yet.</div></td></tr>`; return; }
     const clNote = useSb_('changelog') ? `<tr><td colspan="8" style="font-size:12px; color:var(--slate); padding:10px 8px;">Showing the last 6 months. Older entries stay in the Google Sheet (ChangeLog tab).</td></tr>` : '';
     tbody.innerHTML = entries.map(e=>`<tr>
-      <td class="mono" style="font-size:11px;">${e.timestamp||''}</td>
+      <td class="mono" style="font-size:11px; white-space:nowrap;">${adDT_(e.timestamp)}</td>
       <td>${e.action||''}</td>
       <td class="mono" style="font-size:11px;">${e.entityId||''}</td>
       <td>${e.field||''}</td>
@@ -5964,7 +6082,7 @@ function exportAdAuditReportBasic(){
   applyProReportStyling(ws, headers, body.length);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Ad Audit Report');
-  downloadWorkbook(wb, `AdAuditReport_${new Date().toISOString().slice(0,10)}.xlsx`);
+  downloadWorkbook(wb, `AdAuditReport_${adDMY_(todayIST_())}.xlsx`);
 }
 
 /* ============================================================
@@ -5992,8 +6110,7 @@ async function loadMktExpenseData(){
     MEX_DATA = j;
     renderMktExpenseStaleBanner(j.meta);
     populateMktExpenseDropdowns(j.options);
-    renderMktExpenseAnalytics(j.rows);
-    renderMktExpenseTable();
+    renderMktExpenseTable();   // draws the table, the numbers and every chart for the current filters
   }catch(e){
     const why = (e && e.message && e.message !== 'MAIN_SERVER_OFFLINE') ? describeLoadProblem_(null, e) : 'Internet is slower than expected — please wait a moment and try again.';
     const safe = String(why).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -6034,6 +6151,9 @@ function populateMktExpenseDropdowns(options){
     options.activities.forEach(a=>{ actSel.add(new Option(a,a)); actFilter.add(new Option(a,a)); });
     options.agencies.forEach(a=> agencyList.appendChild(new Option(a,a)));
   }
+  const agF = document.getElementById('mexAgencyFilter'), moF = document.getElementById('mexMonthFilter');
+  if(agF.options.length <= 1) (options.agencies||[]).filter(Boolean).slice().sort((x,y)=>String(x).localeCompare(String(y))).forEach(a=> agF.add(new Option(a,a)));
+  if(moF.options.length <= 1) MEX_MONTH_ORDER.forEach(m=> moF.add(new Option(MEX_MONTH_LABELS[m]||m, m)));
 }
 
 function mexFmtRupee(v){ return '₹' + Math.round(v).toLocaleString('en-IN'); }
@@ -6144,18 +6264,32 @@ function renderMktExpenseAnalytics(rows){
   });
 }
 
-function renderMktExpenseTable(){
-  if(!MEX_DATA) return;
-  const q = (document.getElementById('mexSearch').value||'').toLowerCase();
-  const brandF = document.getElementById('mexBrandFilter').value;
-  const actF = document.getElementById('mexActFilter').value;
-  const rows = MEX_DATA.rows.filter(r=>{
+let MEX_SEARCH_T = null;
+function mexSearchDebounced_(){ clearTimeout(MEX_SEARCH_T); MEX_SEARCH_T = setTimeout(renderMktExpenseTable, 250); }
+function mexResetFilters(){ ['mexSearch','mexBrandFilter','mexActFilter','mexCatFilter','mexAgencyFilter','mexMonthFilter'].forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ''; }); renderMktExpenseTable(); }
+/* ONE place decides which rows are "selected" — the table, the numbers and every chart all read from it, so they can never disagree. */
+function mexFilteredRows_(){
+  const q = (document.getElementById('mexSearch').value||'').trim().toLowerCase();
+  const brandF = document.getElementById('mexBrandFilter').value, actF = document.getElementById('mexActFilter').value;
+  const catF = document.getElementById('mexCatFilter').value, agF = document.getElementById('mexAgencyFilter').value, moF = document.getElementById('mexMonthFilter').value;
+  let rows = MEX_DATA.rows.filter(r=>{
     if(brandF && r.brand!==brandF) return false;
     if(actF && r.activity!==actF) return false;
+    if(catF && String(r.activityCategory||'').toUpperCase()!==catF) return false;
+    if(agF && r.agency!==agF) return false;
+    if(moF && !(r.months && (r.months[moF]||0))) return false;
     if(q && !(String(r.description).toLowerCase().includes(q) || String(r.agency).toLowerCase().includes(q) || String(r.poNumber).toLowerCase().includes(q))) return false;
     return true;
   });
-  renderMktExpenseFilteredSummary(rows, brandF, actF);
+  // With a month picked, every amount shown is that month's spend (not the full-year total).
+  if(moF) rows = rows.map(r=>Object.assign({}, r, {ytd: r.months[moF]||0, months: {[moF]: r.months[moF]||0}}));
+  return {rows, brandF, actF, catF, agF, moF, q};
+}
+function renderMktExpenseTable(){
+  if(!MEX_DATA) return;
+  const f = mexFilteredRows_(), rows = f.rows, brandF = f.brandF, actF = f.actF;
+  renderMktExpenseAnalytics(rows);
+  renderMktExpenseFilteredSummary(rows, [brandF, actF, f.catF, f.agF, f.moF ? (MEX_MONTH_LABELS[f.moF]||f.moF) : '', f.q ? '“'+f.q+'”' : ''].filter(Boolean).join(' · '));
   const thead = document.querySelector('#mexTable thead');
   const tbody = document.querySelector('#mexTable tbody');
   thead.innerHTML = `<tr><th>Description</th><th>Product Category</th><th>Activity</th><th>Activity Category</th><th>Agency</th><th>PO Number</th><th>YTD (₹)</th><th>Updated By</th></tr>`;
@@ -6171,18 +6305,18 @@ function renderMktExpenseTable(){
    "okay, but what about just HOARDING" without losing that bigger
    context. Disappears again once both filters are cleared, since with no
    filter active it would just repeat the Overview cards above. */
-function renderMktExpenseFilteredSummary(rows, brandF, actF){
+function renderMktExpenseFilteredSummary(rows, label){
   const el = document.getElementById('mexFilteredSummary');
-  if(!brandF && !actF){ el.style.display = 'none'; return; }
+  if(!label){ el.style.display = 'none'; return; }
   el.style.display = 'block';
   const ytd = rows.reduce((s,r)=>s+r.ytd, 0);
   const agencyCounts = {};
   rows.forEach(r=>{ if(r.agency) agencyCounts[r.agency] = (agencyCounts[r.agency]||0)+r.ytd; });
   const topAgency = Object.entries(agencyCounts).sort((a,b)=>b[1]-a[1])[0];
-  const label = [brandF, actF].filter(Boolean).join(' · ') || 'All';
   el.innerHTML = `
     <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; background:var(--paper-2); border-radius:10px; padding:14px 18px; margin-bottom:14px;">
       <div style="font-weight:700; font-size:13px; display:flex; align-items:center; gap:6px;">🔎 ${label} <span class="mex-info" onclick="mexShowInfo('filtered')">ⓘ</span></div>
+      <div style="font-size:12px; color:var(--slate);">The numbers and charts above show only this selection</div>
       <div><span style="font-size:18px; font-weight:800;">${rows.length}</span><span style="font-size:11px; color:var(--slate); margin-left:5px;">entries</span></div>
       <div><span style="font-size:18px; font-weight:800; color:var(--amber-dark, #C97F0E);">${mexFmtInr(ytd)}</span><span style="font-size:11px; color:var(--slate); margin-left:5px;">YTD spend</span></div>
       ${topAgency ? `<div><span style="font-size:13px; font-weight:700;">${topAgency[0]}</span><span style="font-size:11px; color:var(--slate); margin-left:5px;">top agency (${mexFmtInr(topAgency[1])})</span></div>` : ''}
