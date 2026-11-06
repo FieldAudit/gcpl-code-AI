@@ -296,21 +296,53 @@ table.data tr:hover td{background:var(--paper-2);}
 .load-progress-ring .bar{fill:none; stroke:var(--amber, #F5A623); stroke-width:8; stroke-linecap:round; stroke-dasharray:283; stroke-dashoffset:283; transition:stroke-dashoffset .3s ease;}
 .load-progress-pct{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; font-weight:700;}
 .load-progress-label{color:#fff; font-size:14px; font-weight:600; letter-spacing:.02em;}
-.photo-lightbox{position:fixed; inset:0; background:rgba(18,23,43,.9); z-index:400; display:none; align-items:center; justify-content:center; padding:30px;}
-.photo-lightbox.show{display:flex;}
-.photo-lightbox-inner{position:relative; max-width:90vw; max-height:90vh; display:flex; flex-direction:column; align-items:center;}
-.lightbox-img-wrap{position:relative; overflow:hidden; max-width:90vw; max-height:70vh; display:flex; align-items:center; justify-content:center;}
-.photo-lightbox-inner img{max-width:90vw; max-height:70vh; border-radius:6px; object-fit:contain; transition:transform .2s;}
-.lightbox-nav{position:absolute; inset:0; display:flex; align-items:center; justify-content:space-between; pointer-events:none;}
-.lightbox-nav button{pointer-events:auto; background:rgba(18,23,43,.55); color:#fff; border:none; width:38px; height:38px; border-radius:50%; font-size:22px; cursor:pointer; margin:0 6px;}
-.lightbox-nav span{position:absolute; bottom:8px; left:50%; transform:translateX(-50%); background:rgba(18,23,43,.6); color:#fff; font-size:11px; padding:3px 10px; border-radius:20px; pointer-events:none;}
-.lightbox-zoom-controls{display:flex; gap:8px; margin-top:10px;}
-.lightbox-zoom-controls button{width:34px; height:34px; border-radius:50%; border:none; background:rgba(255,255,255,.15); color:#fff; font-size:16px; cursor:pointer;}
-.photo-lightbox-caption{color:var(--paper); font-size:13px; margin-top:12px; text-align:center; max-width:600px;}
-.photo-lightbox-close{position:absolute; top:-16px; right:-16px; width:34px; height:34px; border-radius:50%; background:var(--paper); border:none; font-size:16px; cursor:pointer;}
+/* ---- Photo viewer (lightbox) — one viewer for every photo list: Retail / DB photos, Ad Audit, Ad Manager ---- */
+.photo-lightbox{position:fixed; inset:0; z-index:400; display:flex; align-items:center; justify-content:center; padding:0;
+  background:radial-gradient(ellipse at 50% 40%, rgba(30,36,72,.94), rgba(6,9,22,.97)); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  opacity:0; visibility:hidden; transition:opacity .22s ease, visibility 0s linear .22s;}
+.photo-lightbox.show{opacity:1; visibility:visible; transition:opacity .22s ease;}
+.lb-stage{position:absolute; inset:64px 96px 118px; display:flex; align-items:center; justify-content:center; overflow:hidden; touch-action:pan-y;}
+.lb-stage img{max-width:100%; max-height:100%; border-radius:12px; object-fit:contain; box-shadow:0 24px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.08); user-select:none; -webkit-user-drag:none; will-change:transform,opacity; transition:transform .18s ease;}
+.photo-lightbox.show .lb-stage img{animation:lbPop .32s cubic-bezier(.2,.9,.3,1.15);}
+.lb-stage img.in-next{animation:lbInNext .34s cubic-bezier(.2,.8,.2,1);}
+.lb-stage img.in-prev{animation:lbInPrev .34s cubic-bezier(.2,.8,.2,1);}
+.lb-stage img.zoomed{cursor:grab;} .lb-stage img.dragging{cursor:grabbing; transition:none;}
+@keyframes lbPop{from{opacity:0; transform:scale(.92);} to{opacity:1; transform:scale(1);}}
+@keyframes lbInNext{from{opacity:0; transform:translateX(70px) scale(.97);} to{opacity:1; transform:none;}}
+@keyframes lbInPrev{from{opacity:0; transform:translateX(-70px) scale(.97);} to{opacity:1; transform:none;}}
+.lb-spin{position:absolute; width:34px; height:34px; border-radius:50%; border:3px solid rgba(255,255,255,.2); border-top-color:#fff; animation:lbSpin .7s linear infinite; opacity:0; transition:opacity .15s; pointer-events:none;}
+.lb-spin.on{opacity:1;} @keyframes lbSpin{to{transform:rotate(360deg);}}
+.lb-nav{position:absolute; top:calc(50% - 30px); width:56px; height:56px; border-radius:50%; border:1px solid rgba(255,255,255,.22); cursor:pointer; z-index:3; display:flex; align-items:center; justify-content:center; color:#fff; padding:0;
+  background:linear-gradient(145deg, rgba(255,255,255,.20), rgba(255,255,255,.07)); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  box-shadow:0 8px 26px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.25); transition:transform .18s cubic-bezier(.34,1.56,.64,1), background .18s, box-shadow .18s, opacity .2s;}
+.lb-nav svg{width:24px; height:24px; transition:transform .18s;}
+.lb-prev{left:22px;} .lb-next{right:22px;}
+.lb-nav:hover{transform:scale(1.12); background:linear-gradient(145deg, #6C70FF, #3F43D6); box-shadow:0 10px 30px rgba(80,84,240,.55), inset 0 1px 0 rgba(255,255,255,.35);}
+.lb-prev:hover svg{transform:translateX(-3px);} .lb-next:hover svg{transform:translateX(3px);}
+.lb-nav:active{transform:scale(.92);}
+.lb-nav:focus-visible, .lb-btn:focus-visible{outline:3px solid #FFD27A; outline-offset:2px;}
+.lb-nav[disabled]{opacity:.25; pointer-events:none;}
+.lb-top{position:absolute; top:0; left:0; right:0; height:64px; display:flex; align-items:center; justify-content:space-between; padding:0 20px; z-index:3;}
+.lb-counter{display:none; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); color:#fff; font-size:13px; font-weight:700; letter-spacing:.04em; padding:7px 16px; border-radius:999px; backdrop-filter:blur(6px); font-variant-numeric:tabular-nums;}
+.lb-counter.on{display:block;}
+.lb-tools{display:flex; gap:8px; margin-left:auto;}
+.lb-btn{width:42px; height:42px; border-radius:50%; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.10); color:#fff; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; text-decoration:none; padding:0; transition:transform .16s cubic-bezier(.34,1.56,.64,1), background .16s;}
+.lb-btn:hover{background:rgba(255,255,255,.26); transform:translateY(-2px) scale(1.06);} .lb-btn:active{transform:scale(.9);}
+.lb-btn.lb-close:hover{background:#E5484D; border-color:#E5484D;}
+.lb-caption{position:absolute; left:50%; bottom:22px; transform:translateX(-50%); width:min(760px, calc(100vw - 32px)); z-index:3; text-align:center; color:#fff; padding:12px 20px 14px; border-radius:16px;
+  background:linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.05)); border:1px solid rgba(255,255,255,.14); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);}
+.lb-title{font-size:15px; font-weight:700; line-height:1.35;} .lb-sub{font-size:12px; color:#B9C0E6; margin-top:4px; line-height:1.45; max-height:3.2em; overflow:auto;}
+.lb-hint{font-size:10.5px; color:#8B93BD; margin-top:6px; letter-spacing:.03em;}
+@media (max-width:700px){
+  .lb-stage{inset:60px 8px 150px;}
+  .lb-nav{top:auto; bottom:176px; width:46px; height:46px;} .lb-prev{left:12px;} .lb-next{right:12px;}
+  .lb-hint{display:none;}
+}
+@media (prefers-reduced-motion:reduce){ .photo-lightbox.show .lb-stage img, .lb-stage img.in-next, .lb-stage img.in-prev{animation:none;} .lb-nav, .lb-btn{transition:none;} }
 
 .thumb-gallery{position:relative;}
-.gallery-nav{position:absolute; top:50%; transform:translateY(-50%); background:rgba(18,23,43,.55); color:#fff; border:none; width:26px; height:26px; border-radius:50%; font-size:16px; cursor:pointer; z-index:2;}
+.gallery-nav{position:absolute; top:50%; transform:translateY(-50%); background:rgba(18,23,43,.55); color:#fff; border:1px solid rgba(255,255,255,.25); width:28px; height:28px; border-radius:50%; font-size:17px; line-height:1; cursor:pointer; z-index:2; backdrop-filter:blur(4px); transition:transform .16s cubic-bezier(.34,1.56,.64,1), background .16s;}
+.gallery-nav:hover{background:#4F54E8; transform:translateY(-50%) scale(1.15);} .gallery-nav:active{transform:translateY(-50%) scale(.9);}
 .gallery-nav.prev{left:6px;} .gallery-nav.next{right:6px;}
 .gallery-count{position:absolute; bottom:6px; right:6px; background:rgba(18,23,43,.6); color:#fff; font-size:10px; padding:2px 7px; border-radius:20px;}
 .pdf-thumb{width:100%; aspect-ratio:4/3; background:linear-gradient(135deg,#FFF5F3,#FFEFE0); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:10px; text-align:center;}
@@ -436,7 +468,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.20.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.21.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="openPwModal()" title="Change your password">🔑 Password</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1744,22 +1776,26 @@ $('btnIncXls').onclick = async ()=>{
     <button onclick="cancelLoadProgress()" style="margin-top:16px; background:none; border:1px solid rgba(255,255,255,.4); color:#fff; padding:8px 18px; border-radius:20px; font-size:12px; cursor:pointer;">✕ Cancel</button>
   </div>
 </div>
-<div class="photo-lightbox" id="photoLightbox" onclick="closeLightbox(event)">
-  <div class="photo-lightbox-inner" onclick="event.stopPropagation()">
-    <div class="lightbox-img-wrap">
-      <img id="lightboxImg" src="" onerror="lightboxImgError()">
-      <div class="lightbox-nav" id="lightboxNav" style="display:none;">
-        <button onclick="lightboxNav(-1)">‹</button>
-        <span id="lightboxCounter"></span>
-        <button onclick="lightboxNav(1)">›</button>
-      </div>
+<div class="photo-lightbox" id="photoLightbox" onclick="closeLightbox(event)" role="dialog" aria-modal="true" aria-label="Photo viewer">
+  <div class="lb-top">
+    <div class="lb-counter" id="lightboxCounter"></div>
+    <div class="lb-tools">
+      <button class="lb-btn" onclick="lightboxZoom(-0.5)" title="Zoom out (−)" aria-label="Zoom out">−</button>
+      <button class="lb-btn" onclick="lightboxZoom(0.5)" title="Zoom in (+)" aria-label="Zoom in">+</button>
+      <a class="lb-btn" id="lbOpen" href="#" target="_blank" rel="noopener" title="Open original" aria-label="Open original">↗</a>
+      <button class="lb-btn lb-close" onclick="closeLightbox()" title="Close (Esc)" aria-label="Close">✕</button>
     </div>
-    <div class="lightbox-zoom-controls">
-      <button onclick="lightboxZoom(-0.5)">－</button>
-      <button onclick="lightboxZoom(0.5)">＋</button>
-    </div>
-    <div class="photo-lightbox-caption" id="lightboxCaption"></div>
-    <button class="photo-lightbox-close" onclick="closeLightbox(event)">✕</button>
+  </div>
+  <button class="lb-nav lb-prev" id="lbPrev" onclick="lightboxNav(-1)" title="Previous (←)" aria-label="Previous photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+  <div class="lb-stage" id="lbStage">
+    <img id="lightboxImg" src="" alt="" onerror="lightboxImgError()" onload="lightboxImgLoaded()" draggable="false">
+    <div class="lb-spin" id="lbSpin"></div>
+  </div>
+  <button class="lb-nav lb-next" id="lbNext" onclick="lightboxNav(1)" title="Next (→)" aria-label="Next photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+  <div class="lb-caption" onclick="event.stopPropagation()">
+    <div class="lb-title" id="lightboxCaption"></div>
+    <div class="lb-sub" id="lightboxSub"></div>
+    <div class="lb-hint" id="lbHint">← → to browse · scroll or + − to zoom · Esc to close</div>
   </div>
 </div>
 
@@ -2782,7 +2818,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.20.0';
+const FRONTEND_VERSION = 'v7.21.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -5341,7 +5377,8 @@ let AA_DATA = [];
 document.addEventListener('click', function(e){
   const img = e.target.closest('.aa-photo-thumb');
   if(!img) return;
-  smOpenBvLightbox(img.dataset.photoUrl, img.dataset.photoCaption);
+  const all = [...img.closest('table').querySelectorAll('.aa-photo-thumb')];
+  openGallery_(all.map(t=>({url:t.dataset.photoUrl, title:'Ad ID ' + (t.dataset.photoCaption||''), sub:t.dataset.photoSub||''})), Math.max(0, all.indexOf(img)));
 });
 function switchAdAuditTab(tab){  document.querySelectorAll('#adAuditSection .module-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.aa===tab));
   ['report','import','changelog','auditors'].forEach(t=> document.getElementById('aa-'+t).style.display = (t===tab) ? 'block' : 'none');
@@ -5885,7 +5922,7 @@ function renderAdAuditTable(){
       <td>${canVerify
           ? `<button class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}" style="border:none; cursor:pointer;" onclick="aaToggleRunning('${a.auditId}','${a.runningStatus==='Yes'?'No':'Yes'}')" title="Click to change">${a.runningStatus==='Yes'?'✅ Running':'🚩 Not running'} ✎</button>`
           : `<span class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}">${a.runningStatus==='Yes'?'✅ Running':'🚩 Not running'}</span>`}</td>
-      <td>${a.photoUrl ? `<img src="${a.photoUrl}" data-photo-url="${a.photoUrl}" data-photo-caption="${a.adId}" class="aa-photo-thumb" style="width:44px; height:44px; object-fit:cover; border-radius:6px; cursor:pointer;">` : '—'}</td>
+      <td>${a.photoUrl ? `<img src="${a.photoUrl}" data-photo-url="${a.photoUrl}" data-photo-caption="${esc_(a.adId)}" data-photo-sub="${esc_([a.auditorName, adDMY_(a.date) + (a.time ? ' ' + adTime_(a.time) + ' IST' : ''), a.runningStatus === 'Yes' ? 'Running' : 'Not running'].filter(Boolean).join('  ·  '))}" class="aa-photo-thumb" style="width:44px; height:44px; object-fit:cover; border-radius:6px; cursor:pointer;">` : '—'}</td>
       <td>${(a.lat&&a.lng) ? `<a class="btn btn-outline" href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" style="white-space:nowrap; padding:4px 10px; font-size:11px;">📍 View</a>` : '—'}</td>
       <td>${verificationCell}</td>
     </tr>`;
@@ -7709,19 +7746,32 @@ function renderPhotos(){
   });
 }
 
-/* Lightbox now supports: multiple images per card (next/prev, same as the
-   thumbnail's own mini-gallery but full-screen), and zoom in/out via
-   buttons or the scroll wheel/pinch. LIGHTBOX_STATE tracks which card and
-   which image within it is showing, so Next/Prev can move between BOTH
-   images within one card if there are 2, or across the whole date/audit
-   group if there's only 1 — whichever makes sense for that card. */
-let LIGHTBOX_STATE = {photoIdx:0, imgIdx:0, zoom:1};
-function openLightbox(photoIdx, imgIdx){
-  const p = CURRENT_PHOTO_LIST[photoIdx];
-  if(!p || !p.urls) return;
-  LIGHTBOX_STATE = {photoIdx, imgIdx: imgIdx||0, zoom:1};
-  renderLightboxImage();
+/* PHOTO VIEWER. One viewer, always given its OWN list of photos: LB = {items:[{url,title,sub}], i, zoom, x, y}.
+   Retail / DB photos browse through the cards currently shown; Ad Audit browses through the Ad Audit rows currently shown;
+   a single photo (Ad Manager cards etc.) simply has no arrows. A list can never leak into another screen. */
+let LB = {items:[], i:0, zoom:1, x:0, y:0};
+function openGallery_(items, start){
+  items = (items||[]).filter(it=>it && it.url);
+  if(!items.length) return;
+  LB = {items, i:Math.min(Math.max(0, start||0), items.length-1), zoom:1, x:0, y:0};
+  lbRender_('pop');
   document.getElementById('photoLightbox').classList.add('show');
+  try{ document.getElementById('lbStage').focus(); }catch(_e){}
+}
+function openLightbox(photoIdx, imgIdx){   // Retail / DB photo cards
+  const items = []; let start = 0;
+  CURRENT_PHOTO_LIST.forEach((p, pi)=>{
+    if(!p || !p.urls) return;     // PDF cards have no image
+    const sub = (p.details||[]).map(d=>String(d[0]) + ': ' + String(d[1]).replace(/<[^>]*>/g,'')).join('  ·  ') + (p.date ? '  ·  ' + p.date : '');
+    p.urls.forEach((u, ui)=>{
+      if(pi === photoIdx && ui === (imgIdx||0)) start = items.length;
+      items.push({url:u, title:`${p.type} — ${p.name}` + (p.urls.length > 1 ? `  (photo ${ui+1} of ${p.urls.length})` : ''), sub});
+    });
+  });
+  openGallery_(items, start);
+}
+function smOpenBvLightbox(url, caption){     // a single photo
+  openGallery_([{url, title:String(caption||''), sub:''}], 0);
 }
 /* Extracts a Drive file ID from ANY of the shapes a "photo URL" in this
    app might be — our own upload links, or an external sheet's raw
@@ -7733,21 +7783,33 @@ function extractDriveFileId(url){
   const m = String(url||'').match(/[?&]id=([^&]+)/) || String(url||'').match(/\/d\/([^=?/]+)/);
   return m ? m[1] : null;
 }
-function renderLightboxImage(){
-  const p = CURRENT_PHOTO_LIST[LIGHTBOX_STATE.photoIdx];
-  if(!p) return;
+function lbRender_(anim){
+  const it = LB.items[LB.i]; if(!it) return;
   const img = document.getElementById('lightboxImg');
-  const rawUrl = p.urls[LIGHTBOX_STATE.imgIdx];
   img.dataset.fallbackAttempt = '0';
-  img.dataset.fileId = extractDriveFileId(rawUrl) || '';
-  img.src = rawUrl; // tried first, unmodified — works fine for the common case (our own upload links); onerror below only kicks in if this specific shape fails to actually load as an image
-  img.style.transform = `scale(${LIGHTBOX_STATE.zoom})`;
-  const caption = `${p.type} — ${p.name}${(p.details||[]).map(d=>' · '+d[0]+': '+d[1]).join('')}`;
-  document.getElementById('lightboxCaption').textContent = caption;
-  const nav = document.getElementById('lightboxNav');
-  if(nav) nav.style.display = p.urls.length > 1 ? 'flex' : 'none';
+  img.dataset.fileId = extractDriveFileId(it.url) || '';
+  document.getElementById('lbSpin').classList.add('on');
+  img.className = anim === 'next' ? 'in-next' : (anim === 'prev' ? 'in-prev' : '');
+  void img.offsetWidth;                       // restart the animation
+  if(anim === 'next') img.className = 'in-next'; else if(anim === 'prev') img.className = 'in-prev';
+  img.src = it.url;                            // tried unmodified first; onerror walks through the other Drive formats
+  lbApplyZoom_();
+  document.getElementById('lightboxCaption').textContent = it.title || '';
+  const sub = document.getElementById('lightboxSub'); sub.textContent = it.sub || ''; sub.style.display = it.sub ? '' : 'none';
+  const many = LB.items.length > 1;
   const counter = document.getElementById('lightboxCounter');
-  if(counter) counter.textContent = p.urls.length > 1 ? `${LIGHTBOX_STATE.imgIdx+1} / ${p.urls.length}` : '';
+  counter.textContent = many ? `${LB.i + 1} / ${LB.items.length}` : ''; counter.classList.toggle('on', many);
+  document.getElementById('lbPrev').style.display = many ? '' : 'none';
+  document.getElementById('lbNext').style.display = many ? '' : 'none';
+  document.getElementById('lbHint').textContent = many ? '← → to browse · scroll or + − to zoom · Esc to close' : 'Scroll or + − to zoom · Esc to close';
+  const open = document.getElementById('lbOpen'); open.href = it.url;
+  [-1, 1].forEach(d=>{ const n = LB.items[(LB.i + d + LB.items.length) % LB.items.length]; if(n && n.url !== it.url){ const pre = new Image(); pre.src = n.url; } });   // warm the neighbours
+}
+function lightboxImgLoaded(){ document.getElementById('lbSpin').classList.remove('on'); }
+function lbApplyZoom_(){
+  const img = document.getElementById('lightboxImg');
+  img.style.transform = LB.zoom > 1 ? `translate(${LB.x}px, ${LB.y}px) scale(${LB.zoom})` : '';
+  img.classList.toggle('zoomed', LB.zoom > 1);
 }
 /* Same progressive-fallback idea as tryPhotoFallback() for thumbnails,
    applied to the full-screen lightbox image specifically — the two
@@ -7770,16 +7832,37 @@ function lightboxImgError(){
   img.src = formats[attempt];
 }
 function lightboxNav(dir){
-  const p = CURRENT_PHOTO_LIST[LIGHTBOX_STATE.photoIdx];
-  if(!p || !p.urls) return;
-  LIGHTBOX_STATE.imgIdx = (LIGHTBOX_STATE.imgIdx + dir + p.urls.length) % p.urls.length;
-  LIGHTBOX_STATE.zoom = 1;
-  renderLightboxImage();
+  if(LB.items.length < 2) return;
+  LB.i = (LB.i + dir + LB.items.length) % LB.items.length;
+  LB.zoom = 1; LB.x = 0; LB.y = 0;
+  lbRender_(dir > 0 ? 'next' : 'prev');
 }
 function lightboxZoom(delta){
-  LIGHTBOX_STATE.zoom = Math.min(4, Math.max(1, LIGHTBOX_STATE.zoom + delta));
-  document.getElementById('lightboxImg').style.transform = `scale(${LIGHTBOX_STATE.zoom})`;
+  LB.zoom = Math.min(4, Math.max(1, LB.zoom + delta));
+  if(LB.zoom === 1){ LB.x = 0; LB.y = 0; }
+  lbApplyZoom_();
 }
+/* keyboard, mouse wheel, drag-to-pan when zoomed, and swipe left/right on touch screens */
+(function lbControls_(){
+  const open = ()=>document.getElementById('photoLightbox').classList.contains('show');
+  document.addEventListener('keydown', e=>{
+    if(!open()) return;
+    if(e.key === 'ArrowRight'){ lightboxNav(1); e.preventDefault(); }
+    else if(e.key === 'ArrowLeft'){ lightboxNav(-1); e.preventDefault(); }
+    else if(e.key === 'Escape'){ closeLightbox(); }
+    else if(e.key === '+' || e.key === '='){ lightboxZoom(0.5); }
+    else if(e.key === '-'){ lightboxZoom(-0.5); }
+  });
+  const stage = document.getElementById('lbStage'); if(!stage) return;
+  stage.addEventListener('wheel', e=>{ if(!open()) return; e.preventDefault(); lightboxZoom(e.deltaY < 0 ? 0.35 : -0.35); }, {passive:false});
+  let sx = 0, sy = 0, ox = 0, oy = 0, down = false, moved = 0;
+  stage.addEventListener('pointerdown', e=>{ if(e.target.id !== 'lightboxImg') return; down = true; moved = 0; sx = e.clientX; sy = e.clientY; ox = LB.x; oy = LB.y; try{ stage.setPointerCapture(e.pointerId); }catch(_e){} if(LB.zoom > 1) e.target.classList.add('dragging'); });
+  stage.addEventListener('pointermove', e=>{ if(!down) return; const dx = e.clientX - sx, dy = e.clientY - sy; moved = Math.max(moved, Math.abs(dx), Math.abs(dy)); if(LB.zoom > 1){ LB.x = ox + dx; LB.y = oy + dy; lbApplyZoom_(); } });
+  const end = e=>{ if(!down) return; down = false; document.getElementById('lightboxImg').classList.remove('dragging');
+    const dx = e.clientX - sx; if(LB.zoom === 1 && Math.abs(dx) > 70 && Math.abs(e.clientY - sy) < 90) lightboxNav(dx < 0 ? 1 : -1); };
+  stage.addEventListener('pointerup', end); stage.addEventListener('pointercancel', ()=>{ down = false; });
+  stage.addEventListener('dblclick', e=>{ if(e.target.id !== 'lightboxImg') return; LB.zoom = LB.zoom > 1 ? 1 : 2.5; LB.x = 0; LB.y = 0; lbApplyZoom_(); });
+})();
 
 /* Drive-hosted images can be hotlinked several different ways, and Google
    occasionally throttles/blocks one format while another still works —
@@ -7906,22 +7989,9 @@ function shiftGalleryThumb(btn, dir){
   gallery.querySelector('.gallery-count').textContent = `${imgIdx+1}/${p.urls.length}`;
 }
 
-/* Dedicated opener for Ad Manager's before/after cards — built as a real
-   function call (not a raw onclick string) specifically so the caption
-   text (which can contain an address with its own quotes/punctuation)
-   never has to be hand-escaped into an HTML attribute. */
-function smOpenBvLightbox(url, caption){
-  const img = document.getElementById('lightboxImg');
-  img.dataset.fallbackAttempt = '0';
-  img.dataset.fileId = extractDriveFileId(url) || '';
-  img.src = url;
-  document.getElementById('lightboxCaption').textContent = caption;
-  document.getElementById('photoLightbox').classList.add('show');
-}
 function closeLightbox(e){
-  if(e.target.id==='photoLightbox' || e.target.classList.contains('photo-lightbox-close')){
-    document.getElementById('photoLightbox').classList.remove('show');
-  }
+  if(e && e.target && !(e.target.id === 'photoLightbox' || e.target.id === 'lbStage')) return;
+  document.getElementById('photoLightbox').classList.remove('show');
 }
 
 if(!configured()) document.getElementById('cfgWarning').style.display='block';
