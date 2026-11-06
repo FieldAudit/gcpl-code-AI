@@ -170,6 +170,21 @@ main{max-width:1080px; margin:0 auto; padding:22px 18px 70px;}
 .chart-card canvas{max-height:280px;}
 
 
+
+/* ---- Scrolling: table fits the screen height, a second horizontal scrollbar sits ABOVE the table, first column stays in view ---- */
+.table-wrap{max-height:calc(100vh - 120px); min-height:240px;}
+#aa-report .table-wrap{max-height:calc(100vh - 110px); min-height:420px;}
+.xs-bar{overflow-x:auto; overflow-y:hidden; height:16px; margin:0 0 6px; position:sticky; top:0; z-index:6; background:var(--card); border-radius:8px; scrollbar-width:thin;}
+.xs-bar > div{height:1px;}
+.xs-bar::-webkit-scrollbar, .table-wrap::-webkit-scrollbar{height:12px; width:12px;}
+.xs-bar::-webkit-scrollbar-thumb, .table-wrap::-webkit-scrollbar-thumb{background:#B9BED6; border-radius:8px; border:2px solid transparent; background-clip:content-box;}
+.xs-bar::-webkit-scrollbar-thumb:hover, .table-wrap::-webkit-scrollbar-thumb:hover{background:var(--amber); background-clip:content-box;}
+#aaTable thead th:nth-child(1), #aaTable thead th:nth-child(2){position:sticky; z-index:5;}
+#aaTable.has-cb thead th:nth-child(1){left:0;} #aaTable.has-cb thead th:nth-child(2){left:44px;} #aaTable:not(.has-cb) thead th:nth-child(1){left:0;}
+#aaTable.has-cb tbody td:nth-child(1){position:sticky; left:0; z-index:2; background:var(--card); width:44px; min-width:44px;}
+#aaTable.has-cb tbody td:nth-child(2){position:sticky; left:44px; z-index:2; background:var(--card); box-shadow:4px 0 6px -4px rgba(11,15,31,.25);}
+#aaTable:not(.has-cb) tbody td:nth-child(1){position:sticky; left:0; z-index:2; background:var(--card); box-shadow:4px 0 6px -4px rgba(11,15,31,.25);}
+#aaTable tbody td{padding:10px 10px;} #aaTable thead th{padding:11px 10px;}
 /* ---- Ad Audit report table: sticky header with sort + filter, clean rows ---- */
 #aaTable{border-collapse:separate; border-spacing:0;}
 #aaTable thead th{background:linear-gradient(180deg,#141A33,#0B0F1F); color:#fff; padding:11px 12px; font-size:11px; letter-spacing:.06em; z-index:3; white-space:nowrap; border-bottom:2px solid var(--amber);}
@@ -188,7 +203,7 @@ main{max-width:1080px; margin:0 auto; padding:22px 18px 70px;}
 .cf-bar b{color:var(--ink);} .cf-chip{display:inline-flex; align-items:center; gap:6px; background:var(--paper-2); border:1px solid var(--border); border-radius:999px; padding:3px 6px 3px 11px; font-size:12px; color:var(--ink);}
 .cf-chip button{border:0; background:rgba(11,15,31,.12); color:var(--ink); border-radius:50%; width:18px; height:18px; cursor:pointer; font-size:11px; line-height:1;} .cf-chip button:hover{background:var(--red); color:#fff;}
 .cf-clear{border:1px solid var(--border-2); background:var(--card); color:var(--ink); border-radius:8px; padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer;} .cf-clear:hover{border-color:var(--red); color:var(--red);}
-#aa-report .table-wrap{max-height:calc(100vh - 330px); min-height:420px; border-radius:10px; box-shadow:0 1px 3px rgba(11,15,31,.08);}
+#aa-report .table-wrap{border-radius:10px; box-shadow:0 1px 3px rgba(11,15,31,.08);}
 #cfPop{position:fixed; z-index:10050; width:270px; background:var(--card); color:var(--ink); border:1px solid var(--border-2); border-radius:12px; box-shadow:0 18px 50px rgba(11,15,31,.28); padding:12px; font-size:13px; display:none;}
 #cfPop .cf-sort{display:flex; gap:6px; margin-bottom:10px;} #cfPop .cf-sort button{flex:1; border:1px solid var(--border-2); background:var(--paper); border-radius:8px; padding:7px 4px; font-size:12px; font-weight:600; cursor:pointer; color:var(--ink);} #cfPop .cf-sort button:hover{border-color:var(--amber); color:var(--amber-dark);}
 #cfPop input[type=text]{width:100%; box-sizing:border-box; padding:8px 10px; border:1.5px solid var(--border-2); border-radius:8px; font-size:13px; margin-bottom:8px;}
@@ -205,8 +220,15 @@ table.data tr:hover td{background:var(--paper-2);}
 .tag-no{background:var(--red-bg); color:var(--red);}
 .table-wrap{overflow:auto; max-height:520px; border:1px solid var(--border); border-radius:5px;}
 
-.filters{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;}
-.filters input,.filters select{padding:8px 10px; border:1.5px solid var(--border-2); border-radius:3px; font-size:13px;}
+.filters{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; padding:12px; background:var(--paper); border:1px solid var(--border); border-radius:14px;}
+.filters input,.filters select{height:40px; box-sizing:border-box; padding:0 12px; border:1.5px solid var(--border-2); border-radius:10px; background:#fff; font-size:13px; color:var(--ink); transition:border-color .15s, box-shadow .15s;}
+.filters input:focus,.filters select:focus{outline:none; border-color:var(--amber); box-shadow:0 0 0 3px rgba(91,95,239,.16);}
+.filters input[type=text]{min-width:220px; flex:1 1 240px;}
+.filters label{display:flex; align-items:center; gap:8px; height:40px; box-sizing:border-box; padding:0 10px; background:#fff; border:1.5px solid var(--border-2); border-radius:10px; font-weight:600;}
+.filters label input{height:32px; border:0; padding:0 2px; box-shadow:none; background:transparent;}
+.filters .btn{height:40px; padding:0 16px; border-radius:10px; font-size:13px; font-weight:700; display:inline-flex; align-items:center; gap:6px;}
+.filters .btn-outline{background:#fff;} .filters .btn-outline:hover{border-color:var(--amber); color:var(--amber-dark);}
+.filters .btn-dark{background:linear-gradient(135deg,#141A33,#2A3163); box-shadow:0 4px 12px rgba(11,15,31,.25);} .filters .btn-dark:hover{transform:translateY(-1px);}
 
 .empty{text-align:center; padding:40px 20px; color:var(--slate);}
 .empty b{display:block; color:var(--ink); font-family:'Oswald'; text-transform:uppercase; margin-bottom:6px;}
@@ -4655,6 +4677,23 @@ function aaDT_(a, inline){ const d = adDMY_(a.date), t = a.time ? adTime_(a.time
   return inline ? `<b style="white-space:nowrap;">${d}</b> <span style="color:var(--slate); white-space:nowrap;">${t}</span>`
                 : `<div style="font-weight:700; white-space:nowrap;">${d}</div>${t?`<div style="font-size:10.5px; color:var(--slate); white-space:nowrap;">${t}</div>`:''}`; }
 function adDT_(ts){ const m = String(ts||'').match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2})/); return m ? adDMY_(m[1])+' '+adTime_(m[2])+' IST' : adDMY_(ts); }
+/* A second horizontal scrollbar above every wide table, so sideways scrolling never needs a trip to the bottom of the page. */
+function xsEnhance_(){
+  document.querySelectorAll('.table-wrap').forEach(w=>{
+    const need = !!w.offsetParent && w.scrollWidth > w.clientWidth + 4;
+    let bar = (w.previousElementSibling && w.previousElementSibling.classList.contains('xs-bar')) ? w.previousElementSibling : null;
+    if(need && !bar){
+      bar = document.createElement('div'); bar.className = 'xs-bar'; bar.innerHTML = '<div></div>';
+      w.parentNode.insertBefore(bar, w);
+      let lock = false;
+      bar.addEventListener('scroll', ()=>{ if(lock){ lock = false; return; } lock = true; w.scrollLeft = bar.scrollLeft; });
+      w.addEventListener('scroll', ()=>{ if(lock){ lock = false; return; } lock = true; bar.scrollLeft = w.scrollLeft; });
+    }
+    if(bar){ bar.style.display = need ? 'block' : 'none'; bar.firstChild.style.width = w.scrollWidth + 'px'; }
+  });
+}
+setInterval(xsEnhance_, 1200);
+window.addEventListener('resize', xsEnhance_);
 function todayIST_(){ return new Date(Date.now() + 5.5*3600*1000).toISOString().slice(0,10); }
 function parseDateFlexible(v){
   if(!v) return null;
@@ -5443,6 +5482,7 @@ function renderAdAuditTable(){
   }
   const canVerify = canVerifyAds();
   const thead = document.querySelector('#aaTable thead'), tbody = document.querySelector('#aaTable tbody');
+  document.getElementById('aaTable').classList.toggle('has-cb', !!canVerify);
   thead.innerHTML = `<tr>${canVerify?`<th><input type="checkbox" onchange="aaToggleSelectAll(this)" title="Select all unverified shown"></th>`:''}${AA_COLS.map(c=>{
     const sorted = AA_SORT.k===c.k, fOn = AA_CFX[c.k] && AA_CFX[c.k].size;
     return `<th class="cf-th${sorted?' sorted':''}"><div class="cf-h"><span class="cf-lab"${c.nofilter?'':` onclick="aaSortCol('${c.k}')" title="Click to sort"`}>${c.h}${c.nofilter?'':`<span class="cf-arrow">${sorted ? (AA_SORT.dir>0?'▲':'▼') : '▲▼'}</span>`}</span>${c.nofilter?'':`<button class="cf-fn${fOn?' on':''}" onclick="aaOpenFilter(event,'${c.k}')" title="Filter ${c.h}">${fOn?'●':'▾'}</button>`}</div></th>`; }).join('')}</tr>`;
