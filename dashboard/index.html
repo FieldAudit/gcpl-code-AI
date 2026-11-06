@@ -468,7 +468,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.21.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.25.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
     <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="openPwModal()" title="Change your password">🔑 Password</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
@@ -1674,6 +1674,8 @@ $('btnIncXls').onclick = async ()=>{
       <div id="aaBulkVerifyBar" style="display:none; align-items:center; gap:12px; background:var(--green-bg); border-radius:8px; padding:10px 14px; margin-bottom:12px;">
         <span id="aaSelectedCount" style="font-weight:700; font-size:13px;"></span>
         <button class="btn btn-primary" style="padding:6px 14px; font-size:12px;" onclick="aaVerifySelected()">✓ Verify Selected</button>
+        <button class="btn btn-dark" id="aaAddrBtn" style="padding:6px 14px; font-size:12px; display:none;" onclick="aaRunStampAddress()">📍 Run Stamp Address</button>
+        <button class="btn btn-dark" id="aaPhotoBtn" style="padding:6px 14px; font-size:12px; display:none;" onclick="aaAddAddressToPhotos()">🖼 Add Address to Photo</button>
         <button class="btn btn-outline" style="padding:6px 14px; font-size:12px;" onclick="aaClearSelection()">Clear</button>
       </div>
       <div id="aaCfBar" class="cf-bar"></div>
@@ -1782,6 +1784,7 @@ $('btnIncXls').onclick = async ()=>{
     <div class="lb-tools">
       <button class="lb-btn" onclick="lightboxZoom(-0.5)" title="Zoom out (−)" aria-label="Zoom out">−</button>
       <button class="lb-btn" onclick="lightboxZoom(0.5)" title="Zoom in (+)" aria-label="Zoom in">+</button>
+      <button class="lb-btn" id="lbStamp" onclick="lbDownloadStamped_()" title="Download with address footer" aria-label="Download with address footer" style="display:none;">⬇</button>
       <a class="lb-btn" id="lbOpen" href="#" target="_blank" rel="noopener" title="Open original" aria-label="Open original">↗</a>
       <button class="lb-btn lb-close" onclick="closeLightbox()" title="Close (Esc)" aria-label="Close">✕</button>
     </div>
@@ -2818,7 +2821,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.21.0';
+const FRONTEND_VERSION = 'v7.25.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -5378,7 +5381,7 @@ document.addEventListener('click', function(e){
   const img = e.target.closest('.aa-photo-thumb');
   if(!img) return;
   const all = [...img.closest('table').querySelectorAll('.aa-photo-thumb')];
-  openGallery_(all.map(t=>({url:t.dataset.photoUrl, title:'Ad ID ' + (t.dataset.photoCaption||''), sub:t.dataset.photoSub||''})), Math.max(0, all.indexOf(img)));
+  openGallery_(all.map(t=>({url:t.dataset.photoUrl, title:'Ad ID ' + (t.dataset.photoCaption||''), sub:t.dataset.photoSub||'', stamp:(function(){ try{ return JSON.parse(t.dataset.photoStamp||''); }catch(_e){ return null; } })()})), Math.max(0, all.indexOf(img)));
 });
 function switchAdAuditTab(tab){  document.querySelectorAll('#adAuditSection .module-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.aa===tab));
   ['report','import','changelog','auditors'].forEach(t=> document.getElementById('aa-'+t).style.display = (t===tab) ? 'block' : 'none');
@@ -5658,6 +5661,7 @@ function aaUpdateBulkBar(){
   const bar = document.getElementById('aaBulkVerifyBar');
   if(AA_SELECTED.size > 0){
     bar.style.display = 'flex';
+    document.getElementById('aaAddrBtn').style.display = (SESSION.role === 'Admin') ? '' : 'none'; document.getElementById('aaPhotoBtn').style.display = (SESSION.role === 'Admin') ? '' : 'none';
     document.getElementById('aaSelectedCount').textContent = `${AA_SELECTED.size} audit${AA_SELECTED.size===1?'':'s'} selected`;
   } else {
     bar.style.display = 'none';
@@ -5736,9 +5740,68 @@ async function aaVerifyOne(auditId, needsLocationId, needsRoute, btn){
     if(btn){ btn.disabled = false; btn.innerHTML = originalHtml; }
   }
 }
+
+/* Admin: fills Address + nearby landmark from the Lat/Long of every selected audit (done on the server), then updates the table/viewer. */
+async function aaRunStampAddress(){
+  if(SESSION.role !== 'Admin'){ toast('Only Admin can run this', true); return; }
+  const ids = Array.from(AA_SELECTED); if(!ids.length) return;
+  const btn = document.getElementById('aaAddrBtn'); const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = 'Running…';
+  let done = 0, failed = 0;
+  try{
+    for(let i = 0; i < ids.length; i += 100){
+      const part = ids.slice(i, i + 100);
+      btn.innerHTML = `Running… ${Math.min(i + 100, ids.length)} / ${ids.length}`;
+      const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'backfillAdAuditAddresses', role:SESSION.role, auditIds:part})}, 120000).then(r=>r.json());
+      if(!res.success) throw new Error(res.message || 'Could not fetch addresses');
+      (res.rows||[]).forEach(x=>{ const a = (AA_DATA||[]).find(q=>q.auditId === x.auditId); if(a){ a.address = x.address; a.landmark = x.landmark; } });
+      done += (res.rows||[]).length; failed += part.length - (res.rows||[]).length;
+      if(res.stoppedBecause === 'quota'){ failed += 0; toast('Google daily address limit reached — run again tomorrow for the rest', true); break; }
+    }
+    toast(`📍 Address filled for ${done} audit${done===1?'':'s'}` + (failed ? `, ${failed} could not be found (no GPS / no result)` : ''), failed && !done);
+    AA_SELECTED.clear(); renderAdAuditTable();
+  }catch(e){ toast(e.message || 'Could not fetch addresses', true); }
+  finally{ btn.disabled = false; btn.innerHTML = old; }
+}
+
+/* Admin: writes the address footer INTO the original Drive photo (new strip added below; existing footer text is not touched).
+   The previous version is pinned in Drive's Manage versions, so it can always be restored. */
+async function aaAddAddressToPhotos(){
+  if(SESSION.role !== 'Admin'){ toast('Only Admin can run this', true); return; }
+  const ids = Array.from(AA_SELECTED); if(!ids.length) return;
+  if(!confirm(`Add the address footer to ${ids.length} original photo${ids.length===1?'':'s'} in Drive?\n\nA new strip is added BELOW each photo; the existing footer text is not touched. The previous version stays in Drive > Manage versions. Photos already done are skipped.`)) return;
+  const btn = document.getElementById('aaPhotoBtn'); const old = btn.innerHTML; btn.disabled = true;
+  let ok = 0, skipped = 0, failed = 0, last = '';
+  const post = body => fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify(Object.assign({role:SESSION.role}, body))}, 120000).then(r=>r.json());
+  try{
+    for(let i = 0; i < ids.length; i++){
+      btn.innerHTML = `Working… ${i+1} / ${ids.length}`;
+      const rowData = (AA_DATA||[]).find(q=>q.auditId === ids[i]) || {};
+      try{
+        let p = await post({action:'getAdAuditPhoto', auditId:ids[i]});
+        if(!p.success) throw new Error(p.message || 'Photo not available');
+        if(p.fixed){ skipped++; continue; }
+        if(!p.address){
+          const f = await post({action:'backfillAdAuditAddresses', auditIds:[ids[i]]});
+          if(f.stoppedBecause === 'quota'){ toast('Google daily address limit reached — run again tomorrow for the rest', true); break; }
+          if(f.rows && f.rows[0]){ p.address = f.rows[0].address; p.landmark = f.rows[0].landmark; rowData.address = p.address; rowData.landmark = p.landmark; }
+        }
+        const st = {id:p.adId || rowData.adId, addr:p.address || '', lm:p.landmark || '', lat:p.lat, lng:p.lng, when:adDMY_(p.when) + (p.time ? ' ' + adTime_(p.time) + ' IST' : ''), by:p.auditor || ''};
+        const blob = await composeStampedJpeg_(p.b64, st);
+        const b64 = await new Promise((res, rej)=>{ const fr = new FileReader(); fr.onload = ()=>res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
+        const w = await post({action:'replaceAdAuditPhoto', auditId:ids[i], b64});
+        if(!w.success) throw new Error(w.message || 'Could not update the photo');
+        ok++;
+      }catch(e){ failed++; last = e.message || ''; }
+    }
+    toast(`🖼 ${ok} photo${ok===1?'':'s'} updated in Drive` + (skipped ? `, ${skipped} already done` : '') + (failed ? `, ${failed} failed (${last})` : ''), failed && !ok);
+    AA_SELECTED.clear(); renderAdAuditTable();
+  }catch(e){ toast(e.message || 'Could not update photos', true); }
+  finally{ btn.disabled = false; btn.innerHTML = old; }
+}
 async function aaVerifySelected(){
-  if(!AA_SELECTED.size) return;
-  const auditIds = Array.from(AA_SELECTED);
+  const okIds = new Set((AA_DATA||[]).filter(a=>a.verificationStatus !== 'Verified' && !(SESSION.mobile && String(a.auditorMobile||'') === String(SESSION.mobile))).map(a=>a.auditId));
+  const auditIds = Array.from(AA_SELECTED).filter(id=>okIds.has(id));
+  if(!auditIds.length){ toast('Select audits that are still unverified (and not your own) to verify', true); return; }
   try{
     const res = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({
       action:'bulkVerifyAudits', auditIds, role:SESSION.role, verifierName:SESSION.name, verifierMobile:SESSION.mobile||''
@@ -5911,7 +5974,7 @@ function renderAdAuditTable(){
                  + ((needsLocationId||needsRoute) ? `<br><span style="font-size:10px; color:var(--red);">${needsLocationId ? 'Needs a Location ID' : 'Needs Route From/To'} — will ask when you click Verify</span>` : ''))
           : `<span class="tag tag-no">Unverified</span>`);
     return `<tr>
-      ${canVerify?`<td>${(isUnverified && !isOwnSubmission) ? `<input type="checkbox" class="aa-select-cb" data-audit-id="${a.auditId}" ${AA_SELECTED.has(a.auditId)?'checked':''} onchange="aaToggleOne('${a.auditId}', this.checked)">` : ''}</td>`:''}
+      ${canVerify?`<td>${((isUnverified && !isOwnSubmission) || SESSION.role === 'Admin') ? `<input type="checkbox" class="aa-select-cb" data-audit-id="${a.auditId}" ${AA_SELECTED.has(a.auditId)?'checked':''} onchange="aaToggleOne('${a.auditId}', this.checked)">` : ''}</td>`:''}
       <td class="mono" style="font-size:11px;"><a href="javascript:void(0)" onclick="openAdJourney('${a.adId}')" title="View this ad's full audit report">${a.adId}</a></td>
       <td>${a.adType||''}${SESSION.role==='Admin' ? ` <a href="javascript:void(0)" onclick="aaEditType('${a.adId}')" title="Change Ad Type" style="font-size:10px;">✏️</a>` : ''}</td>
       <td class="mono" style="font-size:11px;">${locId}${editLink}</td>
@@ -5922,7 +5985,7 @@ function renderAdAuditTable(){
       <td>${canVerify
           ? `<button class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}" style="border:none; cursor:pointer;" onclick="aaToggleRunning('${a.auditId}','${a.runningStatus==='Yes'?'No':'Yes'}')" title="Click to change">${a.runningStatus==='Yes'?'✅ Running':'🚩 Not running'} ✎</button>`
           : `<span class="tag ${a.runningStatus==='Yes'?'tag-yes':'tag-no'}">${a.runningStatus==='Yes'?'✅ Running':'🚩 Not running'}</span>`}</td>
-      <td>${a.photoUrl ? `<img src="${a.photoUrl}" data-photo-url="${a.photoUrl}" data-photo-caption="${esc_(a.adId)}" data-photo-sub="${esc_([a.auditorName, adDMY_(a.date) + (a.time ? ' ' + adTime_(a.time) + ' IST' : ''), a.runningStatus === 'Yes' ? 'Running' : 'Not running'].filter(Boolean).join('  ·  '))}" class="aa-photo-thumb" style="width:44px; height:44px; object-fit:cover; border-radius:6px; cursor:pointer;">` : '—'}</td>
+      <td>${a.photoUrl ? `<img src="${a.photoUrl}" data-photo-url="${a.photoUrl}" data-photo-caption="${esc_(a.adId)}" data-photo-sub="${esc_([a.auditorName, adDMY_(a.date) + (a.time ? ' ' + adTime_(a.time) + ' IST' : ''), a.runningStatus === 'Yes' ? 'Running' : 'Not running'].filter(Boolean).join('  ·  ') + ((a.address || a.landmark) ? '\n📍 ' + [a.address, a.landmark ? 'Near ' + a.landmark : ''].filter(Boolean).join('  ·  ') : (a.lat && a.lng ? '\n📍 GPS ' + Number(a.lat).toFixed(5) + ', ' + Number(a.lng).toFixed(5) + ' (address updating)' : '')))}" data-photo-stamp="${esc_(JSON.stringify({id:a.adId, addr:a.address||'', lm:a.landmark||'', lat:a.lat, lng:a.lng, when:adDMY_(a.date) + (a.time ? ' ' + adTime_(a.time) + ' IST' : ''), by:a.auditorName||''}))}" class="aa-photo-thumb" style="width:44px; height:44px; object-fit:cover; border-radius:6px; cursor:pointer;">` : '—'}</td>
       <td>${(a.lat&&a.lng) ? `<a class="btn btn-outline" href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" style="white-space:nowrap; padding:4px 10px; font-size:11px;">📍 View</a>` : '—'}</td>
       <td>${verificationCell}</td>
     </tr>`;
@@ -7795,7 +7858,7 @@ function lbRender_(anim){
   img.src = it.url;                            // tried unmodified first; onerror walks through the other Drive formats
   lbApplyZoom_();
   document.getElementById('lightboxCaption').textContent = it.title || '';
-  const sub = document.getElementById('lightboxSub'); sub.textContent = it.sub || ''; sub.style.display = it.sub ? '' : 'none';
+  const sub = document.getElementById('lightboxSub'); sub.textContent = it.sub || ''; sub.style.whiteSpace = 'pre-line'; sub.style.display = it.sub ? '' : 'none';
   const many = LB.items.length > 1;
   const counter = document.getElementById('lightboxCounter');
   counter.textContent = many ? `${LB.i + 1} / ${LB.items.length}` : ''; counter.classList.toggle('on', many);
@@ -7803,7 +7866,50 @@ function lbRender_(anim){
   document.getElementById('lbNext').style.display = many ? '' : 'none';
   document.getElementById('lbHint').textContent = many ? '← → to browse · scroll or + − to zoom · Esc to close' : 'Scroll or + − to zoom · Esc to close';
   const open = document.getElementById('lbOpen'); open.href = it.url;
+  document.getElementById('lbStamp').style.display = (it.stamp && CAN_EXPORT()) ? '' : 'none';
   [-1, 1].forEach(d=>{ const n = LB.items[(LB.i + d + LB.items.length) % LB.items.length]; if(n && n.url !== it.url){ const pre = new Image(); pre.src = n.url; } });   // warm the neighbours
+}
+
+/* Ad Audit photo -> JPEG with a clean address footer added BELOW the original picture (original file in Drive is never touched).
+   The address/landmark come from the audit record (filled on the server from the GPS lat/long). */
+async function composeStampedJpeg_(b64, st){
+    const img = new Image();
+    await new Promise((ok, bad)=>{ img.onload = ok; img.onerror = ()=>bad(new Error('Photo could not be opened')); img.src = 'data:image/jpeg;base64,' + b64; });
+    const W = img.naturalWidth, H = img.naturalHeight, u = Math.max(W / 900, 0.8);
+    const lines = [];
+    lines.push({t:'AD AUDIT  ·  ' + st.id, f:'700 ' + 26*u + 'px Arial', c:'#FFFFFF'});
+    const addr = st.addr || (st.lat && st.lng ? 'GPS ' + Number(st.lat).toFixed(5) + ', ' + Number(st.lng).toFixed(5) : '');
+    const cv0 = document.createElement('canvas').getContext('2d');
+    const wrap = (txt, font, max)=>{ cv0.font = font; const w = txt.split(/\s+/); const out = []; let cur = ''; w.forEach(x=>{ const t = cur ? cur + ' ' + x : x; if(cv0.measureText(t).width > max && cur){ out.push(cur); cur = x; } else cur = t; }); if(cur) out.push(cur); return out; };
+    const maxW = W - 48*u;
+    if(addr) wrap('📍 ' + addr, '600 ' + 24*u + 'px Arial', maxW).forEach(t=>lines.push({t, f:'600 ' + 24*u + 'px Arial', c:'#FFE9A8'}));
+    if(st.lm) lines.push({t:'Near: ' + st.lm, f:'500 ' + 22*u + 'px Arial', c:'#CFE3FF'});
+    if(st.lat && st.lng) lines.push({t:'GPS ' + Number(st.lat).toFixed(6) + ', ' + Number(st.lng).toFixed(6), f:'500 ' + 21*u + 'px Arial', c:'#D5D9F0'});
+    lines.push({t:[st.when, st.by].filter(Boolean).join('  ·  '), f:'500 ' + 21*u + 'px Arial', c:'#D5D9F0'});
+    const lh = 34*u, pad = 20*u, barH = pad*2 + lines.length*lh;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = Math.round(H + barH);
+    const g = cv.getContext('2d');
+    g.drawImage(img, 0, 0, W, H);
+    g.fillStyle = '#10163A'; g.fillRect(0, H, W, barH);
+    g.fillStyle = '#E8B04B'; g.fillRect(0, H, W, 4*u);
+    g.textBaseline = 'top';
+    lines.forEach((l, i)=>{ g.font = l.f; g.fillStyle = l.c; g.fillText(l.t, 24*u, H + pad + i*lh); });
+    return await new Promise(ok=>cv.toBlob(ok, 'image/jpeg', 0.92));
+}
+async function lbDownloadStamped_(){
+  const it = LB.items[LB.i]; if(!it || !it.stamp) return;
+  if(!exportAllowed_()) return;
+  const btn = document.getElementById('lbStamp'); const old = btn.textContent; btn.textContent = '…'; btn.disabled = true;
+  try{
+    const st = it.stamp;
+    const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body: JSON.stringify({action:'fetchPhotoChunk', token:SESSION.token, items:[{url:it.url, filename:'x.jpg', row:[]}]})}, 90000, 0);
+    const res = noteIfSessionExpired_(await safeJson(r));
+    if(!res || !res.success || !(res.files||[]).length) throw new Error('Could not read this photo from Drive');
+    const blob = await composeStampedJpeg_(res.files[0].b64, st);
+    setExportMeta_('adaudit', '', '', 1);
+    downloadBlobFile(blob, 'AdAudit_' + String(st.id||'photo').replace(/[^\w-]+/g,'_') + '_' + localDateStr() + '.jpg');
+  }catch(e){ toast(e.message || 'Could not create the photo', true); }
+  finally{ btn.textContent = old; btn.disabled = false; }
 }
 function lightboxImgLoaded(){ document.getElementById('lbSpin').classList.remove('on'); }
 function lbApplyZoom_(){
