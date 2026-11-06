@@ -476,6 +476,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
     <button data-tab="master" id="masterTabBtn" onclick="showTab('master')" style="display:none;">Master Data</button>
     <button data-tab="users" id="usersTabBtn" onclick="showTab('users')" style="display:none;">👥 Users</button>
     <button data-tab="permissions" id="permTabBtn" onclick="showTab('permissions')" style="display:none;">🔐 Permissions</button>
+    <button data-tab="logs" id="logsTabBtn" onclick="showTab('logs')" style="display:none;">📜 Activity Log</button>
     <button data-tab="team" id="teamTabBtn" onclick="showTab('team')" style="display:none;">Team</button>
     <button data-tab="auditorwise" id="auditorWiseTabBtn" onclick="showTab('auditorwise')" style="display:none;">👤 Auditor-wise</button>
     <button data-tab="noproduct" id="noProductTabBtn" onclick="showTab('noproduct')" style="display:none;">🚫 NPA</button>
@@ -567,6 +568,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
           <label style="font-size:13px; display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="photoSelectAll" onchange="togglePhotoSelectAll(this)"> Select all shown</label>
           <span id="photoSelectedCount" style="font-size:12px; color:var(--slate);">0 selected</span>
           <button class="btn btn-dark" onclick="exportPhotosZip()">📦 Download ZIP <span id="zipScopeLabel">(all shown)</span></button>
+          <button class="btn btn-outline" id="photoDeleteBtn" onclick="deleteSelectedPhotos()" style="display:none; color:var(--red); border-color:var(--red);">🗑 Delete selected</button>
         </div>
       </div>
       <div id="photosContent"><div class="empty photos-loading"><div class="mini-progress-track"><div class="mini-progress-fill" id="photosProgressFill"></div></div><div class="mini-progress-label" id="photosProgressLabel">Fetching photo records… 0%</div></div></div>
@@ -585,6 +587,21 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
           <button class="btn btn-outline" id="usrCancelBtn" onclick="resetUserForm()" style="display:none;">Cancel edit</button>
         </div>
         <div class="table-wrap" style="margin-top:16px;"><table class="data" id="usersTable"><thead><tr><th>User ID</th><th>Name</th><th>Role</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="tab-logs" style="display:none;">
+      <div class="card">
+        <h2>📜 Activity Log</h2>
+        <div class="hint">Visible to Admin only. Shows who exported or downloaded data, when (IST), for which date range and how many records — plus photo deletions, permission changes and password changes.</div>
+        <div class="filters" style="margin:12px 0;">
+          <input type="text" id="logSearch" placeholder="Search user, file, details…" oninput="renderActivityLog()">
+          <select id="logAction" onchange="renderActivityLog()"><option value="">All actions</option><option>Export</option><option>Photo ZIP download</option><option>Photo delete</option><option>Permission change</option><option>Password change</option></select>
+          <select id="logUser" onchange="renderActivityLog()"><option value="">All users</option></select>
+          <button class="btn btn-outline" onclick="loadActivityLog()">↻ Refresh</button>
+          <span id="logCount" style="font-size:12px; color:var(--slate);"></span>
+        </div>
+        <div class="perm-wrap" style="max-height:62vh;"><table class="perm" id="logTable" style="min-width:900px;"><thead><tr><th class="rolecol">When (IST)</th><th>User</th><th>Role</th><th>Action</th><th>Module</th><th>From</th><th>To</th><th>Records</th><th style="text-align:left;">Details</th></tr></thead><tbody><tr><td colspan="9"><div class="empty">Loading…</div></td></tr></tbody></table></div>
       </div>
     </section>
 
@@ -1805,6 +1822,18 @@ function myPerms_(){
 function hasTab(k){ return myPerms_().tabs.indexOf(k) !== -1; }
 function CAN_EXPORT(){ const p = myPerms_(); return !!(p.export && !p.viewOnly); }
 function CAN_UPLOAD(){ const p = myPerms_(); return !!(p.upload && !p.viewOnly); }
+/* Every export / download is written to the Admin-only Activity Log (who, when in IST, which date range, how many rows). */
+let EXPORT_META_ = null;
+function setExportMeta_(module, from, to, rows){ EXPORT_META_ = {module, from:from||'', to:to||'', rows:(rows==null?'':rows), at:Date.now()}; }
+function logExport_(filename){
+  try{
+    if(!SESSION || !SESSION.token || SESSION.token === 'demo' || !configured()) return;
+    const m = (EXPORT_META_ && Date.now() - EXPORT_META_.at < 300000) ? EXPORT_META_ : {};
+    EXPORT_META_ = null;
+    const kind = /\.zip$/i.test(String(filename||'')) ? 'Photo ZIP download' : 'Export';
+    fetch(SCRIPT_URL, {method:'POST', keepalive:true, body:JSON.stringify({action:'logActivity', token:SESSION.token, kind, module:m.module || MODULE, fromDate:m.from||'', toDate:m.to||'', count:m.rows==null?'':m.rows, details:String(filename||'')})}).catch(()=>{});
+  }catch(_e){}
+}
 function exportAllowed_(){
   if(CAN_EXPORT()) return true;
   try{ toast('Your role (' + SESSION.role + ') can view data but cannot export or download it.', true); }catch(_e){}
@@ -1848,6 +1877,7 @@ let SB_FAIL_UNTIL = 0;     // after a transport failure the data service is skip
    sharing permission at all. */
 function downloadBase64File(base64, filename, mime){
   if(!exportAllowed_()) return;
+  logExport_(filename);
   const byteChars = atob(base64);
   const byteNumbers = new Array(byteChars.length);
   for(let i=0;i<byteChars.length;i++) byteNumbers[i] = byteChars.charCodeAt(i);
@@ -2095,6 +2125,7 @@ function loadExcelJS(){
 }
 function downloadBlobFile(blob, filename){
   if(!exportAllowed_()) return;
+  logExport_(filename);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename;
@@ -2153,6 +2184,7 @@ function applyProReportStyling(ws, headers, dataRowCount){
 }
 function downloadWorkbook(wb, filename){
   if(!exportAllowed_()) return;
+  logExport_(filename);
   // cellStyles: true is required for the free (Community Edition) build
   // of this library to actually write any cell.s styling (fills, fonts,
   // borders) into the .xlsx it produces — without it, style objects set
@@ -2587,7 +2619,7 @@ function applyPermsUi_(){
   if(!SESSION) return;
   const isAdmin = SESSION.role === 'Admin';
   const show = (id, on)=>{ const el = document.getElementById(id); if(el) el.style.display = on ? 'inline-block' : 'none'; };
-  show('masterTabBtn', isAdmin); show('usersTabBtn', isAdmin); show('permTabBtn', isAdmin);
+  show('masterTabBtn', isAdmin); show('usersTabBtn', isAdmin); show('permTabBtn', isAdmin); show('logsTabBtn', isAdmin);
   show('teamTabBtn', hasTab('team'));
   NO_PRODUCT_ROLE_ALLOWED = hasTab('npa');
   show('noProductTabBtn', (typeof MODULE === 'undefined' || MODULE === 'retail') && NO_PRODUCT_ROLE_ALLOWED);
@@ -2750,7 +2782,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.19.0';
+const FRONTEND_VERSION = 'v7.20.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -3013,7 +3045,7 @@ function switchSourceTab(tab){
 }
 
 function showTab(name){
-  ['dash','approvals','map','history','photos','master','users','permissions','team','auditorwise','noproduct'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
+  ['dash','approvals','map','history','photos','master','users','permissions','logs','team','auditorwise','noproduct'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   if(name==='dash') renderDashboard();
   if(name==='approvals') renderApprovals();
@@ -3023,6 +3055,7 @@ function showTab(name){
   if(name==='master') loadMasterData();
   if(name==='users') loadUsersAdmin();
   if(name==='permissions') loadPermissions();
+  if(name==='logs') loadActivityLog();
   if(name==='team'){
     document.getElementById('teamGridView').style.display='block';
     document.getElementById('teamJourneyView').style.display='none';
@@ -3647,6 +3680,75 @@ function parseMasterRows(text, expectedCols){
     while(row.length < expectedCols) row.push('');
     return row.slice(0, expectedCols);
   });
+}
+
+/* ---------- Admin: Activity Log ---------- */
+let ACTIVITY_ROWS = [];
+async function loadActivityLog(){
+  const tb = document.querySelector('#logTable tbody');
+  tb.innerHTML = '<tr><td colspan="9"><div class="empty"><span class="spin"></span> Loading log…</div></td></tr>';
+  try{
+    if(!configured()) throw new Error('Backend not connected');
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=getActivityLog&token=${encodeURIComponent(SESSION.token)}&_t=${Date.now()}`, {cache:'no-store'}, 30000);
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message || 'Could not load the log');
+    ACTIVITY_ROWS = res.rows || [];
+    const sel = document.getElementById('logUser'), keep = sel.value;
+    const users = [...new Set(ACTIVITY_ROWS.map(x=>x.user).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">All users</option>' + users.map(u=>`<option>${esc_(u)}</option>`).join('');
+    sel.value = users.indexOf(keep) !== -1 ? keep : '';
+    renderActivityLog();
+  }catch(e){ tb.innerHTML = `<tr><td colspan="9"><div class="empty">${esc_(e.message || 'Could not load the log')}</div></td></tr>`; }
+}
+function renderActivityLog(){
+  const q = document.getElementById('logSearch').value.toLowerCase(), a = document.getElementById('logAction').value, u = document.getElementById('logUser').value;
+  const rows = ACTIVITY_ROWS.filter(x => (!a || x.action === a) && (!u || x.user === u) && (!q || [x.user,x.userId,x.module,x.details,x.action].join(' ').toLowerCase().includes(q)));
+  document.getElementById('logCount').textContent = rows.length + ' of ' + ACTIVITY_ROWS.length + ' shown';
+  const tb = document.querySelector('#logTable tbody');
+  if(!rows.length){ tb.innerHTML = '<tr><td colspan="9"><div class="empty">No log entries match.</div></td></tr>'; return; }
+  const isExp = x => x.action === 'Export' || x.action === 'Photo ZIP download';
+  tb.innerHTML = rows.map(x=>`<tr>
+    <td style="white-space:nowrap; font-weight:600;">${esc_(x.when)}</td><td style="text-align:left;">${esc_(x.user)}</td><td>${esc_(x.role)}</td>
+    <td style="white-space:nowrap;"><b>${esc_(x.action)}</b></td><td>${esc_(x.module)}</td>
+    <td>${esc_(x.from || (isExp(x) ? 'All' : '—'))}</td><td>${esc_(x.to || (isExp(x) ? 'All' : '—'))}</td><td>${esc_(x.count || '—')}</td>
+    <td style="text-align:left; font-size:12px; color:var(--slate); word-break:break-word; min-width:220px;">${esc_(x.details)}</td></tr>`).join('');
+}
+
+/* ---------- Admin: delete photos (moves the Drive file to Trash) ---------- */
+const DELETED_PHOTO_KEY = 'fa_deleted_photo_ids_v1';
+function deletedPhotoIds_(){ try{ return new Set(JSON.parse(localStorage.getItem(DELETED_PHOTO_KEY) || '[]')); }catch(_e){ return new Set(); } }
+function driveIdOf_(u){ const m = /[?&]id=([\w-]{15,})/.exec(String(u||'')) || /\/d\/([\w-]{15,})/.exec(String(u||'')); return m ? m[1] : ''; }
+function dropDeletedPhotos_(list){
+  const del = deletedPhotoIds_(); if(!del.size) return list;
+  return list.map(p=>{
+    if(p.isPdf) return del.has(driveIdOf_(p.url)) ? null : p;
+    const urls = (p.urls||[]).filter(u=>!del.has(driveIdOf_(u)));
+    return urls.length ? Object.assign({}, p, {urls}) : null;
+  }).filter(Boolean);
+}
+async function deleteSelectedPhotos(){
+  if(!SESSION || SESSION.role !== 'Admin'){ toast('Only Admin can delete photos', true); return; }
+  const ticked = CURRENT_PHOTO_LIST.filter(p=>SELECTED_PHOTO_KEYS.has(photoKey(p)));
+  if(!ticked.length){ toast('Tick the photos you want to delete first (nothing is deleted without ticking).', true); return; }
+  const external = ticked.filter(p=>p.source === 'External (GCPL app)');
+  const own = ticked.filter(p=>p.source !== 'External (GCPL app)');
+  if(!own.length){ toast('Photos from the external GCPL sheet cannot be deleted here.', true); return; }
+  const urls = []; own.forEach(p=>{ if(p.isPdf) urls.push(p.url); else (p.urls||[]).forEach(u=>urls.push(u)); });
+  const ok = confirm(`Delete ${own.length} photo card${own.length===1?'':'s'} (${urls.length} file${urls.length===1?'':'s'})?\n\nThe files are moved to the Google Drive Trash (recoverable there for 30 days) and removed from the audit records.` + (external.length ? `\n\n${external.length} external-sheet card(s) will be skipped.` : ''));
+  if(!ok) return;
+  const btn = document.getElementById('photoDeleteBtn'); const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Deleting…';
+  try{
+    const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'deletePhotos', token:SESSION.token, urls, module:MODULE})}, 120000);
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message || 'Could not delete');
+    const del = deletedPhotoIds_(); (res.ids||[]).forEach(i=>del.add(i));
+    try{ localStorage.setItem(DELETED_PHOTO_KEY, JSON.stringify([...del].slice(-5000))); }catch(_e){}
+    own.forEach(p=>SELECTED_PHOTO_KEYS.delete(photoKey(p)));
+    try{ localStorage.removeItem(photosCacheKey()); }catch(_e){}
+    renderPhotos();
+    toast(res.message + (res.failed && res.failed.length ? ' (see Drive permissions for the rest)' : ''), !!(res.failed && res.failed.length));
+  }catch(e){ toast(e.message || 'Could not delete', true); }
+  finally{ btn.disabled = false; btn.innerHTML = orig; }
 }
 
 /* ---------- Admin: Permissions tab ---------- */
@@ -7142,6 +7244,7 @@ async function exportReportLocal(){
     return !!y && (!from || y >= from) && (!to || y <= to);
   });
   if(!rows.length){ toast('No audits in that date range', true); return true; }
+  setExportMeta_(MODULE, from, to, rows.length);
   await runLocalProExport(MODULE === 'db' ? dbExportSpec_(rows, from, to) : retailExportSpec_(rows, from, to), hadToLoad ? 60 : 10);
   toast(`Report downloaded — ${rows.length} audit${rows.length===1?'':'s'}`);
   return true;
@@ -7169,6 +7272,7 @@ async function exportReport(){
     const toDate = document.getElementById('histTo').value;
     const res = await callApi({action:'exportReport', token:SESSION.token, module:MODULE, fromDate, toDate});
     if(!res.success) throw new Error(res.message || 'Export failed');
+    setExportMeta_(MODULE, fromDate, toDate, '');
     finishExportProgress();
     downloadBase64File(res.base64, res.filename);
   }catch(e){
@@ -7246,6 +7350,7 @@ function exportBetaverseAuditorReport(){
 function updateSelectedCountLabel(){
   const n = CURRENT_PHOTO_LIST.filter(p=>SELECTED_PHOTO_KEYS.has(photoKey(p))).length;
   document.getElementById('photoSelectedCount').textContent = n + ' selected';
+  { const d = document.getElementById('photoDeleteBtn'); if(d) d.style.display = (SESSION && SESSION.role === 'Admin') ? '' : 'none'; }
   document.getElementById('zipScopeLabel').textContent = n ? `(${n} selected)` : (CURRENT_PHOTO_LIST.length ? `(all ${CURRENT_PHOTO_LIST.length} shown)` : '(nothing shown)');
   const allBox = document.getElementById('photoSelectAll');
   if(allBox) allBox.checked = CURRENT_PHOTO_LIST.length > 0 && n === CURRENT_PHOTO_LIST.length;
@@ -7296,6 +7401,7 @@ async function exportPhotosZip(){
       toast(`${items.length} files match — that is too many for one export. Narrow the From/To dates (or the filters) to ${PHOTO_ZIP_MAX_ITEMS} or fewer.`, true);
       return;
     }
+    setExportMeta_('photos', (document.getElementById('photoFrom')||{}).value, (document.getElementById('photoTo')||{}).value, items.length);
     const header = ['Filename','Date','Type','Name','Source', ...(cards[0].details||[]).map(d=>d[0])];
     const csvCell = v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"';
     startExportProgress(); started = true;
@@ -7437,7 +7543,7 @@ function buildPhotoList(){
       name:r.dbName||'—', source:src, details
     });
   });
-  return list.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+  return dropDeletedPhotos_(list).sort((a,b)=> (b.date||'').localeCompare(a.date||''));
 }
 
 let CURRENT_PHOTO_LIST = [];
