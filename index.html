@@ -2588,7 +2588,7 @@ async function buildAndDownloadFullPDF(title, rows, photos, fileNameBase){
     // rather than crashing here, throw a clear message that the caller's
     // existing try/catch already handles gracefully (the audit itself is
     // saved either way; only the local PDF copy is skipped).
-    throw new Error('PDF library did not load — check your connection and try Download from History later.');
+    throw new Error('PDF library did not load — check your connection and try the download again.');
   }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'pt', format:'a4'});
