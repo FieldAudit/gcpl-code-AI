@@ -2716,9 +2716,118 @@ async function smStampAddress_(lat, lng, known){
   const k = String(known||'').trim();
   if(k && k.length > 8) return k;
   try{
-    const base = await Promise.race([getBaseAddress(lat, lng), new Promise(r=>setTimeout(()=>r(null), 6000))]);
+    const base = await Promise.race([getBaseAddress(lat, lng), new Promise(r=>setTimeout(()=>r(null), 10000))]);
     return (base && base.formatted) || '';
   }catch(_e){ return ''; }
+}
+/* ---- Ad Manager photo footer ("stamp") — a clean, structured panel burned into the photo:
+   a highlighted ID chip + date/time (IST, DD-MM-YYYY) on top, then labelled rows (Auditor, GPS, Address, Near).
+   spec = {tag:'AD ID', id:'34F30…', auditor, lat, lng, address, landmark}. Never throws: on any problem the photo is returned unstamped. ---- */
+function istStampTime_(){
+  try{
+    const parts = {}; new Intl.DateTimeFormat('en-GB', {timeZone:'Asia/Kolkata', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hourCycle:'h23'})
+      .formatToParts(new Date()).forEach(x=>{ parts[x.type] = x.value; });
+    return `${parts.day}-${parts.month}-${parts.year}  ${parts.hour}:${parts.minute}:${parts.second} IST`;
+  }catch(_e){ return ''; }
+}
+function stampAdPhoto_(base64, spec){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    img.onerror = ()=>resolve(base64);
+    img.onload = function(){
+      try{
+        const W = img.width, H = img.height;
+        const fs = Math.max(14, Math.round(W/46)), small = Math.max(10, Math.round(fs*0.68));
+        const pad = Math.round(fs*0.9), gap = Math.round(fs*0.5), lineH = Math.round(fs*1.32);
+        const canvas = document.createElement('canvas'); canvas.width = W;
+        const m = canvas.getContext('2d');
+        const FONT = '"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+        const setF = (px, w)=>{ m.font = `${w||600} ${px}px ${FONT}`; };
+        const wrap = (text, maxW, maxLines)=>{
+          setF(fs, 600);
+          const words = String(text||'').split(/\s+/).filter(Boolean), out = []; let cur = '';
+          words.forEach(w=>{ const t = cur ? cur + ' ' + w : w; if(cur && m.measureText(t).width > maxW){ out.push(cur); cur = w; } else cur = t; });
+          if(cur) out.push(cur);
+          if(out.length > maxLines){ const keep = out.slice(0, maxLines); keep[maxLines-1] = keep[maxLines-1].replace(/[,\s]*\S*$/, '') + '…'; return keep; }
+          return out;
+        };
+        setF(small, 800);
+        const labW = Math.round(Math.max(m.measureText('AUDITOR').width, m.measureText('ADDRESS').width) + fs*0.9);
+        const valX = pad + 6 + labW, valW = W - valX - pad;
+        const rows = [];
+        if(spec.auditor) rows.push(['AUDITOR', [String(spec.auditor)], '#FFFFFF']);
+        if(spec.lat != null && spec.lng != null) rows.push(['GPS', [Number(spec.lat).toFixed(6) + ',  ' + Number(spec.lng).toFixed(6)], '#FFFFFF']);
+        if(spec.address) rows.push(['ADDRESS', wrap(spec.address, valW, 3), '#E8ECFF']);
+        else rows.push(['ADDRESS', ['Could not be fetched (weak network) — see GPS above'], '#FFB4B4']);
+        if(spec.landmark) rows.push(['NEAR', wrap(spec.landmark, valW, 2), '#FFD27A']);
+        // header: chip (tag + id) on the left, date/time on the right
+        setF(fs, 800);
+        const chipText = (spec.tag ? spec.tag + '  ' : '') + (spec.id || '');
+        const chipW = Math.round(m.measureText(chipText).width + fs*1.2), chipH = Math.round(fs*1.75);
+        setF(Math.round(fs*0.92), 600);
+        const timeText = istStampTime_(), timeW = Math.round(m.measureText(timeText).width);
+        const stacked = (pad + chipW + gap*2 + timeW + pad) > W;     // narrow photo: time goes on its own line
+        const headH = stacked ? chipH + lineH : chipH;
+        let bodyH = 0; rows.forEach(r=>{ bodyH += r[1].length*lineH + Math.round(fs*0.28); });
+        const fade = Math.round(fs*1.6);
+        const barH = fade + pad + headH + Math.round(fs*0.55) + bodyH + Math.round(fs*0.3);
+        canvas.height = H;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const top = H - barH;
+        const g = ctx.createLinearGradient(0, top, 0, H);
+        g.addColorStop(0, 'rgba(8,12,28,0)'); g.addColorStop(fade/barH, 'rgba(8,12,28,0.80)'); g.addColorStop(1, 'rgba(8,12,28,0.94)');
+        ctx.fillStyle = g; ctx.fillRect(0, top, W, barH);
+        // accent strip on the left of the panel
+        ctx.fillStyle = '#F5A623'; ctx.fillRect(0, top + fade, Math.max(4, Math.round(fs*0.3)), barH - fade);
+        let y = top + fade + Math.round(pad*0.4);
+        // chip
+        ctx.fillStyle = '#F5A623';
+        const r = Math.round(chipH/2), cx = pad, cy = y;
+        ctx.beginPath(); ctx.moveTo(cx+r, cy); ctx.arcTo(cx+chipW, cy, cx+chipW, cy+chipH, r); ctx.arcTo(cx+chipW, cy+chipH, cx, cy+chipH, r); ctx.arcTo(cx, cy+chipH, cx, cy, r); ctx.arcTo(cx, cy, cx+chipW, cy, r); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#12172B'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.font = `800 ${fs}px ${FONT}`;
+        ctx.fillText(chipText, cx + Math.round(fs*0.6), cy + chipH/2 + 1);
+        // date / time (IST)
+        ctx.fillStyle = '#FFFFFF'; ctx.font = `600 ${Math.round(fs*0.92)}px ${FONT}`;
+        if(stacked){ ctx.textAlign = 'left'; ctx.fillText(timeText, pad, cy + chipH + lineH/2); }
+        else { ctx.textAlign = 'right'; ctx.fillText(timeText, W - pad, cy + chipH/2 + 1); }
+        y += headH + Math.round(fs*0.55);
+        // divider
+        ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(pad, y - Math.round(fs*0.28), W - pad*2, 1);
+        // labelled rows
+        ctx.textAlign = 'left';
+        rows.forEach(rw=>{
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#9BA3C7'; ctx.font = `800 ${small}px ${FONT}`; ctx.fillText(rw[0], pad + 6, y + lineH/2);
+          ctx.fillStyle = rw[2]; ctx.font = `600 ${fs}px ${FONT}`;
+          rw[1].forEach((ln, i)=>{ ctx.fillText(ln, valX, y + lineH/2 + i*lineH); });
+          y += rw[1].length*lineH + Math.round(fs*0.28);
+        });
+        resolve(canvas.toDataURL('image/jpeg', 0.9));
+      }catch(_e){ resolve(base64); }
+    };
+    img.src = base64;
+  });
+}
+/* Splits a trailing ", Near <landmark>" off an address (the auto-filled addresses carry it) and, when there is none,
+   looks one up from the GPS point — never waiting more than a few seconds, so a slow network cannot block a submit. */
+async function smStampParts_(lat, lng, known, pre){
+  const wait = (ms)=>new Promise(r=>setTimeout(()=>r(null), ms));
+  let address = String(known||'').trim(); if(address.length <= 8) address = '';
+  let landmark = '';
+  let early = null;                       // the address / landmark already being looked up since the GPS point was captured
+  if(pre){ try{ early = await Promise.race([pre, wait(10000)]); }catch(_e){ early = null; } }
+  if(early){ if(!address) address = early.address || ''; landmark = early.landmark || ''; }
+  if(!address) address = await smStampAddress_(lat, lng, '');       // one more try, with a longer wait
+  const m = /^(.*?)[,\s]*\bNear\s+(.+)$/i.exec(address || '');    // an auto-filled address can already carry ", Near <landmark>"
+  if(m){ address = m[1].trim().replace(/,$/, ''); if(!landmark) landmark = m[2].trim(); }
+  if(!landmark){
+    try{
+      const lm = await Promise.race([findNearbyLandmark(lat, lng), wait(6000)]);
+      if(lm && lm.name) landmark = lm.name;
+    }catch(_e){}
+  }
+  return {address, landmark};
 }
 function watermarkLines(){
   const auditor = document.getElementById('f_auditor').value || '—';
@@ -3478,6 +3587,7 @@ function smCaptureAdAuditLocation(){
   navigator.geolocation.getCurrentPosition((pos)=>{
     const lat=pos.coords.latitude, lng=pos.coords.longitude, accuracy=pos.coords.accuracy;
     SM_AD_AUDIT.geo = {lat, lng, accuracy};
+    SM_AD_AUDIT.geoParts = smStampParts_(lat, lng, '', null).catch(()=>null);   // look the address + nearby landmark up NOW, while the auditor searches for the ad
     document.getElementById('smAdGeoStatus').className = 'geo-status got';
     document.getElementById('smAdGeoStatus').textContent = `✅ ${lat.toFixed(6)}, ${lng.toFixed(6)} (±${Math.round(accuracy)}m)`;
     setBtnIdle(btn, '📍 Re-capture Location');
@@ -3751,12 +3861,8 @@ async function smSubmitAdAudit(){
       // as auditing one that already existed.
       let stampedPhoto = SM_AD_AUDIT.photoRaw;
       try{
-        const addrNew = await smStampAddress_(SM_AD_AUDIT.geo.lat, SM_AD_AUDIT.geo.lng, f.locationName);
-        stampedPhoto = await stampPhoto(SM_AD_AUDIT.photoRaw, [
-          `${new Date().toLocaleString()}  •  ${SM_AD_AUDIT.geo.lat.toFixed(6)}, ${SM_AD_AUDIT.geo.lng.toFixed(6)}`,
-          `Ad ID: (new)   Auditor: ${CHECKIN_NAME||'—'}`,
-          addrNew ? `Address: ${addrNew}` : ''
-        ]);
+        const partsNew = await smStampParts_(SM_AD_AUDIT.geo.lat, SM_AD_AUDIT.geo.lng, f.locationName, SM_AD_AUDIT.geoParts);
+        stampedPhoto = await stampAdPhoto_(SM_AD_AUDIT.photoRaw, {tag:'AD ID', id:'NEW AD', auditor:CHECKIN_NAME||'—', lat:SM_AD_AUDIT.geo.lat, lng:SM_AD_AUDIT.geo.lng, address:partsNew.address, landmark:partsNew.landmark});
       }catch(_e2){}
       queuePendingSubmission('admanager-newad', BETAVERSE_SCRIPT_URL, createPayload, {
         auditorName: CHECKIN_NAME, auditorMobile: CHECKIN_PHONE,
@@ -3799,12 +3905,8 @@ async function smSubmitAdAudit(){
   let payload;
   try{
     const knownAddr = capturedAddress || (SM_AD_AUDIT.isNewAd ? (SM_AD_AUDIT.newAdForm && SM_AD_AUDIT.newAdForm.locationName) : (SM_AD_AUDIT.selectedAd && !SM_AD_AUDIT.selectedAd.isMovable ? SM_AD_AUDIT.selectedAd.locationName : '')) || '';
-    const addrLine = await smStampAddress_(SM_AD_AUDIT.geo.lat, SM_AD_AUDIT.geo.lng, knownAddr);
-    const stampedPhoto = await stampPhoto(SM_AD_AUDIT.photoRaw, [
-      `${new Date().toLocaleString()}  •  ${SM_AD_AUDIT.geo.lat.toFixed(6)}, ${SM_AD_AUDIT.geo.lng.toFixed(6)}`,
-      `Ad ID: ${adId}   Auditor: ${CHECKIN_NAME||'—'}`,
-      addrLine ? `Address: ${addrLine}` : ''
-    ]);
+    const parts = await smStampParts_(SM_AD_AUDIT.geo.lat, SM_AD_AUDIT.geo.lng, knownAddr, SM_AD_AUDIT.geoParts);
+    const stampedPhoto = await stampAdPhoto_(SM_AD_AUDIT.photoRaw, {tag:'AD ID', id:String(adId||''), auditor:CHECKIN_NAME||'—', lat:SM_AD_AUDIT.geo.lat, lng:SM_AD_AUDIT.geo.lng, address:parts.address, landmark:parts.landmark});
     payload = {
       action:'submitAdAudit', clientSubmissionId: generateClientSubmissionId(), adId, auditorName:CHECKIN_NAME, auditorMobile:CHECKIN_PHONE,
       lat:SM_AD_AUDIT.geo.lat, lng:SM_AD_AUDIT.geo.lng, accuracy:SM_AD_AUDIT.geo.accuracy,
@@ -4040,6 +4142,7 @@ function smCaptureStatusLocation(){
   navigator.geolocation.getCurrentPosition((pos)=>{
     const lat=pos.coords.latitude, lng=pos.coords.longitude;
     SM_STATUS_CHECK.geo = {lat, lng, link:`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`};
+    SM_STATUS_CHECK.geoParts = smStampParts_(lat, lng, '', null).catch(()=>null);
     document.getElementById('smStatusGeoStatus').className='geo-status got';
     document.getElementById('smStatusGeoStatus').textContent = `✅ ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     document.getElementById('smStatusPhotoCard').classList.remove('locked-until-address');
@@ -4061,9 +4164,8 @@ async function smSubmitStatusCheck(){
   const btn = document.getElementById('smStatusSubmitBtn');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Submitting…';
   const now = new Date();
-  const scAddr = await smStampAddress_(SM_STATUS_CHECK.geo.lat, SM_STATUS_CHECK.geo.lng, SM_STATUS_CHECK.submission.PreAddress);
-  const lines = [`${localDateStr(now)} ${now.toTimeString().slice(0,5)}  •  ${SM_STATUS_CHECK.geo.lat.toFixed(6)}, ${SM_STATUS_CHECK.geo.lng.toFixed(6)}`, `Status Check · ${SM_STATUS_CHECK.submission.SubmissionID}`, `Auditor: ${CHECKIN_NAME}`, scAddr ? `Address: ${scAddr}` : ''].filter(Boolean);
-  const stamped = await stampPhoto(SM_STATUS_CHECK.photoRaw, lines);
+  const scParts = await smStampParts_(SM_STATUS_CHECK.geo.lat, SM_STATUS_CHECK.geo.lng, SM_STATUS_CHECK.submission.PreAddress, SM_STATUS_CHECK.geoParts);
+  const stamped = await stampAdPhoto_(SM_STATUS_CHECK.photoRaw, {tag:'STATUS CHECK', id:String(SM_STATUS_CHECK.submission.SubmissionID||''), auditor:CHECKIN_NAME||'—', lat:SM_STATUS_CHECK.geo.lat, lng:SM_STATUS_CHECK.geo.lng, address:scParts.address, landmark:scParts.landmark});
   const payload = {
     action:'submitStatusCheck', submissionId: SM_STATUS_CHECK.submission.SubmissionID,
     date: localDateStr(now), auditorName: CHECKIN_NAME, phone: CHECKIN_PHONE,
