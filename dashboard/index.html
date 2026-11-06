@@ -323,6 +323,37 @@ table.data tr:hover td{background:var(--paper-2);}
 .req-mark{color:var(--red); font-weight:700;}
 .mex-info{display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:var(--paper-2); color:var(--slate); font-size:12px; font-style:normal; cursor:pointer; flex-shrink:0;}
 .mex-info:hover{background:var(--amber); color:#fff;}
+/* ---- Permissions tab + Change password ---- */
+.perm-wrap{overflow:auto; border:1px solid var(--border); border-radius:12px; background:var(--card);}
+table.perm{width:100%; border-collapse:separate; border-spacing:0; font-size:13px; min-width:860px;}
+table.perm th{background:var(--ink); color:var(--paper); padding:10px 5px; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; text-align:center; vertical-align:middle; line-height:1.25;}
+table.perm th.grp{background:#1d2547; font-size:10px; letter-spacing:.12em; color:#9BA1C4;}
+table.perm th.rolecol, table.perm td:first-child{text-align:left; padding-left:16px; position:sticky; left:0; z-index:3; min-width:130px;}
+table.perm td:first-child{background:var(--card);}
+table.perm td{padding:12px 5px; text-align:center; border-bottom:1px solid var(--border); background:var(--card);}
+table.perm tr:last-child td{border-bottom:none;}
+table.perm tr.dirty td{background:#FFF8E6;}
+table.perm tr.locked td{background:var(--paper-2); color:var(--slate);}
+table.perm td.sep, table.perm th.sep{border-left:1px solid var(--border);}
+table.perm input[type=checkbox]{width:18px; height:18px; accent-color:#0066FF; cursor:pointer;}
+table.perm input[type=checkbox]:disabled{cursor:not-allowed; opacity:.45;}
+.perm-role{font-weight:700; color:var(--ink); display:flex; flex-direction:column; align-items:flex-start; gap:2px;}
+.perm-note{font-size:11px; font-weight:500; color:var(--slate); white-space:nowrap;}
+.perm-legend{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin:14px 0 18px;}
+.perm-legend div{background:var(--paper-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:12.5px; color:var(--slate); line-height:1.5;}
+.perm-legend b{color:var(--ink);}
+#pwModal{display:none; position:fixed; inset:0; background:rgba(18,23,43,.6); z-index:9500; align-items:center; justify-content:center; padding:16px;}
+#pwModal.show{display:flex;}
+.pw-box{background:#fff; border-radius:16px; width:100%; max-width:420px; padding:26px 26px 22px; box-shadow:0 24px 70px rgba(0,0,0,.35);}
+.pw-box h3{margin:0 0 4px; font-size:18px; color:var(--ink);}
+.pw-box .sub{font-size:12.5px; color:var(--slate); margin-bottom:16px; line-height:1.5;}
+.pw-box label{display:block; font-size:11.5px; font-weight:700; color:var(--slate); text-transform:uppercase; letter-spacing:.05em; margin:12px 0 5px;}
+.pw-box .pw-field{position:relative;}
+.pw-box input{width:100%; box-sizing:border-box; padding:11px 42px 11px 12px; border:1px solid var(--border); border-radius:10px; font-size:14px;}
+.pw-box input:focus{outline:2px solid #0066FF33; border-color:#0066FF;}
+.pw-box .pw-eye{position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px; padding:6px; color:var(--slate);}
+.pw-box .pw-err{min-height:18px; margin-top:12px; font-size:12.5px; color:var(--red); font-weight:600;}
+.pw-box .pw-actions{display:flex; gap:10px; justify-content:flex-end; margin-top:10px;}
 .mex-info-modal{display:none; position:fixed; inset:0; background:rgba(18,23,43,.55); z-index:9000; align-items:center; justify-content:center;}
 .mex-info-modal.show{display:flex;}
 .mex-info-box{background:#fff; border-radius:14px; max-width:480px; width:90%; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,.3);}
@@ -405,9 +436,9 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
         <path d="M20 9c-5.5 0-10 4.5-10 10 0 7.5 10 15 10 15s10-7.5 10-15c0-5.5-4.5-10-10-10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="20" cy="18.5" r="3.4" fill="#fff"/>
       </svg>
-      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.18.1 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
+      <div><div class="name">Field<span>Audit</span></div><div class="ver">Management · v7.19.0 <span id="backendVerCheck" style="opacity:.7;"></span></div></div>
     </div>
-    <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="logout()">Log out</button></div>
+    <div class="who"><span class="u">Signed in as <b id="whoName">—</b> <span id="whoRole" class="role-pill"></span></span><button class="theme-btn" onclick="syncNow()" id="syncBtn" title="Refresh — clears cache and reloads the latest data">🔄</button><button class="theme-btn" onclick="toggleThemePanel()" title="Change theme">🎨</button><button class="logout" onclick="openPwModal()" title="Change your password">🔑 Password</button><button class="logout" onclick="logout()">Log out</button></div>
   </header>
   <div id="updateBanner" style="display:none; background:#1B7A43; color:#fff; padding:10px 20px; font-size:13px; align-items:center; justify-content:center; gap:14px;">
     <span>🔄 A new version of this dashboard is available.</span>
@@ -444,6 +475,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
     <button data-tab="photos" onclick="showTab('photos')">Photos</button>
     <button data-tab="master" id="masterTabBtn" onclick="showTab('master')" style="display:none;">Master Data</button>
     <button data-tab="users" id="usersTabBtn" onclick="showTab('users')" style="display:none;">👥 Users</button>
+    <button data-tab="permissions" id="permTabBtn" onclick="showTab('permissions')" style="display:none;">🔐 Permissions</button>
     <button data-tab="team" id="teamTabBtn" onclick="showTab('team')" style="display:none;">Team</button>
     <button data-tab="auditorwise" id="auditorWiseTabBtn" onclick="showTab('auditorwise')" style="display:none;">👤 Auditor-wise</button>
     <button data-tab="noproduct" id="noProductTabBtn" onclick="showTab('noproduct')" style="display:none;">🚫 NPA</button>
@@ -543,7 +575,7 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
     <section id="tab-users" style="display:none;">
       <div class="card">
         <h2>👥 Users &amp; Logins</h2>
-        <div class="hint">Create a dashboard login, change a role, reset a password or delete a login. Roles: <b>Admin</b> (everything), <b>Sales</b>, <b>Marketing</b> (sees and exports data, cannot verify Ad Audits), <b>BTL Head</b> (Ad Audit + Marketing Expense only, can verify Ad Audits), <b>Viewer</b> (view only, no export). A changed password or role signs that person out once.</div>
+        <div class="hint">Create a dashboard login, change a role, reset a password or delete a login. Roles: <b>Admin</b>, <b>Sales</b>, <b>Marketing</b>, <b>Viewer</b>, <b>BTL L3</b>, <b>BTL L1</b>, <b>ATL L3</b>, <b>ATL L1</b>. What each role can open, export, upload and verify is set in the <b>Permissions</b> tab. A changed password or role signs that person out once.</div>
         <div class="filters" style="margin-top:14px; align-items:flex-end;">
           <div><label class="hint" style="display:block">User ID</label><input type="text" id="usrId" placeholder="e.g. Nitesh Pandey" autocomplete="off"></div>
           <div><label class="hint" style="display:block">Name</label><input type="text" id="usrName" placeholder="Full name" autocomplete="off"></div>
@@ -553,6 +585,21 @@ body.no-export button[onclick*="xport"], body.no-export button[onclick*="PPT"], 
           <button class="btn btn-outline" id="usrCancelBtn" onclick="resetUserForm()" style="display:none;">Cancel edit</button>
         </div>
         <div class="table-wrap" style="margin-top:16px;"><table class="data" id="usersTable"><thead><tr><th>User ID</th><th>Name</th><th>Role</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="tab-permissions" style="display:none;">
+      <div class="card">
+        <h2>🔐 Role Permissions</h2>
+        <div class="hint">Choose what each role can open and do. Tick a box and press <b>Save</b> on that row — it applies the next time that person opens the dashboard (or refreshes). <b>Admin</b> always has full access and cannot be changed.</div>
+        <div class="perm-legend">
+          <div><b>Tab view</b> — the tabs a role can see and open. A tab that is not ticked is hidden, and its data is blocked on the server too.</div>
+          <div><b>Export</b> — download Excel / PDF / PPT / photos ZIP.</div>
+          <div><b>Upload</b> — add an entry or upload the Excel in Marketing Expense.</div>
+          <div><b>Verify</b> — verify Ad Audits.</div>
+          <div><b>Only view</b> — look only. Switches Export, Upload and Verify off for that role.</div>
+        </div>
+        <div class="perm-wrap"><table class="perm" id="permTable"><thead></thead><tbody><tr><td colspan="13"><div class="empty">Loading…</div></td></tr></tbody></table></div>
       </div>
     </section>
 
@@ -1627,6 +1674,20 @@ $('btnIncXls').onclick = async ()=>{
   </div>
 </div>
 
+<div id="pwModal" onclick="if(event.target===this) closePwModal()">
+  <div class="pw-box" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
+    <h3 id="pwTitle">🔑 Change password</h3>
+    <div class="sub">Choose a new password for your login. After it is changed you will be signed out and can sign in again with the new password.</div>
+    <label for="pwCur">Current password</label>
+    <div class="pw-field"><input type="password" id="pwCur" autocomplete="current-password"><button type="button" class="pw-eye" onclick="pwToggle_(this)" title="Show / hide">👁</button></div>
+    <label for="pwNew">New password</label>
+    <div class="pw-field"><input type="password" id="pwNew" autocomplete="new-password" placeholder="At least 6 characters"><button type="button" class="pw-eye" onclick="pwToggle_(this)" title="Show / hide">👁</button></div>
+    <label for="pwNew2">Confirm new password</label>
+    <div class="pw-field"><input type="password" id="pwNew2" autocomplete="new-password"><button type="button" class="pw-eye" onclick="pwToggle_(this)" title="Show / hide">👁</button></div>
+    <div class="pw-err" id="pwErr"></div>
+    <div class="pw-actions"><button class="btn btn-outline" onclick="closePwModal()">Cancel</button><button class="btn btn-dark" id="pwSaveBtn" onclick="submitPwChange()">Change password</button></div>
+  </div>
+</div>
 <div class="mex-info-modal" id="mexInfoModal" onclick="if(event.target===this) mexCloseInfo()">
   <div class="mex-info-box">
     <h3 id="mexInfoTitle"></h3>
@@ -1707,13 +1768,43 @@ function betaverseConfigured(){ return BETAVERSE_SCRIPT_URL && BETAVERSE_SCRIPT_
 const GOOGLE_MAPS_JS_KEY = "AIzaSyBTrdfFw6LNdlTbytFC6o1bLnr5PJDk0E0";
 
 let SESSION = null;
-/* ---- Role rules (v7.18.1) ----
-   Viewer can SEE data but can never export / download anything. Marketing sees and exports as before.
-   BTL Head sees only Ad Audit and Marketing Expense.
-   Only Admin and BTL Head can verify Ad Audits. The server enforces the same rules. */
-const NO_EXPORT_ROLES_JS = ['Viewer'];   // Marketing CAN export; only Viewer cannot
-function CAN_EXPORT(){ return !(SESSION && NO_EXPORT_ROLES_JS.indexOf(SESSION.role) !== -1); }
-function IS_BTL_HEAD(){ return !!(SESSION && SESSION.role === 'BTL Head'); }
+/* ---- Roles & permissions (v7.19.0) ----
+   Roles: Admin, Sales, Marketing, Viewer, BTL L3 (was "BTL Head"), BTL L1, ATL L3, ATL L1.
+   What a role may open / export / upload / verify is set by Admin in the Permissions tab. The server enforces the same
+   rules on every request; this code only decides what to SHOW. Until the saved settings arrive (or if they cannot be
+   fetched) the built-in defaults below are used — they are identical to the defaults in the server code. */
+const PERM_TABS_JS = [
+  {key:'retail',label:'Retail Audit'}, {key:'db',label:'DB Stock Audit'}, {key:'betaverse',label:'Ad Manager'},
+  {key:'mktexpense',label:'Marketing Expense'}, {key:'adaudit',label:'Ad Audit'}, {key:'team',label:'Team'}, {key:'npa',label:'NPA'}
+];
+function defaultPermsJs_(role){
+  const all = PERM_TABS_JS.map(t=>t.key);
+  switch(role){
+    case 'Admin':     return {tabs:all, export:true,  upload:true,  verify:true,  viewOnly:false};
+    case 'Sales':     return {tabs:['retail','db','betaverse','adaudit'], export:true, upload:false, verify:false, viewOnly:false};
+    case 'Marketing': return {tabs:all, export:true,  upload:true,  verify:false, viewOnly:false};
+    case 'Viewer':    return {tabs:all, export:false, upload:false, verify:false, viewOnly:true};
+    case 'BTL L3':    return {tabs:['adaudit','mktexpense'], export:true,  upload:true,  verify:true,  viewOnly:false};
+    case 'BTL L1':    return {tabs:['adaudit','mktexpense'], export:true,  upload:true,  verify:false, viewOnly:false};
+    case 'ATL L3':    return {tabs:['retail','db'], export:true,  upload:false, verify:false, viewOnly:false};
+    case 'ATL L1':    return {tabs:['retail','db'], export:false, upload:false, verify:false, viewOnly:true};
+  }
+  return {tabs:[], export:false, upload:false, verify:false, viewOnly:true};
+}
+let MY_PERMS = null;
+function normRole_(r){ return String(r||'').trim().toLowerCase() === 'btl head' ? 'BTL L3' : r; }
+function permsCacheKey_(){ return 'fa_perms_v1_' + (SESSION && SESSION.role || ''); }
+function myPerms_(){
+  if(!SESSION) return {tabs:[], export:false, upload:false, verify:false, viewOnly:true};
+  if(MY_PERMS && MY_PERMS._role === SESSION.role) return MY_PERMS;
+  if(SESSION.role !== 'Admin'){
+    try{ const c = JSON.parse(localStorage.getItem(permsCacheKey_()) || 'null'); if(c && Array.isArray(c.tabs)) return Object.assign({_role:SESSION.role}, c); }catch(_e){}
+  }
+  return Object.assign({_role:SESSION.role}, defaultPermsJs_(SESSION.role));
+}
+function hasTab(k){ return myPerms_().tabs.indexOf(k) !== -1; }
+function CAN_EXPORT(){ const p = myPerms_(); return !!(p.export && !p.viewOnly); }
+function CAN_UPLOAD(){ const p = myPerms_(); return !!(p.upload && !p.viewOnly); }
 function exportAllowed_(){
   if(CAN_EXPORT()) return true;
   try{ toast('Your role (' + SESSION.role + ') can view data but cannot export or download it.', true); }catch(_e){}
@@ -2483,11 +2574,52 @@ function logout(){
   if(SESSION && SESSION.sb && SESSION.sb.token && sbConfigured()){
     try{ sbRpcRaw_('fa_logout', {p_token: SESSION.sb.token}, 5000).catch(()=>{}); }catch(_e){}   // best effort — ends the data-service session too
   }
-  SESSION = null; SESSION_REMEMBER = false;
+  SESSION = null; SESSION_REMEMBER = false; MY_PERMS = null;
   try{ localStorage.removeItem(SESSION_STORAGE_KEY); }catch(_e){}
   document.getElementById('screen-app').style.display='none';
   document.getElementById('screen-login').style.display='flex';
   document.getElementById('loginUser').value=''; document.getElementById('loginPass').value='';
+}
+const MODULE_ORDER_ = ['retail','db','adaudit','mktexpense','betaverse'];
+function firstAllowedModule_(){ return MODULE_ORDER_.find(m=>hasTab(m)) || 'adaudit'; }
+/* Shows / hides tabs and buttons from the role's permissions. Safe to call again whenever the permissions change. */
+function applyPermsUi_(){
+  if(!SESSION) return;
+  const isAdmin = SESSION.role === 'Admin';
+  const show = (id, on)=>{ const el = document.getElementById(id); if(el) el.style.display = on ? 'inline-block' : 'none'; };
+  show('masterTabBtn', isAdmin); show('usersTabBtn', isAdmin); show('permTabBtn', isAdmin);
+  show('teamTabBtn', hasTab('team'));
+  NO_PRODUCT_ROLE_ALLOWED = hasTab('npa');
+  show('noProductTabBtn', (typeof MODULE === 'undefined' || MODULE === 'retail') && NO_PRODUCT_ROLE_ALLOWED);
+  document.querySelectorAll('#moduleToggle button').forEach(b=>{
+    const m = b.dataset.mod;
+    if(m === 'bills'){ b.style.display = isAdmin ? 'inline-block' : 'none'; return; }
+    b.style.display = hasTab(m) ? '' : 'none';
+  });
+  document.querySelectorAll('#mktExpenseSection .module-toggle button').forEach(b=>{
+    if(b.dataset.mex === 'entry' || b.dataset.mex === 'upload') b.style.display = CAN_UPLOAD() ? '' : 'none';
+  });
+  document.body.classList.toggle('no-export', !CAN_EXPORT());
+}
+async function refreshMyPerms_(){
+  if(!SESSION) return;
+  try{
+    let res = null;
+    if(SB_ACTIVE()){ try{ res = await sbCall_('fa_my_perms', {}, 15000); }catch(_e){ res = null; } }   // falls back to the main server if the data service has no permissions yet
+    if(!(res && res.success && res.perms) && SESSION.token && configured()){
+      const r = await fetchWithTimeout(`${SCRIPT_URL}?action=getMyPerms&token=${encodeURIComponent(SESSION.token)}&_t=${Date.now()}`, {cache:'no-store'}, 20000);
+      res = await r.json();
+    }
+    if(!(res && res.success && res.perms)) return;
+    const next = Object.assign({_role:SESSION.role}, res.perms);
+    const changed = JSON.stringify(next) !== JSON.stringify(myPerms_());
+    MY_PERMS = next;
+    if(SESSION.role !== 'Admin'){ try{ localStorage.setItem(permsCacheKey_(), JSON.stringify(res.perms)); }catch(_e){} }
+    if(changed){
+      applyPermsUi_();
+      if(MODULE !== 'bills' && !hasTab(MODULE) && SESSION.role !== 'Sales') switchModule(firstAllowedModule_());
+    }
+  }catch(e){ console.warn('[permissions] using saved defaults:', e && e.message); }
 }
 function enterApp(){
   document.getElementById('screen-login').style.display='none';
@@ -2504,23 +2636,10 @@ function enterApp(){
     showLoadProgress(55, 'Loading your dashboard…');
     document.getElementById('whoName').textContent = SESSION.name;
     document.getElementById('whoRole').textContent = SESSION.role || '';
-    document.getElementById('masterTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
-    document.getElementById('usersTabBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
-    document.getElementById('teamTabBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing' || SESSION.role === 'Viewer') ? 'inline-block' : 'none';
-    document.getElementById('mktExpenseModuleBtn').style.display = (SESSION.role === 'Admin' || SESSION.role === 'Marketing' || SESSION.role === 'BTL Head' || SESSION.role === 'Viewer') ? 'inline-block' : 'none';
-    document.getElementById('billsModuleBtn').style.display = SESSION.role === 'Admin' ? 'inline-block' : 'none';
-    NO_PRODUCT_ROLE_ALLOWED = (SESSION.role === 'Admin' || SESSION.role === 'Marketing' || SESSION.role === 'Viewer');
-    // Viewer: view only, no exports anywhere (buttons hidden; the download code itself also refuses).
-    document.body.classList.toggle('no-export', !CAN_EXPORT());
-    // BTL Head: ONLY Ad Audit and Marketing Expense are visible.
-    if(IS_BTL_HEAD()){
-      document.querySelectorAll('#moduleToggle button').forEach(b=>{
-        const keep = b.dataset.mod === 'adaudit' || b.dataset.mod === 'mktexpense';
-        b.style.display = keep ? '' : 'none';
-      });
-      document.getElementById('masterTabBtn').style.display = 'none';
-      document.getElementById('teamTabBtn').style.display = 'none';
-    }
+    SESSION.role = normRole_(SESSION.role);
+    document.getElementById('whoRole').textContent = SESSION.role || '';
+    applyPermsUi_();          // tabs / buttons from the saved (or default) permissions
+    refreshMyPerms_();        // fetch the latest saved permissions in the background
     // Retail is the DEFAULT module — its nav button already has
     // class="active" hardcoded in the HTML, so switchModule('retail')
     // never actually runs on a normal page load (only clicking AWAY and
@@ -2528,7 +2647,6 @@ function enterApp(){
     // inside switchModule()'s default branch, so without this line here
     // too, the tab silently never appeared for anyone who just logged in
     // and never switched modules — set once, directly, right here.
-    document.getElementById('noProductTabBtn').style.display = NO_PRODUCT_ROLE_ALLOWED ? 'inline-block' : 'none';
     // Only Admin sees BOTH sources and gets the toggle to switch between them.
     // Sales is scoped to ONLY "GCPL Stock Audit" (the external sheet, which is
     // their own submissions from the separate GCPL app) — no "3PA Audit" tab
@@ -2539,7 +2657,7 @@ function enterApp(){
     dbBtn.innerHTML = '📦 DB Stock Audit';
     document.getElementById('sourceToggle').style.display = SESSION.role === 'Admin' ? 'flex' : 'none';
     const isSalesOnly = SESSION.role === 'Sales';
-    if(!isSalesOnly && !IS_BTL_HEAD()){
+    if(!isSalesOnly){
       SOURCE_FILTER = 'FieldAudit App';
       document.getElementById('moduleToggle').style.display = 'flex';
     }
@@ -2565,9 +2683,10 @@ function enterApp(){
     }
     showLoadProgress(75, 'Fetching latest audit data…');
     const finish = ()=>{ showLoadProgress(100, 'Ready!'); setTimeout(hideLoadProgress, 350); };
-    if(IS_BTL_HEAD()){
+    if(!isSalesOnly && !hasTab('retail')){
+      // no Retail Audit for this role (e.g. BTL L1 / BTL L3): open the first tab it does have
       document.getElementById('moduleToggle').style.display = 'flex';
-      switchModule('adaudit');
+      switchModule(firstAllowedModule_());
       setTimeout(finish, 400);
     } else if(isSalesOnly){
       // Sales is scoped to ONLY "GCPL Stock Audit" — this sets MODULE='db',
@@ -2631,7 +2750,7 @@ function refreshPendingApprovalBadge(){
    and compares against this running page's own FRONTEND_VERSION. If they
    differ, shows a small "Update now" banner instead of leaving the person
    silently on stale code until they happen to hard-refresh. */
-const FRONTEND_VERSION = 'v7.18.1';
+const FRONTEND_VERSION = 'v7.19.0';
 let _versionWatcherTimer = null;
 function startVersionWatcher(){
   if(_versionWatcherTimer) return; // don't stack multiple intervals across re-logins
@@ -2701,7 +2820,8 @@ document.addEventListener('click', (e)=>{
 
 let APPROVAL_FILTER = '';
 function switchModule(mod){
-  if(mod === 'bills' && SESSION.role !== 'Admin') mod = 'retail';   // Bills Organizer is for Admin only
+  if(mod === 'bills' && SESSION.role !== 'Admin') mod = firstAllowedModule_();   // Bills Organizer is for Admin only
+  if(mod !== 'bills' && !hasTab(mod)){ if(mod === firstAllowedModule_()) return; mod = firstAllowedModule_(); }   // a tab this role does not have
   MODULE = mod;
   { const bs = document.getElementById('billsSection'); if(bs) bs.style.display = 'none'; }
   document.querySelectorAll('#moduleToggle button').forEach(b=>b.classList.toggle('active', b.dataset.mod===mod));
@@ -2893,7 +3013,7 @@ function switchSourceTab(tab){
 }
 
 function showTab(name){
-  ['dash','approvals','map','history','photos','master','users','team','auditorwise','noproduct'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
+  ['dash','approvals','map','history','photos','master','users','permissions','team','auditorwise','noproduct'].forEach(t=>{ const el = document.getElementById('tab-'+t); if(el) el.style.display = (t===name)?'block':'none'; });
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   if(name==='dash') renderDashboard();
   if(name==='approvals') renderApprovals();
@@ -2902,6 +3022,7 @@ function showTab(name){
   if(name==='photos') loadPhotosData().then(renderPhotos);
   if(name==='master') loadMasterData();
   if(name==='users') loadUsersAdmin();
+  if(name==='permissions') loadPermissions();
   if(name==='team'){
     document.getElementById('teamGridView').style.display='block';
     document.getElementById('teamJourneyView').style.display='none';
@@ -3527,6 +3648,117 @@ function parseMasterRows(text, expectedCols){
     return row.slice(0, expectedCols);
   });
 }
+
+/* ---------- Admin: Permissions tab ---------- */
+let PERM_ADMIN = null;
+async function loadPermissions(){
+  const tb = document.querySelector('#permTable tbody');
+  tb.innerHTML = '<tr><td colspan="13"><div class="empty"><span class="spin"></span> Loading permissions…</div></td></tr>';
+  try{
+    if(!configured()) throw new Error('Backend not connected');
+    const r = await fetchWithTimeout(`${SCRIPT_URL}?action=getRolePermissions&token=${encodeURIComponent(SESSION.token)}&_t=${Date.now()}`, {cache:'no-store'}, 20000);
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message || 'Could not load permissions');
+    PERM_ADMIN = res;
+    renderPermissions();
+  }catch(e){
+    tb.innerHTML = `<tr><td colspan="13"><div class="empty">${esc_(e.message || 'Could not load permissions')}</div></td></tr>`;
+  }
+}
+function renderPermissions(){
+  const tabs = PERM_ADMIN.tabs;
+  const th = document.querySelector('#permTable thead');
+  th.innerHTML = `<tr><th rowspan="2" class="rolecol">Role</th><th class="grp" colspan="${tabs.length}">Tab view</th><th class="grp sep" colspan="4">Actions</th><th rowspan="2" class="sep"></th></tr>
+    <tr>${tabs.map(t=>`<th>${esc_(t.label)}</th>`).join('')}<th class="sep">Export</th><th>Upload</th><th>Verify</th><th>Only view</th></tr>`;
+  const tb = document.querySelector('#permTable tbody');
+  tb.innerHTML = PERM_ADMIN.roles.map(x=>{
+    const p = x.perms, role = x.role, lock = x.locked;
+    const box = (key, on, extra)=>`<input type="checkbox" data-role="${esc_(role)}" data-k="${key}" ${on?'checked':''} ${lock?'disabled':''} ${extra||''} onchange="permChanged('${esc_(role)}', this)">`;
+    return `<tr data-role="${esc_(role)}" class="${lock?'locked':''}">
+      <td><div class="perm-role">${esc_(role)}${lock?'<span class="perm-note">Full access · locked</span>':''}</div></td>
+      ${tabs.map(t=>`<td>${box('tab:'+t.key, p.tabs.indexOf(t.key)!==-1)}</td>`).join('')}
+      <td class="sep">${box('export', p.export)}</td><td>${box('upload', p.upload)}</td><td>${box('verify', p.verify)}</td><td>${box('viewOnly', p.viewOnly)}</td>
+      <td class="sep">${lock ? '' : `<button class="btn btn-dark" style="padding:6px 16px;font-size:12px;" disabled data-save="${esc_(role)}" onclick="savePermRow('${esc_(role)}')">Save</button>`}</td></tr>`;
+  }).join('');
+  PERM_ADMIN.roles.forEach(x=>permSyncRow_(x.role));
+}
+function permRow_(role){ return document.querySelector(`#permTable tbody tr[data-role="${role.replace(/"/g,'')}"]`); }
+function permSyncRow_(role){   // "Only view" greys out Export / Upload / Verify
+  const tr = permRow_(role); if(!tr || tr.classList.contains('locked')) return;
+  const vo = tr.querySelector('input[data-k="viewOnly"]').checked;
+  ['export','upload','verify'].forEach(k=>{ const c = tr.querySelector(`input[data-k="${k}"]`); if(vo){ c.checked = false; c.disabled = true; } else c.disabled = false; });
+}
+function permChanged(role, el){
+  if(el && el.dataset.k === 'viewOnly') permSyncRow_(role);
+  const tr = permRow_(role); if(!tr) return;
+  tr.classList.add('dirty');
+  const btn = tr.querySelector('button[data-save]'); if(btn) btn.disabled = false;
+}
+function permCollect_(role){
+  const tr = permRow_(role), tabs = [];
+  tr.querySelectorAll('input[data-k^="tab:"]').forEach(c=>{ if(c.checked) tabs.push(c.dataset.k.slice(4)); });
+  const g = k => !!tr.querySelector(`input[data-k="${k}"]`).checked;
+  return {tabs, export:g('export'), upload:g('upload'), verify:g('verify'), viewOnly:g('viewOnly')};
+}
+async function savePermRow(role){
+  const tr = permRow_(role); const btn = tr.querySelector('button[data-save]');
+  const perms = permCollect_(role);
+  if(!perms.tabs.length && !confirm('No tab is ticked for ' + role + '. People with this role will see nothing after signing in. Save anyway?')) return;
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'setRolePermissions', token:SESSION.token, role, perms})}, 60000);
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message || 'Could not save');
+    const row = PERM_ADMIN.roles.find(x=>x.role===role); if(row) row.perms = res.perms;
+    tr.classList.remove('dirty'); btn.textContent = 'Save';
+    let note = '';
+    if(res.synced === false) note = ' — the fast data copy will pick this up at the next sync';
+    // Ad Manager keeps its own list of who may verify Ad Audits
+    try{
+      const r2 = await fetchWithTimeout(BETAVERSE_SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'setVerifierRoles', role:SESSION.role, roles:res.verifiers})}, 20000);
+      const j2 = await r2.json();
+      if(!j2.success) note += ' — Ad Manager verify list could not be updated';
+    }catch(_e){ note += ' — Ad Manager verify list could not be updated'; }
+    toast('Permissions saved for ' + role + note, note ? true : false);
+  }catch(e){
+    btn.disabled = false; btn.textContent = 'Save';
+    toast(e.message || 'Could not save', true);
+  }
+}
+
+/* ---------- Change my own password (every signed-in user) ---------- */
+function openPwModal(){
+  ['pwCur','pwNew','pwNew2'].forEach(id=>{ const el = document.getElementById(id); el.value = ''; el.type = 'password'; });
+  document.getElementById('pwErr').textContent = '';
+  document.getElementById('pwModal').classList.add('show');
+  setTimeout(()=>document.getElementById('pwCur').focus(), 50);
+}
+function closePwModal(){ document.getElementById('pwModal').classList.remove('show'); }
+function pwToggle_(btn){ const inp = btn.parentNode.querySelector('input'); inp.type = inp.type === 'password' ? 'text' : 'password'; }
+async function submitPwChange(){
+  const cur = document.getElementById('pwCur').value, nw = document.getElementById('pwNew').value, nw2 = document.getElementById('pwNew2').value;
+  const err = m => { document.getElementById('pwErr').textContent = m; };
+  if(!cur) return err('Enter your current password');
+  if(nw.length < 6) return err('New password must be at least 6 characters');
+  if(nw === cur) return err('New password must be different from the current one');
+  if(nw !== nw2) return err('The two new passwords do not match');
+  if(!configured() || !SESSION || !SESSION.token || SESSION.token === 'demo') return err('Password change is not available in this session. Please sign out, sign in again and retry.');
+  const btn = document.getElementById('pwSaveBtn'); btn.disabled = true; btn.textContent = 'Changing…'; err('');
+  try{
+    const r = await fetchWithTimeout(SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'changeMyPassword', token:SESSION.token, currentPassword:cur, newPassword:nw})}, 60000);
+    const res = await r.json();
+    if(!res.success) throw new Error(res.message || 'Could not change the password');
+    closePwModal();
+    toast(res.message + (res.synced === false ? ' (If sign-in says wrong password, wait two minutes and try again.)' : ''));
+    setTimeout(()=>{ try{ logout(); }catch(_e){ location.reload(); } }, 1800);
+  }catch(e){ err(e.message || 'Could not change the password'); }
+  finally{ btn.disabled = false; btn.textContent = 'Change password'; }
+}
+document.addEventListener('keydown', e=>{
+  const m = document.getElementById('pwModal'); if(!m || !m.classList.contains('show')) return;
+  if(e.key === 'Escape') closePwModal();
+  if(e.key === 'Enter') submitPwChange();
+});
 
 /* ---------- Admin: Users tab ---------- */
 let USERS_ADMIN = [], USR_EDITING = '';
@@ -5265,8 +5497,7 @@ function renderAdAuditKpis(){
       <div style="font-size:12px; color:var(--slate); margin-top:4px; text-transform:uppercase; letter-spacing:.5px;">${label}</div>
     </div>`).join('');
 }
-const AD_VERIFIER_ROLES_JS = ['Admin','BTL Head'];   // only these two can verify Ad Audits
-function canVerifyAds(){ return AD_VERIFIER_ROLES_JS.indexOf(SESSION.role) !== -1; }
+function canVerifyAds(){ const p = myPerms_(); return !!(p.verify && !p.viewOnly); }   // set per role in the Permissions tab
 let AA_SELECTED = new Set();
 
 function aaToggleOne(auditId, checked){
@@ -6138,6 +6369,7 @@ const MEX_MONTH_LABELS = {Apr:'Apr',May:'May',Jun:'Jun',Jul:'Jul',Aug:'Aug',Sep:
 const MEX_MONTH_ORDER = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
 
 function switchMktExpenseTab(tab){
+  if((tab === 'entry' || tab === 'upload') && !CAN_UPLOAD()){ toast('Your role (' + SESSION.role + ') cannot add or upload expense data.', true); tab = 'analytics'; }
   document.querySelectorAll('#mktExpenseSection .module-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.mex===tab));
   ['analytics','entry','upload'].forEach(t=> document.getElementById('mex-'+t).style.display = (t===tab) ? 'block' : 'none');
 }
